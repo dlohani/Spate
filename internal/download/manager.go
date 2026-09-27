@@ -1,0 +1,308 @@
+// Package download implements a segmented, resumable HTTP download engine.
+//
+// The engine opens multiple parallel byte-range connections to fetch one file,
+// writing each range at its offset in a single preallocated output file, and
+// persists per-segment progress so an interrupted transfer can resume. This
+// saturates the bandwidth the link provides and defeats per-connection or
+// server-side throttling; it does not evade an ISP's aggregate rate shaping or
+// data cap.
+package download
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path"
+	"sync"
+	"time"
+
+	"cascade/internal/httpc"
+	"cascade/internal/progress"
+)
+
+// Options configures a download.
+type Options struct {
+	Conns      int    // max parallel connections (default 8)
+	MinSegment int64  // smallest segment size in bytes (default 1 MiB)
+	Retries    int    // per-segment retry attempts (default 5)
+	RateLimit  int64  // aggregate bytes/sec, 0 = unlimited
+	SHA256     string // optional expected hex digest to verify on completion
+	Resume     bool   // reuse an existing .cascade sidecar if valid
+}
+
+func (o *Options) setDefaults() {
+	if o.Conns <= 0 {
+		o.Conns = 8
+	}
+	if o.MinSegment <= 0 {
+		o.MinSegment = 1 << 20 // 1 MiB
+	}
+	if o.Retries < 0 {
+		o.Retries = 0
+	} else if o.Retries == 0 {
+		o.Retries = 5
+	}
+}
+
+// Downloader coordinates one download.
+type Downloader struct {
+	url  string
+	out  string
+	opts Options
+
+	client    *http.Client
+	file      *os.File
+	ctrl      *Control
+	meter     *progress.Meter
+	limiter   *Limiter
+	validator string
+}
+
+// New builds a Downloader for url. out may be empty, in which case a filename is
+// derived from the URL (or the server's Content-Disposition) during Run.
+func New(u, out string, opts Options) *Downloader {
+	opts.setDefaults()
+	return &Downloader{
+		url:     u,
+		out:     out,
+		opts:    opts,
+		client:  httpc.New(opts.Conns),
+		limiter: NewLimiter(opts.RateLimit),
+	}
+}
+
+// Meter exposes live progress; valid after Run has begun. May be nil before.
+func (d *Downloader) Meter() *progress.Meter { return d.meter }
+
+// Output returns the resolved output path (valid after Run resolves it).
+func (d *Downloader) Output() string { return d.out }
+
+// Run executes the download to completion or returns an error. On error or
+// cancellation the partial file and its .cascade sidecar are left in place so a
+// later Run with Resume can continue.
+func (d *Downloader) Run(ctx context.Context) error {
+	probe, err := Probe(ctx, d.client, d.url)
+	if err != nil {
+		return err
+	}
+	if d.out == "" {
+		d.out = deriveFilename(d.url, probe.Filename)
+	}
+	d.validator = probe.Validator()
+
+	// Unknown size or no range support: fall back to a single stream.
+	if probe.Size < 0 || !probe.AcceptRanges {
+		return d.streamWhole(ctx, probe.Size)
+	}
+
+	if err := d.prepare(ctx, probe); err != nil {
+		return err
+	}
+	defer d.file.Close()
+
+	d.meter = progress.New(probe.Size)
+	// Account for bytes already on disk from a resumed run.
+	d.meter.Add(d.ctrl.BytesDone())
+
+	// Persist resume state periodically while workers run.
+	stop := make(chan struct{})
+	var saver sync.WaitGroup
+	saver.Add(1)
+	go func() {
+		defer saver.Done()
+		t := time.NewTicker(2 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				_ = d.ctrl.Save()
+			}
+		}
+	}()
+
+	runErr := d.runSegments(ctx)
+
+	close(stop)
+	saver.Wait()
+	_ = d.ctrl.Save() // final flush regardless of outcome
+
+	if runErr != nil {
+		return runErr
+	}
+	if !d.ctrl.AllComplete() {
+		return fmt.Errorf("download incomplete: %d of %d bytes", d.ctrl.BytesDone(), probe.Size)
+	}
+	if err := d.file.Sync(); err != nil {
+		return err
+	}
+	if err := verifySHA256(d.out, d.opts.SHA256); err != nil {
+		return err
+	}
+	return d.ctrl.Remove()
+}
+
+// prepare resolves resume state and opens/preallocates the output file.
+func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
+	if d.opts.Resume {
+		existing, err := LoadControl(d.out)
+		if err != nil {
+			return err
+		}
+		if existing != nil && d.canResume(existing, probe) {
+			f, err := os.OpenFile(d.out, os.O_RDWR, 0o644)
+			if err != nil {
+				return fmt.Errorf("resume: reopen output: %w", err)
+			}
+			d.file = f
+			d.ctrl = existing
+			return nil
+		}
+		// Stale or mismatched sidecar: discard and start fresh.
+		if existing != nil {
+			_ = existing.Remove()
+		}
+	}
+
+	f, err := os.OpenFile(d.out, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	if err := f.Truncate(probe.Size); err != nil {
+		f.Close()
+		return fmt.Errorf("preallocate %d bytes: %w", probe.Size, err)
+	}
+	d.file = f
+	segs := PlanSegments(probe.Size, d.opts.Conns, d.opts.MinSegment)
+	d.ctrl = NewControl(d.out, probe.FinalURL, probe.Size, probe.Validator(), segs)
+	return d.ctrl.Save()
+}
+
+// canResume reports whether existing sidecar state matches the current probe.
+func (d *Downloader) canResume(existing *Control, probe ProbeResult) bool {
+	if existing.Total != probe.Size {
+		return false
+	}
+	// If either side has a validator, they must match; a changed validator means
+	// the upstream file changed and the partial data can't be trusted.
+	if probe.Validator() != "" || existing.Validator != "" {
+		if existing.Validator != probe.Validator() {
+			return false
+		}
+	}
+	if _, err := os.Stat(d.out); err != nil {
+		return false // partial output gone
+	}
+	return true
+}
+
+// runSegments fetches all incomplete segments with bounded concurrency,
+// cancelling the rest on the first fatal error.
+func (d *Downloader) runSegments(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sem := make(chan struct{}, d.opts.Conns)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var firstErr error
+
+loop:
+	for i := range d.ctrl.Segments {
+		if d.ctrl.Segments[i].Complete() {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			mu.Lock()
+			if firstErr == nil {
+				firstErr = ctx.Err()
+			}
+			mu.Unlock()
+			break loop // stop launching; let in-flight workers unwind
+		case sem <- struct{}{}:
+		}
+
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := d.fetchSegment(ctx, idx); err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+					cancel()
+				}
+				mu.Unlock()
+			}
+		}(i)
+	}
+	wg.Wait()
+	return firstErr
+}
+
+// streamWhole downloads the entire body over a single connection. Used when the
+// server has no range support or the size is unknown; not resumable.
+func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: unexpected status %s", d.url, resp.Status)
+	}
+
+	f, err := os.OpenFile(d.out, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	d.meter = progress.New(size)
+	buf := make([]byte, chunkSize)
+	for {
+		n, rerr := resp.Body.Read(buf)
+		if n > 0 {
+			if werr := d.limiter.Wait(ctx, n); werr != nil {
+				return werr
+			}
+			if _, werr := f.Write(buf[:n]); werr != nil {
+				return werr
+			}
+			d.meter.Add(int64(n))
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return rerr
+		}
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	return verifySHA256(d.out, d.opts.SHA256)
+}
+
+// deriveFilename picks an output name from a Content-Disposition suggestion or
+// the URL path, defaulting to download.bin.
+func deriveFilename(rawURL, suggested string) string {
+	if suggested != "" {
+		return suggested
+	}
+	if u, err := url.Parse(rawURL); err == nil {
+		if base := path.Base(u.Path); base != "" && base != "/" && base != "." {
+			return base
+		}
+	}
+	return "download.bin"
+}

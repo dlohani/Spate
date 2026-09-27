@@ -1,0 +1,11 @@
+# Build output
+/cascade
+/dist/
+*.exe
+
+# Download artifacts / resume sidecars
+*.cascade
+*.cascade.tmp
+
+# OS cruft
+.DS_Store
