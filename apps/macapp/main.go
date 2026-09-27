@@ -7,7 +7,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -30,6 +32,13 @@ import (
 )
 
 func main() {
+	// Single instance: if a Cascade endpoint is already answering, this launch
+	// (e.g. a second click, or the native host racing) should not start another.
+	if alreadyRunning() {
+		fmt.Fprintln(os.Stderr, "cascade: already running")
+		return
+	}
+
 	mgr := job.New(3)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -231,6 +240,27 @@ func stateLabel(s job.State) string {
 	default:
 		return "-"
 	}
+}
+
+// alreadyRunning reports whether a Cascade endpoint is already up on the ports
+// the extension probes.
+func alreadyRunning() bool {
+	c := &http.Client{Timeout: 300 * time.Millisecond}
+	for _, p := range []int{localapi.DefaultPort, localapi.DefaultPort + 1, localapi.DefaultPort + 2} {
+		resp, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d/ping", p))
+		if err != nil {
+			continue
+		}
+		var body struct {
+			App string `json:"app"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if body.App == "cascade" {
+			return true
+		}
+	}
+	return false
 }
 
 // resumeOrphans re-queues downloads whose .cascade sidecar is still present in

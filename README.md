@@ -39,6 +39,17 @@ button for non-DRM streaming media; native `.rar`/`.7z` extraction.
 
 Requires Go 1.22+. The core has no external dependencies (standard library only).
 
+## Install on macOS (app + browser capture)
+
+    scripts/install-macos.sh
+
+Builds the resident app and the browser native-messaging host into
+`~/Library/Application Support/cascade/bin/` and registers the host with the
+Chromium-family browsers on the machine. Then load `browser/extension` in the
+browser (`chrome://extensions` → Load unpacked). From then on a download started
+in the browser launches Cascade if it isn't running and is handed to it, with no
+copy/paste and no token setup. See `browser/README.md`.
+
 ## Cross-platform
 
 One Go core exports to all five targets through a stable binding boundary; each
