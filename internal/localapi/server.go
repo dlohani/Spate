@@ -81,6 +81,10 @@ func cors(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Cascade-Token")
+	// Chrome Private Network Access: a fetch from a browser context to a
+	// loopback address is preflighted and requires this header, or the request
+	// (including the extension's) is blocked.
+	w.Header().Set("Access-Control-Allow-Private-Network", "true")
 }
 
 func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
