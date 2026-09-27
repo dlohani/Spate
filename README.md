@@ -17,9 +17,11 @@ packet crafting, or tunneling here, by design.
 
 ## Status
 
-Milestone 1: headless engine + CLI. Later milestones (desktop GUI, browser
-extension with a floating download button for non-DRM streaming media, dynamic
-work-stealing segmentation) are not implemented yet.
+Implemented: headless engine + CLI, with dynamic work-stealing segmentation.
+Workers fetch in bounded windows; when one finishes it steals the tail of
+whichever active segment has the most bytes left, so a single slow connection
+can't stall the whole transfer. Not implemented yet: desktop GUI, and the
+browser extension with a floating download button for non-DRM streaming media.
 
 ## Build
 

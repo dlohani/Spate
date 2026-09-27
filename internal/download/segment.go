@@ -49,14 +49,34 @@ func PlanSegments(total int64, conns int, minSeg int64) []Segment {
 	return segs
 }
 
-// fetchSegment downloads segment idx, retrying transient failures. It resumes
-// from the segment's recorded Done offset, so retries never re-fetch bytes
-// already written.
-func (d *Downloader) fetchSegment(ctx context.Context, idx int) error {
-	seg := d.ctrl.Segments[idx]
-	if seg.Length() == 0 {
-		return nil
+// fetchPiece downloads segment idx in bounded windows, re-reading the segment's
+// end between windows so a concurrent steal (which shrinks End) takes effect at
+// the next window boundary rather than being over-fetched.
+func (d *Downloader) fetchPiece(ctx context.Context, idx int) error {
+	window := d.opts.WindowSize
+	for {
+		d.ctrl.mu.Lock()
+		s := d.ctrl.Segments[idx]
+		d.ctrl.mu.Unlock()
+
+		absCur := s.Start + s.Done
+		if absCur > s.End {
+			return nil // segment complete, or its tail was stolen away
+		}
+		end := absCur + window - 1
+		if end > s.End {
+			end = s.End
+		}
+		if err := d.fetchWindow(ctx, idx, absCur, end); err != nil {
+			return err
+		}
 	}
+}
+
+// fetchWindow downloads the byte range [start, end] of segment idx, retrying
+// transient failures and resuming from the segment's advanced Done offset so no
+// byte is fetched twice.
+func (d *Downloader) fetchWindow(ctx context.Context, idx int, start, end int64) error {
 	var lastErr error
 	for attempt := 0; attempt <= d.opts.Retries; attempt++ {
 		if attempt > 0 {
@@ -65,12 +85,13 @@ func (d *Downloader) fetchSegment(ctx context.Context, idx int) error {
 			}
 		}
 		d.ctrl.mu.Lock()
-		done := d.ctrl.Segments[idx].Done
+		s := d.ctrl.Segments[idx]
 		d.ctrl.mu.Unlock()
-		if done >= seg.Length() {
-			return nil
+		from := s.Start + s.Done
+		if from > end {
+			return nil // window already satisfied by a prior partial attempt
 		}
-		err := d.streamSegment(ctx, idx, seg, done)
+		err := d.streamRange(ctx, idx, from, end)
 		if err == nil {
 			return nil
 		}
@@ -82,16 +103,16 @@ func (d *Downloader) fetchSegment(ctx context.Context, idx int) error {
 		}
 		lastErr = err
 	}
-	return fmt.Errorf("segment %d: exhausted retries: %w", idx, lastErr)
+	return fmt.Errorf("segment %d [%d-%d]: exhausted retries: %w", idx, start, end, lastErr)
 }
 
-func (d *Downloader) streamSegment(ctx context.Context, idx int, seg Segment, done int64) error {
-	startAbs := seg.Start + done
+// streamRange performs one ranged GET for [from, end] and writes it at offset.
+func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.url, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", startAbs, seg.End))
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", from, end))
 	if d.validator != "" {
 		req.Header.Set("If-Range", d.validator)
 	}
@@ -101,15 +122,12 @@ func (d *Downloader) streamSegment(ctx context.Context, idx int, seg Segment, do
 	}
 	defer resp.Body.Close()
 
-	wholeFile := seg.Start == 0 && seg.End == d.ctrl.Total-1 && done == 0
 	switch resp.StatusCode {
 	case http.StatusPartialContent:
 		// expected
 	case http.StatusOK:
-		if !wholeFile {
-			return fmt.Errorf("segment %d: got 200 to a ranged request "+
-				"(resource changed mid-download or lost range support)", idx)
-		}
+		return fmt.Errorf("segment %d: got 200 to a ranged request "+
+			"(resource changed mid-download or lost range support)", idx)
 	default:
 		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
 			return &httpStatusError{code: resp.StatusCode, status: resp.Status}
@@ -117,11 +135,17 @@ func (d *Downloader) streamSegment(ctx context.Context, idx int, seg Segment, do
 		return fmt.Errorf("segment %d: unexpected status %s", idx, resp.Status)
 	}
 
+	want := end - from + 1
+	var got int64
+	offset := from
 	buf := make([]byte, chunkSize)
-	offset := startAbs
 	for {
 		n, rerr := resp.Body.Read(buf)
 		if n > 0 {
+			// Never write past the requested window, even if the server sends more.
+			if got+int64(n) > want {
+				n = int(want - got)
+			}
 			if werr := d.limiter.Wait(ctx, n); werr != nil {
 				return werr
 			}
@@ -129,8 +153,12 @@ func (d *Downloader) streamSegment(ctx context.Context, idx int, seg Segment, do
 				return werr
 			}
 			offset += int64(n)
+			got += int64(n)
 			d.ctrl.advance(idx, int64(n))
 			d.meter.Add(int64(n))
+			if got >= want {
+				break
+			}
 		}
 		if rerr == io.EOF {
 			break
@@ -139,12 +167,8 @@ func (d *Downloader) streamSegment(ctx context.Context, idx int, seg Segment, do
 			return rerr
 		}
 	}
-
-	d.ctrl.mu.Lock()
-	segDone := d.ctrl.Segments[idx].Done
-	d.ctrl.mu.Unlock()
-	if segDone < seg.Length() {
-		return io.ErrUnexpectedEOF // short read: transient, retry resumes from segDone
+	if got < want {
+		return io.ErrUnexpectedEOF // short read: transient, retry resumes from advanced Done
 	}
 	return nil
 }

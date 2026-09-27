@@ -25,12 +25,14 @@ import (
 
 // Options configures a download.
 type Options struct {
-	Conns      int    // max parallel connections (default 8)
-	MinSegment int64  // smallest segment size in bytes (default 1 MiB)
-	Retries    int    // per-segment retry attempts (default 5)
-	RateLimit  int64  // aggregate bytes/sec, 0 = unlimited
-	SHA256     string // optional expected hex digest to verify on completion
-	Resume     bool   // reuse an existing .cascade sidecar if valid
+	Conns             int    // max parallel connections (default 8)
+	MinSegment        int64  // smallest initial segment size in bytes (default 1 MiB)
+	WindowSize        int64  // per-request window for windowed fetching (default 4 MiB)
+	StealMinRemaining int64  // min tail to justify a work-steal split (default 2*WindowSize)
+	Retries           int    // per-window retry attempts (default 5)
+	RateLimit         int64  // aggregate bytes/sec, 0 = unlimited
+	SHA256            string // optional expected hex digest to verify on completion
+	Resume            bool   // reuse an existing .cascade sidecar if valid
 }
 
 func (o *Options) setDefaults() {
@@ -39,6 +41,14 @@ func (o *Options) setDefaults() {
 	}
 	if o.MinSegment <= 0 {
 		o.MinSegment = 1 << 20 // 1 MiB
+	}
+	if o.WindowSize <= 0 {
+		o.WindowSize = 4 << 20 // 4 MiB
+	}
+	// A steal must leave the victim's in-flight window untouched, so the split
+	// point is guaranteed to sit beyond it: require at least two windows.
+	if o.StealMinRemaining < 2*o.WindowSize {
+		o.StealMinRemaining = 2 * o.WindowSize
 	}
 	if o.Retries < 0 {
 		o.Retries = 0
@@ -125,7 +135,7 @@ func (d *Downloader) Run(ctx context.Context) error {
 		}
 	}()
 
-	runErr := d.runSegments(ctx)
+	runErr := d.runWorkers(ctx)
 
 	close(stop)
 	saver.Wait()
@@ -200,49 +210,59 @@ func (d *Downloader) canResume(existing *Control, probe ProbeResult) bool {
 	return true
 }
 
-// runSegments fetches all incomplete segments with bounded concurrency,
-// cancelling the rest on the first fatal error.
-func (d *Downloader) runSegments(ctx context.Context) error {
+// runWorkers runs a fixed pool of Conns workers. Each pulls a segment from the
+// scheduler, downloads it, then pulls again; when no unassigned work remains a
+// free worker steals the largest active tail (see Control.nextWork). The first
+// fatal error cancels the rest.
+func (d *Downloader) runWorkers(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	sem := make(chan struct{}, d.opts.Conns)
+	stealMin := d.opts.StealMinRemaining
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var firstErr error
-
-loop:
-	for i := range d.ctrl.Segments {
-		if d.ctrl.Segments[i].Complete() {
-			continue
+	fail := func(err error) {
+		mu.Lock()
+		if firstErr == nil {
+			firstErr = err
+			cancel()
 		}
-		select {
-		case <-ctx.Done():
-			mu.Lock()
-			if firstErr == nil {
-				firstErr = ctx.Err()
-			}
-			mu.Unlock()
-			break loop // stop launching; let in-flight workers unwind
-		case sem <- struct{}{}:
-		}
+		mu.Unlock()
+	}
 
+	for w := 0; w < d.opts.Conns; w++ {
 		wg.Add(1)
-		go func(idx int) {
+		go func() {
 			defer wg.Done()
-			defer func() { <-sem }()
-			if err := d.fetchSegment(ctx, idx); err != nil {
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = err
-					cancel()
+			for {
+				if ctx.Err() != nil {
+					fail(ctx.Err())
+					return
 				}
-				mu.Unlock()
+				idx, ok := d.ctrl.nextWork(stealMin)
+				if !ok {
+					return // no more work worth doing
+				}
+				err := d.fetchPiece(ctx, idx)
+				d.ctrl.finish(idx)
+				if err != nil {
+					fail(err)
+					return
+				}
 			}
-		}(i)
+		}()
 	}
 	wg.Wait()
 	return firstErr
+}
+
+// Splits reports how many work-steal splits occurred during the run.
+func (d *Downloader) Splits() int {
+	if d.ctrl == nil {
+		return 0
+	}
+	return d.ctrl.Splits()
 }
 
 // streamWhole downloads the entire body over a single connection. Used when the
