@@ -25,6 +25,16 @@ site), the app declines, the extension leaves the browser's download running,
 and the Options page shows "app refused (...)". Those downloads stay in the
 browser by design rather than being lost.
 
+**Hosts that allow one connection per IP** (free tiers of file-sharing sites
+such as send.now): while the browser's own download is streaming, any second
+connection is answered 503 (the site shows it as a "continue" page). So when
+you choose Cascade, the extension first cancels the browser's stream, waits a
+moment for the host to release the slot, then hands off; if the app cannot
+fetch the link after all, the extension restarts the download in the browser
+(the generated links are time-limited, not single-use). The engine also adapts:
+if a host refuses extra segment connections (503/429), it drops to however many
+are actually streaming (down to one) instead of colliding.
+
 **Incognito:** enable **Allow in Incognito** for the extension on
 `chrome://extensions`, otherwise incognito downloads are invisible to it.
 Incognito windows have their own cookie store; the extension reads the session

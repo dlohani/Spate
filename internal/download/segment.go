@@ -131,6 +131,18 @@ func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) 
 	if d.validator != "" {
 		req.Header.Set("If-Range", d.validator)
 	}
+
+	// Take a connection slot; the limit shrinks if the host refuses extras.
+	if err := d.conns.acquire(ctx); err != nil {
+		return err
+	}
+	released := false
+	defer func() {
+		if !released {
+			d.conns.release()
+		}
+	}()
+
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return &netError{err} // dial/handshake/TLS error: retry on a fresh connection
@@ -143,6 +155,12 @@ func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) 
 	case http.StatusOK:
 		return fmt.Errorf("segment %d: got 200 to a ranged request "+
 			"(resource changed mid-download or lost range support)", idx)
+	case http.StatusServiceUnavailable, http.StatusTooManyRequests:
+		// The host allows fewer simultaneous connections than we opened:
+		// shrink to what is streaming and retry later on a free slot.
+		d.conns.refused()
+		released = true
+		return &httpStatusError{code: resp.StatusCode, status: resp.Status}
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusGone:
 		// URL may have expired; try to refresh it and retry.
 		if d.opts.RefreshURL == nil {

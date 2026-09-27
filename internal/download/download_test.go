@@ -71,6 +71,7 @@ type manualServer struct {
 	curConc  atomic.Int64
 	delay    time.Duration
 	slowFrom int64 // ranges whose start >= slowFrom incur delay (default 0 = all)
+	connLimit int64 // if > 0, concurrent range requests beyond this get 503
 
 	// Optional access requirements; when set, requests missing them get 401.
 	reqHeaderKey string
@@ -138,6 +139,10 @@ func (m *manualServer) handler() http.HandlerFunc {
 		start, end, ok := parseRange(rangeHdr, total)
 		if !ok {
 			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		if m.connLimit > 0 && cur > m.connLimit {
+			w.WriteHeader(http.StatusServiceUnavailable) // "one connection per IP" host
 			return
 		}
 		if m.delay > 0 && start >= m.slowFrom {
@@ -656,6 +661,32 @@ func TestGateBlocksThenResumes(t *testing.T) {
 	got, _ := os.ReadFile(out2)
 	if !bytes.Equal(got, data2) {
 		t.Fatal("content mismatch after gate resume")
+	}
+}
+
+func TestAdaptsToSingleConnectionHost(t *testing.T) {
+	// A free-tier style host: one range request at a time, 503 for any extra.
+	data := randomBlob(3 << 20)
+	m := &manualServer{data: data, etag: `"v1"`, connLimit: 1, delay: 5 * time.Millisecond}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+
+	out := filepath.Join(t.TempDir(), "file.bin")
+	d := New(srv.URL, out, Options{
+		Conns:      4, // we ask for 4; the host tolerates 1
+		MinSegment: 256 << 10,
+		WindowSize: 256 << 10,
+		SHA256:     sha256hex(data),
+	})
+	if err := d.Run(context.Background()); err != nil {
+		t.Fatalf("Run against a 1-connection host: %v", err)
+	}
+	got, _ := os.ReadFile(out)
+	if !bytes.Equal(got, data) {
+		t.Fatal("content mismatch on single-connection host")
+	}
+	if lim := d.conns.limit(); lim != 1 {
+		t.Errorf("connection limit should have adapted to 1, got %d", lim)
 	}
 }
 
