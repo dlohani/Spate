@@ -130,19 +130,9 @@ func main() {
 	addBtn := widget.NewButton("Download", add)
 	urlEntry.OnSubmitted = func(string) { add() }
 
-	// Browser-capture info: the token is shown in a read-only-style entry so it
-	// can be copied into the browser extension's options.
-	tokenField := widget.NewEntry()
-	tokenField.SetText(token)
-	captureLabel := widget.NewLabel("Browser capture: " + orDisabled(captureURL))
-	extLabel := widget.NewLabel("Extension: not connected (load it in chrome://extensions, then Pair)")
-	extStatus := func() string {
-		last := capSrv.LastExtensionContact()
-		if last.IsZero() {
-			return "Extension: not connected (load it in chrome://extensions, then Pair)"
-		}
-		return fmt.Sprintf("Extension: connected (last contact %ds ago)", int(time.Since(last).Seconds()))
-	}
+	// Browser capture runs silently in the background (see the menu bar and the
+	// extension's Options page for its status); the window shows downloads only.
+	_ = captureURL
 
 	form := container.NewVBox(
 		widget.NewLabel("URL"),
@@ -152,10 +142,6 @@ func main() {
 			container.NewVBox(widget.NewLabel("Connections"), connEntry),
 		),
 		addBtn,
-		widget.NewSeparator(),
-		captureLabel,
-		extLabel,
-		container.NewVBox(widget.NewLabel("Extension token (only needed for manual setup; use Pair instead)"), tokenField),
 		widget.NewSeparator(),
 		container.NewBorder(nil, nil, widget.NewLabel("Downloads"), container.NewHBox(
 			widget.NewButton("Cancel all", func() { mgr.CancelAll() }),
@@ -174,9 +160,7 @@ func main() {
 				return
 			case <-t.C:
 				snap := mgr.Statuses()
-				ext := extStatus()
 				fyne.Do(func() {
-					extLabel.SetText(ext)
 					rows.Objects = nil
 					for _, s := range snap {
 						rows.Add(makeRow(mgr, s))
@@ -195,7 +179,16 @@ func makeRow(mgr *job.Manager, s job.Status) fyne.CanvasObject {
 	if s.Total > 0 {
 		pct = float64(s.Bytes) / float64(s.Total)
 	}
-	title := fmt.Sprintf("%s  [%s]  %s / %s", s.ID, s.State,
+	// Show the file and where it comes from, not the internal job id.
+	fname := filepath.Base(s.Out)
+	if fname == "" || fname == "." || fname == "/" {
+		fname = filenameFor(s.URL)
+	}
+	source := ""
+	if u, err := url.Parse(s.URL); err == nil && u.Host != "" {
+		source = "  ·  " + u.Host
+	}
+	title := fmt.Sprintf("%s%s  [%s]  %s / %s", fname, source, s.State,
 		humanBytes(s.Bytes), humanBytes(s.Total))
 	if s.Err != nil {
 		title += "  " + s.Err.Error()
@@ -311,13 +304,6 @@ func loadOrCreateToken() string {
 		_ = os.WriteFile(tokenPath, []byte(t), 0o600)
 	}
 	return t
-}
-
-func orDisabled(url string) string {
-	if url == "" {
-		return "disabled (port in use)"
-	}
-	return "ON at " + url
 }
 
 func defaultDownloadDir() string {
