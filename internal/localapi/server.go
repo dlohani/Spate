@@ -11,6 +11,7 @@
 package localapi
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -85,6 +86,7 @@ func (s *Server) Start() (string, error) {
 	mux.HandleFunc("/ping", s.handlePing)
 	mux.HandleFunc("/pair", s.handlePair)
 	mux.HandleFunc("/add", s.handleAdd)
+	mux.HandleFunc("/jobs", s.handleJobs)
 
 	s.httpSrv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = s.httpSrv.Serve(ln) }()
@@ -175,13 +177,17 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 }
 
 type addRequest struct {
-	URL      string            `json:"url"`
-	Filename string            `json:"filename"`
-	Dir      string            `json:"dir"`
-	Cookie   string            `json:"cookie"`
-	Referrer string            `json:"referrer"`
-	Headers  map[string]string `json:"headers"`
+	URL       string            `json:"url"`
+	Filename  string            `json:"filename"`
+	Dir       string            `json:"dir"`
+	Cookie    string            `json:"cookie"`
+	Referrer  string            `json:"referrer"`
+	UserAgent string            `json:"userAgent"`
+	Headers   map[string]string `json:"headers"`
 }
+
+// probeTimeout bounds the fetchability check done before accepting a hand-off.
+const probeTimeout = 12 * time.Second
 
 func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 	cors(w)
@@ -223,6 +229,25 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 	if req.Referrer != "" {
 		headers["Referer"] = req.Referrer
 	}
+	if req.UserAgent != "" {
+		headers["User-Agent"] = req.UserAgent
+	}
+	opts := download.Options{Headers: headers, Cookie: req.Cookie, Resume: true}
+
+	// Verify the URL is fetchable with these credentials BEFORE accepting, so a
+	// session-bound or POST-only link (403 to a plain GET) is refused here and
+	// the extension leaves the browser's own download running. Otherwise the
+	// browser copy would be cancelled and the app would fail: the user gets
+	// nothing.
+	pctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
+	defer cancel()
+	if err := download.CheckFetchable(pctx, req.URL, opts); err != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"error": "not fetchable by the app: " + err.Error(),
+		})
+		return
+	}
+
 	dir := req.Dir
 	if dir == "" {
 		dir = s.defaultDir
@@ -243,20 +268,52 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	id, err := s.mgr.Add(job.Spec{
-		URL: req.URL,
-		Out: out,
-		Options: download.Options{
-			Headers: headers,
-			Cookie:  req.Cookie,
-			Resume:  true, // continue a partial file of the same name if present
-		},
-	})
+	id, err := s.mgr.Add(job.Spec{URL: req.URL, Out: out, Options: opts})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id})
+}
+
+type jobJSON struct {
+	ID      string `json:"id"`
+	URL     string `json:"url"`
+	Out     string `json:"out"`
+	State   string `json:"state"`
+	Bytes   int64  `json:"bytes"`
+	Total   int64  `json:"total"`
+	Retries int    `json:"retries"`
+	Error   string `json:"error,omitempty"`
+}
+
+// handleJobs returns the queue with per-job state and last error (token-guarded),
+// so failures are visible to the extension's Options page and to diagnostics.
+func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
+	cors(w)
+	if r.Method == http.MethodOptions {
+		return
+	}
+	if !originOK(r) {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
+	if !s.authOK(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	s.noteExtension(r)
+	sts := s.mgr.Statuses()
+	out := make([]jobJSON, 0, len(sts))
+	for _, st := range sts {
+		j := jobJSON{ID: st.ID, URL: st.URL, Out: st.Out, State: st.State.String(),
+			Bytes: st.Bytes, Total: st.Total, Retries: st.Retries}
+		if st.Err != nil {
+			j.Error = st.Err.Error()
+		}
+		out = append(out, j)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) authOK(r *http.Request) bool {

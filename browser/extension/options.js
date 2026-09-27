@@ -6,10 +6,16 @@ const statusEl = document.getElementById("status");
 const tokenStateEl = document.getElementById("tokenState");
 const lastEventEl = document.getElementById("lastEvent");
 
+const modeEl = document.getElementById("mode");
+const rulesEl = document.getElementById("rules");
+
 async function load() {
-  const cfg = await chrome.storage.local.get({ token: "", enabled: true, lastEvent: null });
+  const cfg = await chrome.storage.local.get({ token: "", enabled: true, mode: "ask", siteRules: {}, lastEvent: null });
   tokenEl.value = cfg.token;
   enabledEl.checked = cfg.enabled;
+  modeEl.value = cfg.mode;
+  const n = Object.keys(cfg.siteRules || {}).length;
+  rulesEl.textContent = n ? `${n} remembered site rule${n === 1 ? "" : "s"}` : "No remembered site rules";
   tokenStateEl.textContent = cfg.token ? "Paired with app" : "Not paired yet";
   tokenStateEl.className = cfg.token ? "ok" : "bad";
   lastEventEl.textContent = cfg.lastEvent
@@ -37,8 +43,14 @@ document.getElementById("pair").addEventListener("click", async () => {
 });
 
 document.getElementById("save").addEventListener("click", async () => {
-  await chrome.storage.local.set({ token: tokenEl.value.trim(), enabled: enabledEl.checked });
+  await chrome.storage.local.set({ token: tokenEl.value.trim(), enabled: enabledEl.checked, mode: modeEl.value });
   setStatus("Saved.", true);
+  load();
+});
+
+document.getElementById("clearRules").addEventListener("click", async () => {
+  await chrome.storage.local.set({ siteRules: {} });
+  setStatus("Site rules cleared.", true);
   load();
 });
 

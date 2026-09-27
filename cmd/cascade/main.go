@@ -37,7 +37,7 @@ func run(args []string) int {
 		resume   = fs.Bool("resume", false, "resume from an existing .cascade sidecar if present")
 		limit    = fs.String("limit", "", "aggregate rate limit, e.g. 2M or 500K (default: unlimited)")
 		sha      = fs.String("sha256", "", "expected SHA-256 hex digest to verify on completion")
-		retries  = fs.Int("retries", 5, "per-segment retry attempts")
+		retries  = fs.Int("retries", 0, "per-window retry attempts; 0 = keep retrying up to 15 minutes")
 		cookie   = fs.String("cookie", "", "Cookie header value")
 		user     = fs.String("user", "", "HTTP basic auth as user:password")
 		proxy    = fs.String("proxy", "", "proxy URL, e.g. http://user:pass@host:port")

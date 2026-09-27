@@ -79,21 +79,31 @@ type Job struct {
 	state State
 	err   error
 
-	cancel    context.CancelFunc
-	paused    bool // a pause was requested for the current run
-	cancelReq bool // a force-cancel was requested for the current run
-	dl        *download.Downloader
+	cancel      context.CancelFunc
+	paused      bool // a pause was requested for the current run
+	cancelReq   bool // a force-cancel was requested for the current run
+	autoRetries int  // times re-queued after a transient (network) failure
+	dl          *download.Downloader
 }
+
+// Broken-download recovery: a job that fails on a transient network error is
+// re-queued (resuming from disk) after failRetryDelay, up to maxAutoRetries.
+const (
+	failRetryDelay = 30 * time.Second
+	maxAutoRetries = 50
+)
 
 // Status is an immutable snapshot of a job.
 type Status struct {
 	ID       string
+	URL      string
 	Out      string // output path
 	State    State
 	Priority int
 	Err      error
 	Bytes    int64
 	Total    int64
+	Retries  int // automatic re-queues after transient failures
 }
 
 // Manager runs a set of jobs with bounded concurrency.
@@ -280,7 +290,8 @@ func (m *Manager) Statuses() []Status {
 }
 
 func (m *Manager) statusLocked(j *Job) Status {
-	st := Status{ID: j.ID, Out: j.Out, State: j.state, Priority: j.Priority, Err: j.err}
+	st := Status{ID: j.ID, URL: j.URL, Out: j.Out, State: j.state, Priority: j.Priority,
+		Err: j.err, Retries: j.autoRetries}
 	if j.dl != nil {
 		if meter := j.dl.Meter(); meter != nil {
 			st.Bytes = meter.Done()
@@ -397,6 +408,15 @@ func (m *Manager) launchLocked(ctx context.Context, j *Job) {
 			j.Options.Resume = true
 			j.state = Pending
 			j.StartAt = time.Now().Add(gateRetryDelay)
+			j.err = err
+		case download.IsTransient(err) && j.autoRetries < maxAutoRetries:
+			// Network gave out (connection resets, corrupted TLS records, 5xx)
+			// beyond the engine's own retry window: keep the job alive and
+			// resume from disk after a pause instead of failing the download.
+			j.autoRetries++
+			j.Options.Resume = true
+			j.state = Pending
+			j.StartAt = time.Now().Add(failRetryDelay)
 			j.err = err
 		default:
 			j.state = Failed

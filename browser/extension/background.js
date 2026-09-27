@@ -1,21 +1,22 @@
 // Cascade download capture (MV3 service worker).
 //
-// When a download starts in the browser, if the Cascade app is running and the
-// extension is paired, this enqueues the download in Cascade (with cookies and
-// referrer so authenticated downloads work) and cancels the browser's copy.
-// If the app is not reachable or not paired, the browser download proceeds
-// normally, so the extension is safe to leave installed.
+// When a download starts in the browser, the extension either asks the user
+// ("Download with Cascade?" popup), or acts on a remembered per-site rule or the
+// global mode. Handing off means: make sure the app is running (launching it
+// through the native-messaging host if needed), POST the download to it (with
+// cookies and referrer so authenticated downloads work), and only then cancel
+// the browser's copy. The browser download keeps running until the user (or a
+// rule) chooses Cascade, so nothing is ever lost.
 //
-// Pairing: on first run the extension asks the app for its token (GET /pair);
-// the app shows an "Allow?" prompt and the user clicks once. No copy/paste.
-// Heartbeat: a periodic ping lets the app display "Extension: connected".
+// Modes: "ask" (default), "always" (Cascade without asking), "never" (off).
+// Site rules: {host: "cascade" | "browser"} remembered from the popup.
 
 const PORTS = [8760, 8761, 8762];
 const CLIENT_HEADERS = { "X-Cascade-Client": "extension" };
 const log = (...a) => console.log("[cascade]", ...a);
 
 async function getConfig() {
-  return chrome.storage.local.get({ token: "", enabled: true });
+  return chrome.storage.local.get({ token: "", enabled: true, mode: "ask", siteRules: {} });
 }
 
 async function findBase() {
@@ -45,7 +46,7 @@ async function pair() {
   if (!base) return { ok: false, reason: "app not reachable" };
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 95000); // app prompt times out at 90s
+    const t = setTimeout(() => ctrl.abort(), 95000);
     const r = await fetch(`${base}/pair`, { headers: CLIENT_HEADERS, signal: ctrl.signal });
     clearTimeout(t);
     if (!r.ok) return { ok: false, reason: `HTTP ${r.status}` };
@@ -61,8 +62,8 @@ async function pair() {
 
 // ensureApp returns {base, token} for a running app, launching it through the
 // native-messaging host if it is not running. With the host installed the
-// token comes back over the browser-enforced trusted channel, so no Allow
-// prompt is needed; without the host, it falls back to /pair (Allow prompt).
+// token comes back over the browser-enforced trusted channel (no prompt);
+// without it, falls back to /pair (Allow prompt in the app).
 async function ensureApp() {
   let base = await findBase();
   let { token } = await getConfig();
@@ -80,8 +81,6 @@ async function ensureApp() {
       log("native host replied:", r && r.error);
     }
   } catch (e) {
-    // Host not installed (run scripts/install-macos.sh) or not allowed for this
-    // extension ID; fall back to the app already running + /pair.
     log("native host unavailable:", e && e.message);
   }
   if (!base) base = await findBase();
@@ -93,8 +92,6 @@ async function ensureApp() {
 }
 
 async function heartbeat() {
-  // Keep the app's "Extension: connected" indicator fresh; pair if needed. Does
-  // not launch the app (launch happens on demand when a download starts).
   const base = await findBase();
   const { token } = await getConfig();
   if (base && !token) await pair();
@@ -111,12 +108,6 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === "cascade-heartbeat") heartbeat();
 });
-chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-  if (msg && msg.type === "pair") {
-    pair().then(reply);
-    return true; // async reply
-  }
-});
 
 async function cookieHeader(url) {
   try {
@@ -127,10 +118,117 @@ async function cookieHeader(url) {
   }
 }
 
-chrome.downloads.onCreated.addListener(async (item) => {
-  let { token, enabled } = await getConfig();
-  log("download detected:", item.url, "enabled:", enabled, "paired:", !!token);
-  if (!enabled) {
+function hostOf(url) {
+  try {
+    return new URL(url).hostname;
+  } catch (e) {
+    return "";
+  }
+}
+
+// handOff sends the download to the app and, on success, cancels the browser's
+// copy. If the browser already finished it, nothing is handed off.
+async function handOff(item) {
+  try {
+    const [cur] = await chrome.downloads.search({ id: item.id });
+    if (cur && cur.state === "complete") {
+      await note("already finished in browser; not handed off", item.url);
+      return;
+    }
+  } catch (e) {}
+
+  const app = await ensureApp();
+  if (!app.base) {
+    await note("app not running and could not be launched (install the native host); leaving to browser", item.url);
+    return;
+  }
+  if (!app.token) {
+    await note("not paired; leaving to browser", item.url);
+    return;
+  }
+
+  const cookie = await cookieHeader(item.url);
+  const filename = item.filename ? item.filename.split(/[\\/]/).pop() : "";
+  let handedOff = false;
+  try {
+    const resp = await fetch(`${app.base}/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Cascade-Token": app.token, ...CLIENT_HEADERS },
+      body: JSON.stringify({
+        url: item.url,
+        filename,
+        cookie,
+        referrer: item.referrer || "",
+        userAgent: navigator.userAgent,
+      }),
+    });
+    handedOff = resp.ok;
+    if (handedOff) {
+      await note("handed off to app", item.url);
+    } else {
+      // The app verifies it can fetch the URL before accepting; a refusal
+      // (e.g. 403 to a plain GET on a session-bound link) means the browser's
+      // own download is left running, so nothing is lost.
+      let reason = `HTTP ${resp.status}`;
+      try {
+        const j = await resp.json();
+        if (j && j.error) reason = j.error;
+      } catch (e) {}
+      await note("app refused (" + reason + "); left to browser", item.url);
+    }
+  } catch (e) {
+    await note("POST failed: " + (e && e.message), item.url);
+  }
+  if (handedOff) {
+    try {
+      await chrome.downloads.cancel(item.id);
+      await chrome.downloads.erase({ id: item.id });
+    } catch (e) {}
+    flashBadge("↓");
+  }
+}
+
+async function askUser(item) {
+  await chrome.storage.session.set({ ["pending:" + item.id]: item });
+  await chrome.windows.create({
+    url: chrome.runtime.getURL("choose.html?d=" + item.id),
+    type: "popup",
+    width: 440,
+    height: 230,
+    focused: true,
+  });
+  await note("asked user", item.url);
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+  if (msg && msg.type === "pair") {
+    pair().then(reply);
+    return true;
+  }
+  if (msg && msg.type === "choice") {
+    (async () => {
+      const { siteRules } = await getConfig();
+      if (msg.remember && msg.item && msg.item.host) {
+        siteRules[msg.item.host] = msg.choice;
+        await chrome.storage.local.set({ siteRules });
+      }
+      await chrome.storage.session.remove("pending:" + msg.id);
+      if (msg.choice === "cascade") await handOff(msg.item);
+      else await note("user chose browser", msg.item && msg.item.url);
+      reply({ ok: true });
+    })();
+    return true;
+  }
+});
+
+chrome.downloads.onCreated.addListener(async (raw) => {
+  const { enabled, mode, siteRules } = await getConfig();
+  // Prefer the final URL (after redirects): that is the one a plain GET can
+  // actually fetch. raw.url may be the page that initiated the download.
+  const url = raw.finalUrl || raw.url;
+  const item = { id: raw.id, url, filename: raw.filename || "", referrer: raw.referrer || "", host: hostOf(url) };
+  log("download detected:", item.url, "mode:", mode);
+  if (!enabled || mode === "never") {
     await note("skipped: capture disabled", item.url);
     return;
   }
@@ -142,49 +240,16 @@ chrome.downloads.onCreated.addListener(async (item) => {
     await note("skipped: localhost url", item.url);
     return;
   }
-
-  // P0: make sure the app is running (launch it via the native host if not)
-  // and that we hold its token; only then hand the download over.
-  const app = await ensureApp();
-  const base = app.base;
-  token = app.token;
-  if (!base) {
-    await note("app not running and could not be launched (install the native host); leaving to browser", item.url);
+  const rule = siteRules[item.host];
+  if (rule === "browser") {
+    await note("site rule: browser", item.url);
     return;
   }
-  if (!token) {
-    await note("not paired; leaving to browser", item.url);
+  if (mode === "always" || rule === "cascade") {
+    await handOff(item);
     return;
   }
-
-  const cookie = await cookieHeader(item.url);
-  const filename = item.filename ? item.filename.split(/[\\/]/).pop() : "";
-
-  let handedOff = false;
-  try {
-    const resp = await fetch(`${base}/add`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Cascade-Token": token, ...CLIENT_HEADERS },
-      body: JSON.stringify({ url: item.url, filename, cookie, referrer: item.referrer || "" }),
-    });
-    handedOff = resp.ok;
-    await note(handedOff ? "handed off to app" : `app rejected: HTTP ${resp.status}`, item.url);
-  } catch (e) {
-    await note("POST failed: " + (e && e.message), item.url);
-    handedOff = false;
-  }
-
-  // Only cancel the browser's download once Cascade has accepted it, so a
-  // failed hand-off never loses the download.
-  if (handedOff) {
-    try {
-      await chrome.downloads.cancel(item.id);
-      await chrome.downloads.erase({ id: item.id });
-    } catch (e) {
-      // already finished or gone; harmless
-    }
-    flashBadge("↓");
-  }
+  await askUser(item);
 });
 
 function flashBadge(text) {
