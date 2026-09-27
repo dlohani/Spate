@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Cascade Download Capture",
+  "version": "0.1.0",
+  "description": "Automatically send downloads started in the browser to the Cascade app, with cookies and referrer.",
+  "permissions": ["downloads", "cookies", "storage"],
+  "host_permissions": ["http://127.0.0.1/*", "<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "options_page": "options.html",
+  "action": { "default_title": "Cascade", "default_popup": "options.html" }
+}

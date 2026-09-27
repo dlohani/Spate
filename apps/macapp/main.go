@@ -5,6 +5,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"os"
@@ -20,6 +22,7 @@ import (
 
 	"cascade/internal/download"
 	"cascade/internal/job"
+	"cascade/internal/localapi"
 )
 
 func main() {
@@ -27,6 +30,18 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = mgr.Serve(ctx) }()
+
+	// Browser capture endpoint (the extension posts downloads here).
+	token := os.Getenv("CASCADE_TOKEN")
+	if token == "" {
+		token = randToken()
+	}
+	capSrv := localapi.New(mgr, token, defaultDownloadDir())
+	captureURL := ""
+	if addr, err := capSrv.Start(); err == nil {
+		captureURL = "http://" + addr
+	}
+	defer capSrv.Close()
 
 	a := app.New()
 	w := a.NewWindow("Cascade")
@@ -69,6 +84,12 @@ func main() {
 	addBtn := widget.NewButton("Download", add)
 	urlEntry.OnSubmitted = func(string) { add() }
 
+	// Browser-capture info: the token is shown in a read-only-style entry so it
+	// can be copied into the browser extension's options.
+	tokenField := widget.NewEntry()
+	tokenField.SetText(token)
+	captureLabel := widget.NewLabel("Browser capture: " + orDisabled(captureURL))
+
 	form := container.NewVBox(
 		widget.NewLabel("URL"),
 		urlEntry,
@@ -77,6 +98,9 @@ func main() {
 			container.NewVBox(widget.NewLabel("Connections"), connEntry),
 		),
 		addBtn,
+		widget.NewSeparator(),
+		captureLabel,
+		container.NewVBox(widget.NewLabel("Extension token (paste into the browser extension)"), tokenField),
 		widget.NewSeparator(),
 		widget.NewLabel("Downloads"),
 	)
@@ -135,6 +159,21 @@ func makeRow(mgr *job.Manager, s job.Status) fyne.CanvasObject {
 	}
 
 	return container.NewVBox(container.NewBorder(nil, nil, nil, btn, name), bar)
+}
+
+func randToken() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "cascade-token"
+	}
+	return hex.EncodeToString(b)
+}
+
+func orDisabled(url string) string {
+	if url == "" {
+		return "disabled (port in use)"
+	}
+	return "ON at " + url
 }
 
 func defaultDownloadDir() string {

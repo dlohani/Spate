@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cascade</title>
+    <style>
+      body { font: 14px -apple-system, system-ui, sans-serif; padding: 16px; width: 320px; }
+      label { display: block; margin: 10px 0 4px; }
+      input[type="text"] { width: 100%; box-sizing: border-box; padding: 6px; }
+      .row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+      button { padding: 6px 12px; }
+      #status { margin-top: 12px; font-size: 13px; }
+      .ok { color: #137333; } .bad { color: #c5221f; }
+    </style>
+  </head>
+  <body>
+    <h3>Cascade capture</h3>
+    <label for="token">App token (shown in the Cascade window)</label>
+    <input id="token" type="text" placeholder="paste token here" />
+    <div class="row">
+      <input id="enabled" type="checkbox" checked />
+      <label for="enabled" style="margin:0">Capture browser downloads</label>
+    </div>
+    <div class="row">
+      <button id="save">Save</button>
+      <button id="test">Test connection</button>
+    </div>
+    <div id="status"></div>
+    <script src="options.js"></script>
+  </body>
+</html>
