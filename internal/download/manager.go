@@ -13,11 +13,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"cascade/internal/httpc"
@@ -34,6 +36,7 @@ type Options struct {
 	RateLimit         int64  // aggregate bytes/sec, 0 = unlimited
 	SHA256            string // optional expected hex digest to verify on completion
 	Resume            bool   // reuse an existing .cascade sidecar if valid
+	ExtractTo         string // if set, extract a downloaded archive into this dir
 
 	// Request customization.
 	Headers       map[string]string // extra request headers
@@ -46,6 +49,13 @@ type Options struct {
 	// RefreshURL, when set, is called to obtain a fresh download URL if the
 	// current one is rejected as expired (HTTP 401/403/410) mid-download.
 	RefreshURL func(ctx context.Context, old string) (string, error)
+
+	// Gate, when set, is polled before and during the download; if it returns
+	// false the download is blocked or paused (used for Wi-Fi-only / battery
+	// policies). Run then returns a *GateError.
+	Gate GateFunc
+	// GatePollInterval is how often Gate is re-checked mid-download (default 3s).
+	GatePollInterval time.Duration
 }
 
 func (o *Options) setDefaults() {
@@ -172,9 +182,13 @@ func (d *Downloader) Run(ctx context.Context) error {
 		return err
 	}
 	if d.out == "" {
-		d.out = deriveFilename(d.url, probe.Filename)
+		d.out = deriveFilename(d.currentURL(), probe.Filename, probe.ContentType)
 	}
 	d.validator = probe.Validator()
+
+	if ge := d.gateOpen(); ge != nil {
+		return ge
+	}
 
 	// Unknown size or no range support: fall back to a single stream.
 	if probe.Size < 0 || !probe.AcceptRanges {
@@ -209,12 +223,18 @@ func (d *Downloader) Run(ctx context.Context) error {
 		}
 	}()
 
-	runErr := d.runWorkers(ctx)
+	gctx, gateCheck, gateStop := d.gateContext(ctx)
+	defer gateStop()
+
+	runErr := d.runWorkers(gctx)
 
 	close(stop)
 	saver.Wait()
 	_ = d.ctrl.Save() // final flush regardless of outcome
 
+	if ge := gateCheck(); ge != nil {
+		return ge // policy closed mid-download; state is saved for resume
+	}
 	if runErr != nil {
 		return runErr
 	}
@@ -227,7 +247,72 @@ func (d *Downloader) Run(ctx context.Context) error {
 	if err := verifySHA256(d.out, d.opts.SHA256); err != nil {
 		return err
 	}
-	return d.ctrl.Remove()
+	if err := d.ctrl.Remove(); err != nil {
+		return err
+	}
+	return d.postProcess()
+}
+
+// gateOpen returns a *GateError if the policy currently forbids downloading.
+func (d *Downloader) gateOpen() *GateError {
+	if d.opts.Gate == nil {
+		return nil
+	}
+	if ok, reason := d.opts.Gate(); !ok {
+		return &GateError{Reason: reason}
+	}
+	return nil
+}
+
+// gateContext returns a context that is cancelled if the policy gate closes
+// while the download runs, a check that reports the closure reason afterward,
+// and a stop func to release the monitor.
+func (d *Downloader) gateContext(ctx context.Context) (context.Context, func() *GateError, func()) {
+	if d.opts.Gate == nil {
+		return ctx, func() *GateError { return nil }, func() {}
+	}
+	interval := d.opts.GatePollInterval
+	if interval <= 0 {
+		interval = 3 * time.Second
+	}
+	gctx, cancel := context.WithCancel(ctx)
+	var reason atomic.Value
+	done := make(chan struct{})
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-gctx.Done():
+				return
+			case <-t.C:
+				if ok, r := d.opts.Gate(); !ok {
+					reason.Store(r)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	check := func() *GateError {
+		if r, ok := reason.Load().(string); ok && r != "" {
+			return &GateError{Reason: r}
+		}
+		return nil
+	}
+	var once sync.Once
+	stop := func() { once.Do(func() { close(done); cancel() }) }
+	return gctx, check, stop
+}
+
+// postProcess runs any configured after-download step (currently extraction).
+func (d *Downloader) postProcess() error {
+	if d.opts.ExtractTo == "" {
+		return nil
+	}
+	return extractArchive(d.out, d.opts.ExtractTo)
 }
 
 // prepare resolves resume state and opens/preallocates the output file.
@@ -384,19 +469,58 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 	if err := f.Sync(); err != nil {
 		return err
 	}
-	return verifySHA256(d.out, d.opts.SHA256)
+	if err := verifySHA256(d.out, d.opts.SHA256); err != nil {
+		return err
+	}
+	return d.postProcess()
 }
 
 // deriveFilename picks an output name from a Content-Disposition suggestion or
-// the URL path, defaulting to download.bin.
-func deriveFilename(rawURL, suggested string) string {
+// the URL path, defaulting to download.bin. When the chosen name has no
+// extension, one is inferred from the Content-Type.
+func deriveFilename(rawURL, suggested, contentType string) string {
 	if suggested != "" {
 		return suggested
 	}
+	name := "download"
 	if u, err := url.Parse(rawURL); err == nil {
 		if base := path.Base(u.Path); base != "" && base != "/" && base != "." {
-			return base
+			name = base
 		}
 	}
-	return "download.bin"
+	if path.Ext(name) == "" {
+		if ext := extensionForType(contentType); ext != "" {
+			name += ext
+		} else if name == "download" {
+			name += ".bin"
+		}
+	}
+	return name
+}
+
+// extensionForType returns a file extension (with dot) for a Content-Type, or ""
+// when none is known or the type is generic.
+func extensionForType(contentType string) string {
+	if contentType == "" {
+		return ""
+	}
+	mt, _, err := mime.ParseMediaType(contentType)
+	if err != nil || mt == "application/octet-stream" {
+		return ""
+	}
+	// Prefer common, stable extensions over mime's sometimes-odd first choice.
+	switch mt {
+	case "application/zip":
+		return ".zip"
+	case "application/json":
+		return ".json"
+	case "text/plain":
+		return ".txt"
+	case "application/pdf":
+		return ".pdf"
+	}
+	if exts, _ := mime.ExtensionsByType(mt); len(exts) > 0 {
+		return exts[0]
+	}
+	return ""
 }

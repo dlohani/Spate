@@ -18,6 +18,16 @@ import (
 	"cascade/internal/download"
 )
 
+// gateRetryDelay is how long a job waits before retrying after a policy gate
+// (Wi-Fi/battery) blocked it.
+const gateRetryDelay = 10 * time.Second
+
+// isGateError reports whether err is a download policy-gate error.
+func isGateError(err error) bool {
+	var ge *download.GateError
+	return errors.As(err, &ge)
+}
+
 // State is a job's lifecycle state.
 type State int
 
@@ -287,6 +297,13 @@ func (m *Manager) launchLocked(ctx context.Context, j *Job) {
 		case j.paused && errors.Is(err, context.Canceled):
 			j.state = Paused
 			j.err = nil
+		case isGateError(err):
+			// Policy (Wi-Fi/battery) blocked it; re-queue to retry when
+			// conditions may have changed, continuing from disk.
+			j.Options.Resume = true
+			j.state = Pending
+			j.StartAt = time.Now().Add(gateRetryDelay)
+			j.err = err
 		default:
 			j.state = Failed
 			j.err = err

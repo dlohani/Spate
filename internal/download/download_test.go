@@ -1,10 +1,12 @@
 package download
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -490,6 +492,143 @@ func TestURLRefreshOnExpiry(t *testing.T) {
 	}
 	if !strings.Contains(d.currentURL(), "t=B") {
 		t.Errorf("expected URL to be refreshed to t=B, got %s", d.currentURL())
+	}
+}
+
+func TestDeriveFilenameAddsExtension(t *testing.T) {
+	cases := []struct {
+		url, suggested, ctype, want string
+	}{
+		{"http://x/file.bin", "", "", "file.bin"},
+		{"http://x/report", "", "application/pdf", "report.pdf"},
+		{"http://x/data", "", "application/zip", "data.zip"},
+		{"http://x/thing", "", "application/octet-stream", "thing"},
+		{"http://x/", "", "", "download.bin"},
+		{"http://x/whatever", "server-name.txt", "application/pdf", "server-name.txt"},
+	}
+	for _, c := range cases {
+		got := deriveFilename(c.url, c.suggested, c.ctype)
+		if got != c.want {
+			t.Errorf("deriveFilename(%q,%q,%q) = %q, want %q", c.url, c.suggested, c.ctype, got, c.want)
+		}
+	}
+}
+
+func TestExtractZipAfterDownload(t *testing.T) {
+	// Build a small zip in memory.
+	var zbuf bytes.Buffer
+	zw := zip.NewWriter(&zbuf)
+	files := map[string]string{"a.txt": "hello", "dir/b.txt": "world"}
+	for name, content := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Write([]byte(content))
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data := zbuf.Bytes()
+
+	m := &manualServer{data: data, etag: `"z1"`}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "archive.zip")
+	dest := filepath.Join(dir, "unpacked")
+	d := New(srv.URL, out, Options{Conns: 2, ExtractTo: dest, SHA256: sha256hex(data)})
+	if err := d.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for name, content := range files {
+		got, err := os.ReadFile(filepath.Join(dest, name))
+		if err != nil {
+			t.Fatalf("extracted %s: %v", name, err)
+		}
+		if string(got) != content {
+			t.Errorf("extracted %s = %q, want %q", name, got, content)
+		}
+	}
+}
+
+func TestExtractZipRejectsTraversal(t *testing.T) {
+	dir := t.TempDir()
+	zipPath := filepath.Join(dir, "evil.zip")
+	f, err := os.Create(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	w, _ := zw.Create("../escape.txt")
+	w.Write([]byte("pwned"))
+	zw.Close()
+	f.Close()
+
+	if err := extractZip(zipPath, filepath.Join(dir, "dest")); err == nil {
+		t.Fatal("expected zip-slip traversal to be rejected")
+	}
+}
+
+func TestGateBlocksThenResumes(t *testing.T) {
+	// Initial gate closed: Run must fail immediately with a *GateError.
+	data := randomBlob(2 << 20)
+	m := &manualServer{data: data, etag: `"v1"`}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "file.bin")
+
+	blocked := New(srv.URL, out, Options{
+		Conns: 2,
+		Gate:  func() (bool, string) { return false, "test: closed" },
+	})
+	err := blocked.Run(context.Background())
+	var ge *GateError
+	if !errors.As(err, &ge) {
+		t.Fatalf("expected *GateError, got %v", err)
+	}
+
+	// Gate that closes after the first (initial) check, cancelling mid-download.
+	data2 := randomBlob(4 << 20)
+	m2 := &manualServer{data: data2, etag: `"v2"`, delay: 20 * time.Millisecond}
+	srv2 := httptest.NewServer(m2.handler())
+	defer srv2.Close()
+	out2 := filepath.Join(t.TempDir(), "file2.bin")
+
+	var calls atomic.Int64
+	d := New(srv2.URL, out2, Options{
+		Conns:            4,
+		MinSegment:       256 << 10,
+		WindowSize:       256 << 10,
+		GatePollInterval: 10 * time.Millisecond,
+		Resume:           true,
+		Gate: func() (bool, string) {
+			if calls.Add(1) <= 1 {
+				return true, "" // initial check passes
+			}
+			return false, "test: closed mid-download"
+		},
+	})
+	if err := d.Run(context.Background()); !errors.As(err, &ge) {
+		t.Fatalf("expected *GateError mid-download, got %v", err)
+	}
+	if ctrl, _ := LoadControl(out2); ctrl == nil {
+		t.Fatal("expected resumable sidecar after gate closed")
+	}
+
+	// Reopen the gate and resume to completion.
+	d2 := New(srv2.URL, out2, Options{
+		Conns: 4, MinSegment: 256 << 10, WindowSize: 256 << 10, Resume: true,
+		SHA256: sha256hex(data2),
+		Gate:   func() (bool, string) { return true, "" },
+	})
+	if err := d2.Run(context.Background()); err != nil {
+		t.Fatalf("resume after gate reopened: %v", err)
+	}
+	got, _ := os.ReadFile(out2)
+	if !bytes.Equal(got, data2) {
+		t.Fatal("content mismatch after gate resume")
 	}
 }
 
