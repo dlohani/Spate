@@ -33,14 +33,31 @@ async function cookieHeader(url) {
   }
 }
 
+const log = (...a) => console.log("[cascade]", ...a);
+
 chrome.downloads.onCreated.addListener(async (item) => {
   const { token, enabled } = await getConfig();
-  if (!enabled || !token) return;
-  if (!item.url || !/^https?:/i.test(item.url)) return;
+  log("download detected:", item.url, "enabled:", enabled, "hasToken:", !!token);
+  if (!enabled) {
+    log("capture disabled in options; leaving to browser");
+    return;
+  }
+  if (!token) {
+    log("no token set; open the extension options and paste the app's token");
+    return;
+  }
+  if (!item.url || !/^https?:/i.test(item.url)) {
+    log("skipping non-http url");
+    return;
+  }
   if (item.url.includes("127.0.0.1")) return;
 
   const base = await findBase();
-  if (!base) return; // app not running: let the browser handle it
+  if (!base) {
+    log("Cascade app not reachable on 8760-8762; leaving to browser");
+    return;
+  }
+  log("app reachable at", base);
 
   const cookie = await cookieHeader(item.url);
   const filename = item.filename ? item.filename.split(/[\\/]/).pop() : "";
@@ -58,7 +75,9 @@ chrome.downloads.onCreated.addListener(async (item) => {
       }),
     });
     handedOff = resp.ok;
+    log("POST /add ->", resp.status, handedOff ? "handed off" : "rejected");
   } catch (e) {
+    log("POST /add failed:", e && e.message);
     handedOff = false;
   }
 

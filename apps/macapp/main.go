@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -32,10 +33,7 @@ func main() {
 	go func() { _ = mgr.Serve(ctx) }()
 
 	// Browser capture endpoint (the extension posts downloads here).
-	token := os.Getenv("CASCADE_TOKEN")
-	if token == "" {
-		token = randToken()
-	}
+	token := loadOrCreateToken()
 	capSrv := localapi.New(mgr, token, defaultDownloadDir())
 	captureURL := ""
 	if addr, err := capSrv.Start(); err == nil {
@@ -191,6 +189,31 @@ func randToken() string {
 		return "cascade-token"
 	}
 	return hex.EncodeToString(b)
+}
+
+// loadOrCreateToken returns a stable capture token: the CASCADE_TOKEN env if set,
+// otherwise one persisted under the user config dir (generated once). A stable
+// token means the browser extension is configured only once, not per restart.
+func loadOrCreateToken() string {
+	if t := os.Getenv("CASCADE_TOKEN"); t != "" {
+		return t
+	}
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return randToken()
+	}
+	cdir := filepath.Join(dir, "cascade")
+	tokenPath := filepath.Join(cdir, "token")
+	if b, err := os.ReadFile(tokenPath); err == nil {
+		if t := strings.TrimSpace(string(b)); t != "" {
+			return t
+		}
+	}
+	t := randToken()
+	if err := os.MkdirAll(cdir, 0o700); err == nil {
+		_ = os.WriteFile(tokenPath, []byte(t), 0o600)
+	}
+	return t
 }
 
 func orDisabled(url string) string {
