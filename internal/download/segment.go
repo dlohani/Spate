@@ -73,13 +73,27 @@ func (d *Downloader) fetchPiece(ctx context.Context, idx int) error {
 	}
 }
 
+// IsTransient reports whether err (possibly wrapped) is a retryable network or
+// server condition, e.g. a connection reset, a corrupted TLS record, a short
+// read, or a 5xx/429. Callers (the job manager) use it to decide whether a
+// failed download is worth re-queuing rather than declaring it broken.
+func IsTransient(err error) bool { return isTransient(err) }
+
 // fetchWindow downloads the byte range [start, end] of segment idx, retrying
 // transient failures and resuming from the segment's advanced Done offset so no
-// byte is fetched twice.
+// byte is fetched twice. With Retries > 0 it makes that many extra attempts;
+// with Retries == 0 it keeps retrying (backoff capped at 10s) for RetryFor.
 func (d *Downloader) fetchWindow(ctx context.Context, idx int, start, end int64) error {
 	var lastErr error
-	for attempt := 0; attempt <= d.opts.Retries; attempt++ {
+	began := time.Now()
+	for attempt := 0; ; attempt++ {
 		if attempt > 0 {
+			if d.opts.Retries > 0 && attempt > d.opts.Retries {
+				break
+			}
+			if d.opts.Retries == 0 && time.Since(began) > d.opts.RetryFor {
+				break
+			}
 			if err := sleepBackoff(ctx, attempt); err != nil {
 				return err
 			}
@@ -240,7 +254,11 @@ func isTransient(err error) bool {
 func sleepBackoff(ctx context.Context, attempt int) error {
 	const base = 300 * time.Millisecond
 	const max = 10 * time.Second
-	d := base << (attempt - 1)
+	shift := attempt - 1
+	if shift > 6 { // 300ms<<6 already exceeds max; avoid overflow on long retry runs
+		shift = 6
+	}
+	d := base << shift
 	if d > max {
 		d = max
 	}

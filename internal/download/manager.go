@@ -32,7 +32,8 @@ type Options struct {
 	MinSegment        int64  // smallest initial segment size in bytes (default 1 MiB)
 	WindowSize        int64  // per-request window for windowed fetching (default 4 MiB)
 	StealMinRemaining int64  // min tail to justify a work-steal split (default 2*WindowSize)
-	Retries           int    // per-window retry attempts (default 5)
+	Retries           int    // per-window extra attempts; 0 = keep retrying for RetryFor
+	RetryFor          time.Duration // how long a window keeps retrying when Retries == 0 (default 15m)
 	RateLimit         int64  // aggregate bytes/sec, 0 = unlimited
 	SHA256            string // optional expected hex digest to verify on completion
 	Resume            bool   // reuse an existing .cascade sidecar if valid
@@ -75,8 +76,9 @@ func (o *Options) setDefaults() {
 	}
 	if o.Retries < 0 {
 		o.Retries = 0
-	} else if o.Retries == 0 {
-		o.Retries = 5
+	}
+	if o.RetryFor <= 0 {
+		o.RetryFor = 15 * time.Minute
 	}
 }
 
@@ -251,6 +253,20 @@ func (d *Downloader) Run(ctx context.Context) error {
 		return err
 	}
 	return d.postProcess()
+}
+
+// CheckFetchable probes u with the same client and request customization a
+// download would use and returns an error if the server refuses (e.g. 403 on a
+// session-bound or POST-only URL). Callers use it to reject a hand-off before
+// the browser's own download is cancelled, so nothing is lost.
+func CheckFetchable(ctx context.Context, u string, opts Options) error {
+	opts.setDefaults()
+	client, err := httpc.New(httpc.Config{MaxConns: 1, Proxy: opts.Proxy, Insecure: opts.Insecure})
+	if err != nil {
+		return err
+	}
+	_, err = Probe(ctx, client, newRequestConfig(opts), u)
+	return err
 }
 
 // gateOpen returns a *GateError if the policy currently forbids downloading.

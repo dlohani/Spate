@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cascade</title>
+    <style>
+      body { font: 14px -apple-system, system-ui, sans-serif; margin: 0; padding: 18px; width: 400px; }
+      h3 { margin: 0 0 8px; font-size: 15px; }
+      .file { font-weight: 600; word-break: break-all; margin-bottom: 4px; }
+      .host { color: #555; font-size: 12px; margin-bottom: 14px; word-break: break-all; }
+      .buttons { display: flex; gap: 8px; }
+      button { flex: 1; padding: 9px 10px; font-size: 13px; cursor: pointer; }
+      #cascade { background: #1a73e8; color: #fff; border: none; border-radius: 6px; }
+      #browser { background: #f1f3f4; border: none; border-radius: 6px; }
+      .remember { margin-top: 12px; font-size: 12px; color: #444; display: flex; align-items: center; gap: 6px; }
+    </style>
+  </head>
+  <body>
+    <h3>Download with Cascade?</h3>
+    <div class="file" id="file">…</div>
+    <div class="host" id="host"></div>
+    <div class="buttons">
+      <button id="cascade">Download with Cascade</button>
+      <button id="browser">Use the browser</button>
+    </div>
+    <label class="remember"><input type="checkbox" id="remember" /> Remember my choice for <span id="hostShort"></span></label>
+    <script src="choose.js"></script>
+  </body>
+</html>

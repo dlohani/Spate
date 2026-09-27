@@ -82,13 +82,26 @@ func TestAddRequiresTokenAndEnqueues(t *testing.T) {
 	}
 }
 
+// okOrigin serves a small range-capable file, for hand-off tests that need a
+// URL the app's fetchability probe accepts.
+func okOrigin(t *testing.T) *httptest.Server {
+	t.Helper()
+	data := make([]byte, 64<<10)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "f.bin", time.Now(), bytes.NewReader(data))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
 func TestWebOriginRejectedExtensionAllowed(t *testing.T) {
+	origin := okOrigin(t)
 	s := New(job.New(1), "tok", t.TempDir())
 	if _, err := s.Start(); err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	body := []byte(`{"url":"http://example.invalid/f.bin"}`)
+	body := []byte(`{"url":"` + origin.URL + `/f.bin"}`)
 	do := func(origin string) int {
 		req, _ := http.NewRequest(http.MethodPost, "http://"+s.Addr()+"/add", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -162,6 +175,7 @@ func TestPairAllowDeclineAndHeartbeat(t *testing.T) {
 }
 
 func TestAddDedupesSameOutputPath(t *testing.T) {
+	origin := okOrigin(t)
 	mgr := job.New(1)
 	// No Serve/Run: the first job stays Pending, i.e. non-terminal.
 	s := New(mgr, "tok", t.TempDir())
@@ -170,7 +184,7 @@ func TestAddDedupesSameOutputPath(t *testing.T) {
 	}
 	defer s.Close()
 	post := func() map[string]any {
-		body := []byte(`{"url":"http://example.invalid/big.iso","filename":"big.iso"}`)
+		body := []byte(`{"url":"` + origin.URL + `/big.iso","filename":"big.iso"}`)
 		req, _ := http.NewRequest(http.MethodPost, "http://"+s.Addr()+"/add", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Cascade-Token", "tok")
@@ -190,6 +204,79 @@ func TestAddDedupesSameOutputPath(t *testing.T) {
 	}
 	if n := len(mgr.Statuses()); n != 1 {
 		t.Fatalf("expected 1 job, got %d", n)
+	}
+}
+
+func TestJobsListsQueueWithState(t *testing.T) {
+	mgr := job.New(1) // not driven: the job stays pending
+	s := New(mgr, "tok", t.TempDir())
+	if _, err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := mgr.Add(job.Spec{URL: "http://example.invalid/x.bin", Out: "/tmp/x.bin"}); err != nil {
+		t.Fatal(err)
+	}
+	get := func(token string) (int, []map[string]any) {
+		req, _ := http.NewRequest(http.MethodGet, "http://"+s.Addr()+"/jobs", nil)
+		if token != "" {
+			req.Header.Set("X-Cascade-Token", token)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out []map[string]any
+		json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+	if c, _ := get(""); c != http.StatusUnauthorized {
+		t.Errorf("no token: got %d, want 401", c)
+	}
+	c, jobs := get("tok")
+	if c != http.StatusOK || len(jobs) != 1 {
+		t.Fatalf("got %d with %d jobs, want 200 with 1", c, len(jobs))
+	}
+	j := jobs[0]
+	if j["state"] != "pending" || j["url"] != "http://example.invalid/x.bin" || j["out"] != "/tmp/x.bin" {
+		t.Errorf("unexpected job payload: %v", j)
+	}
+}
+
+func TestAddRefusesUnfetchableURL(t *testing.T) {
+	// An origin that answers 403 to a plain GET (session-bound / POST-only link).
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer origin.Close()
+
+	mgr := job.New(1)
+	s := New(mgr, "tok", t.TempDir())
+	if _, err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	body := []byte(`{"url":"` + origin.URL + `/file.bin","filename":"file.bin"}`)
+	req, _ := http.NewRequest(http.MethodPost, "http://"+s.Addr()+"/add", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Cascade-Token", "tok")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var m map[string]any
+	json.NewDecoder(resp.Body).Decode(&m)
+	if resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Fatalf("got %d, want 422 (refuse so the browser download is kept); body=%v", resp.StatusCode, m)
+	}
+	if !strings.Contains(m["error"].(string), "403") {
+		t.Errorf("error should explain the 403, got %v", m["error"])
+	}
+	if n := len(mgr.Statuses()); n != 0 {
+		t.Errorf("no job should be enqueued for an unfetchable URL, got %d", n)
 	}
 }
 

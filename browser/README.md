@@ -5,6 +5,29 @@ never copy/paste a URL. This is the only robust way to capture browser downloads
 (the alternative, a system-wide TLS-MITM proxy, is invasive and breaks cert
 pinning); IDM and JDownloader use a browser extension for the same reason.
 
+## What happens when a download starts
+
+The extension's mode (Options) decides:
+
+- **Ask** (default): a small popup offers **Download with Cascade** or **Use the
+  browser**, with "Remember my choice for this site". The browser's own
+  download keeps running while the popup is open, so choosing the browser (or
+  just closing the popup) loses nothing; only choosing Cascade hands it off.
+- **Always**: hand off without asking.
+- **Never**: leave everything to the browser.
+
+Remembered per-site rules override Ask; clear them in Options.
+
+Before accepting a hand-off, the app checks that it can actually fetch the URL
+with the same cookies, referrer and User-Agent the browser had. If the server
+refuses (typically 403 on a session-bound or POST-only link from a file-sharing
+site), the app declines, the extension leaves the browser's download running,
+and the Options page shows "app refused (...)". Those downloads stay in the
+browser by design rather than being lost.
+
+The app's queue, with each job's state and last error, is available at
+`GET /jobs` (token-guarded) and is what the app window shows.
+
 ## How it works
 
 ```
