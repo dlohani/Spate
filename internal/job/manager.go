@@ -209,10 +209,17 @@ func (m *Manager) statusLocked(j *Job) Status {
 // Run drives the queue until every job is terminal (Done or Failed), or ctx is
 // cancelled. It returns the first job error, if any. Jobs left only in Paused
 // state keep Run blocked until they are resumed or ctx is cancelled.
-func (m *Manager) Run(ctx context.Context) error {
+func (m *Manager) Run(ctx context.Context) error { return m.drive(ctx, true) }
+
+// Serve drives the queue indefinitely, processing jobs as they are added, and
+// returns only when ctx is cancelled. Use this when embedding the manager as a
+// long-lived background service (e.g. a mobile/desktop app).
+func (m *Manager) Serve(ctx context.Context) error { return m.drive(ctx, false) }
+
+func (m *Manager) drive(ctx context.Context, exitOnDrain bool) error {
 	for {
 		m.mu.Lock()
-		if m.allTerminalLocked() {
+		if exitOnDrain && m.allTerminalLocked() {
 			err := m.firstErrLocked()
 			m.mu.Unlock()
 			return err

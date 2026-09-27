@@ -37,7 +37,24 @@ button for non-DRM streaming media; native `.rar`/`.7z` extraction.
 
     go build -o cascade ./cmd/cascade
 
-Requires Go 1.22+. No external dependencies (standard library only).
+Requires Go 1.22+. The core has no external dependencies (standard library only).
+
+## Cross-platform
+
+One Go core exports to all five targets through a stable binding boundary; each
+platform adds only a thin native shell. See `docs/architecture.md` for the full
+design (layers, the media-capture analysis for TikTok/IG/YouTube, per-OS gating).
+
+| Target | Artifact | Command |
+|---|---|---|
+| Desktop CLI | `dist/cascade` | `make cli` |
+| Desktop / Flutter FFI | `libcascade.{dylib,so}` / `cascade.dll` + header | `make lib` |
+| Android | `cascade.aar` | `make android` (needs Android SDK/NDK) |
+| iOS | `Cascade.xcframework` | `make ios` (needs Xcode) |
+
+- `export/cshared` is the C ABI (for Flutter `dart:ffi` and native C).
+- `mobile/` is the gomobile facade (native Kotlin/Swift shells).
+- Both expose the same JSON status schema.
 
 ## Use
 
