@@ -180,6 +180,19 @@ async function handOff(item) {
 
   const cookie = await cookieHeader(item.url, item.incognito);
   const filename = item.filename ? item.filename.split(/[\\/]/).pop() : "";
+
+  // Stop the browser's own stream BEFORE the app probes: free-tier hosts allow
+  // one connection per IP and answer 503 to a second one while the browser is
+  // still downloading. The app verifies fetchability before accepting; if it
+  // refuses, the download is restarted in the browser below (the generated
+  // direct URLs are time-limited, not single-use).
+  let cancelled = false;
+  try {
+    await chrome.downloads.cancel(item.id);
+    cancelled = true;
+    await new Promise((r) => setTimeout(r, 1500)); // let the host release the slot
+  } catch (e) {}
+
   let handedOff = false;
   try {
     const resp = await fetch(`${app.base}/add`, {
@@ -213,10 +226,21 @@ async function handOff(item) {
   }
   if (handedOff) {
     try {
-      await chrome.downloads.cancel(item.id);
       await chrome.downloads.erase({ id: item.id });
     } catch (e) {}
     flashBadge("↓");
+  } else if (cancelled) {
+    // Give the download back to the browser (same URL, same referer).
+    try {
+      await chrome.downloads.erase({ id: item.id });
+      const opts = { url: item.url, conflictAction: "uniquify" };
+      if (filename) opts.filename = filename;
+      if (item.referrer) opts.headers = [{ name: "Referer", value: item.referrer }];
+      await chrome.downloads.download(opts);
+      await note("app refused; restarted in browser", item.url);
+    } catch (e) {
+      await note("app refused and browser restart failed: " + (e && e.message), item.url);
+    }
   }
 }
 

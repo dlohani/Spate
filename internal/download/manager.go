@@ -94,6 +94,7 @@ type Downloader struct {
 	ctrl      *Control
 	meter     *progress.Meter
 	limiter   *Limiter
+	conns     *connLimiter // adapts parallelism to what the host tolerates
 	validator string
 
 	mu sync.Mutex // guards url (mutable when RefreshURL rotates it)
@@ -145,6 +146,7 @@ func New(u, out string, opts Options) *Downloader {
 		opts:    opts,
 		rc:      newRequestConfig(opts),
 		limiter: NewLimiter(opts.RateLimit),
+		conns:   newConnLimiter(opts.Conns),
 	}
 }
 
