@@ -102,7 +102,10 @@ func main() {
 		captureLabel,
 		container.NewVBox(widget.NewLabel("Extension token (paste into the browser extension)"), tokenField),
 		widget.NewSeparator(),
-		widget.NewLabel("Downloads"),
+		container.NewBorder(nil, nil, widget.NewLabel("Downloads"), container.NewHBox(
+			widget.NewButton("Cancel all", func() { mgr.CancelAll() }),
+			widget.NewButton("Clear finished", func() { mgr.ClearFinished() }),
+		)),
 	)
 	w.SetContent(container.NewBorder(form, status, nil, nil, scroll))
 
@@ -145,20 +148,41 @@ func makeRow(mgr *job.Manager, s job.Status) fyne.CanvasObject {
 	bar := widget.NewProgressBar()
 	bar.SetValue(pct)
 
-	var btn *widget.Button
+	id := s.ID
+	var primary *widget.Button
 	switch s.State {
 	case job.Running, job.Pending:
-		id := s.ID
-		btn = widget.NewButton("Pause", func() { _ = mgr.Pause(id) })
+		primary = widget.NewButton("Pause", func() { _ = mgr.Pause(id) })
 	case job.Paused:
-		id := s.ID
-		btn = widget.NewButton("Resume", func() { _ = mgr.Resume(id) })
+		primary = widget.NewButton("Resume", func() { _ = mgr.Resume(id) })
 	default:
-		btn = widget.NewButton("Done", nil)
-		btn.Disable()
+		primary = widget.NewButton(stateLabel(s.State), nil)
+		primary.Disable()
 	}
 
-	return container.NewVBox(container.NewBorder(nil, nil, nil, btn, name), bar)
+	var secondary *widget.Button
+	if s.State.Terminal() {
+		secondary = widget.NewButton("Remove", func() { _ = mgr.Remove(id) })
+	} else {
+		secondary = widget.NewButton("Cancel", func() { _ = mgr.Cancel(id) })
+	}
+
+	buttons := container.NewHBox(primary, secondary)
+	return container.NewVBox(container.NewBorder(nil, nil, nil, buttons, name), bar)
+}
+
+// stateLabel returns a short label for a terminal state's disabled primary button.
+func stateLabel(s job.State) string {
+	switch s {
+	case job.Done:
+		return "Done"
+	case job.Failed:
+		return "Failed"
+	case job.Cancelled:
+		return "Cancelled"
+	default:
+		return "-"
+	}
 }
 
 func randToken() string {
