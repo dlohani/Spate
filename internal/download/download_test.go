@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -492,6 +493,32 @@ func TestURLRefreshOnExpiry(t *testing.T) {
 	}
 	if !strings.Contains(d.currentURL(), "t=B") {
 		t.Errorf("expected URL to be refreshed to t=B, got %s", d.currentURL())
+	}
+}
+
+func TestIsTransientClassification(t *testing.T) {
+	transient := []error{
+		&netError{errors.New("local error: tls: bad record MAC")},
+		&netError{io.ErrClosedPipe},
+		&httpStatusError{code: 503, status: "503"},
+		io.ErrUnexpectedEOF,
+		errURLRefreshed,
+		fmt.Errorf("wrapped: %w", &netError{errors.New("read: connection reset")}),
+	}
+	for _, e := range transient {
+		if !isTransient(e) {
+			t.Errorf("expected transient: %v", e)
+		}
+	}
+	fatal := []error{
+		nil,
+		errors.New("some logical error"),
+		fmt.Errorf("segment 3: unexpected status 404 Not Found"),
+	}
+	for _, e := range fatal {
+		if isTransient(e) {
+			t.Errorf("expected NOT transient: %v", e)
+		}
 	}
 }
 
