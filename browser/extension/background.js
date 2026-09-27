@@ -109,13 +109,44 @@ chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === "cascade-heartbeat") heartbeat();
 });
 
-async function cookieHeader(url) {
+// cookieHeader returns the Cookie header for url from the right cookie store.
+// Incognito windows have their own store; reading the default one there would
+// hand off a download with no session, which is exactly how a session-bound
+// host answers 403. Requires "Allow in Incognito" on chrome://extensions for
+// incognito downloads to be visible to the extension at all.
+async function cookieHeader(url, incognito) {
   try {
-    const cookies = await chrome.cookies.getAll({ url });
+    let storeId;
+    if (incognito) {
+      const stores = await chrome.cookies.getAllCookieStores();
+      const inc = stores.find((s) => s.id !== "0"); // "0" is the regular store
+      if (!inc) return "";
+      storeId = inc.id;
+    }
+    const cookies = await chrome.cookies.getAll(storeId ? { url, storeId } : { url });
     return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
   } catch (e) {
     return "";
   }
+}
+
+// browserLikeHeaders mimics a top-level navigation so hosts that inspect
+// fetch metadata treat the app's request like the browser's.
+function browserLikeHeaders(url, referrer) {
+  const h = {
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": navigator.language || "en-US,en;q=0.9",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-User": "?1",
+  };
+  try {
+    const same = referrer && new URL(referrer).origin === new URL(url).origin;
+    h["Sec-Fetch-Site"] = referrer ? (same ? "same-origin" : "cross-site") : "none";
+  } catch (e) {
+    h["Sec-Fetch-Site"] = "none";
+  }
+  return h;
 }
 
 function hostOf(url) {
@@ -147,7 +178,7 @@ async function handOff(item) {
     return;
   }
 
-  const cookie = await cookieHeader(item.url);
+  const cookie = await cookieHeader(item.url, item.incognito);
   const filename = item.filename ? item.filename.split(/[\\/]/).pop() : "";
   let handedOff = false;
   try {
@@ -160,6 +191,7 @@ async function handOff(item) {
         cookie,
         referrer: item.referrer || "",
         userAgent: navigator.userAgent,
+        headers: browserLikeHeaders(item.url, item.referrer),
       }),
     });
     handedOff = resp.ok;
@@ -226,7 +258,14 @@ chrome.downloads.onCreated.addListener(async (raw) => {
   // Prefer the final URL (after redirects): that is the one a plain GET can
   // actually fetch. raw.url may be the page that initiated the download.
   const url = raw.finalUrl || raw.url;
-  const item = { id: raw.id, url, filename: raw.filename || "", referrer: raw.referrer || "", host: hostOf(url) };
+  const item = {
+    id: raw.id,
+    url,
+    filename: raw.filename || "",
+    referrer: raw.referrer || "",
+    host: hostOf(url),
+    incognito: !!raw.incognito, // read cookies from the incognito store
+  };
   log("download detected:", item.url, "mode:", mode);
   if (!enabled || mode === "never") {
     await note("skipped: capture disabled", item.url);

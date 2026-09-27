@@ -25,6 +25,17 @@ site), the app declines, the extension leaves the browser's download running,
 and the Options page shows "app refused (...)". Those downloads stay in the
 browser by design rather than being lost.
 
+**Incognito:** enable **Allow in Incognito** for the extension on
+`chrome://extensions`, otherwise incognito downloads are invisible to it.
+Incognito windows have their own cookie store; the extension reads the session
+from the correct store so session-bound hosts (file-sharing sites) get the same
+cookies the browser had.
+
+**Links that can only stay in the browser:** some hosts issue one-time download
+tokens (the browser's own request consumes them) or start the download from a
+POST. No second client can re-fetch those, so the app refuses and the browser
+completes the download; you'll see "app refused (...)" in Options.
+
 The app's queue, with each job's state and last error, is available at
 `GET /jobs` (token-guarded) and is what the app window shows.
 
