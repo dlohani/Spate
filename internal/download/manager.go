@@ -10,6 +10,7 @@ package download
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +34,18 @@ type Options struct {
 	RateLimit         int64  // aggregate bytes/sec, 0 = unlimited
 	SHA256            string // optional expected hex digest to verify on completion
 	Resume            bool   // reuse an existing .cascade sidecar if valid
+
+	// Request customization.
+	Headers       map[string]string // extra request headers
+	Cookie        string            // raw Cookie header value
+	BasicUser     string            // HTTP Basic auth username
+	BasicPassword string            // HTTP Basic auth password
+	Proxy         string            // explicit proxy URL (else HTTP(S)_PROXY)
+	Insecure      bool              // skip TLS verification
+
+	// RefreshURL, when set, is called to obtain a fresh download URL if the
+	// current one is rejected as expired (HTTP 401/403/410) mid-download.
+	RefreshURL func(ctx context.Context, old string) (string, error)
 }
 
 func (o *Options) setDefaults() {
@@ -64,11 +77,50 @@ type Downloader struct {
 	opts Options
 
 	client    *http.Client
+	rc        requestConfig
 	file      *os.File
 	ctrl      *Control
 	meter     *progress.Meter
 	limiter   *Limiter
 	validator string
+
+	mu sync.Mutex // guards url (mutable when RefreshURL rotates it)
+}
+
+// currentURL returns the (possibly refreshed) download URL.
+func (d *Downloader) currentURL() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.url
+}
+
+// refresh rotates the download URL via Options.RefreshURL, but only if it hasn't
+// already been rotated away from stale by another worker (so concurrent 403s
+// trigger at most one refresh per stale URL).
+func (d *Downloader) refresh(ctx context.Context, stale string) error {
+	d.mu.Lock()
+	already := d.url != stale
+	fn := d.opts.RefreshURL
+	d.mu.Unlock()
+	if already {
+		return nil
+	}
+	if fn == nil {
+		return errors.New("no RefreshURL configured")
+	}
+	newURL, err := fn(ctx, stale)
+	if err != nil {
+		return err
+	}
+	if newURL == "" {
+		return errors.New("RefreshURL returned an empty URL")
+	}
+	d.mu.Lock()
+	if d.url == stale {
+		d.url = newURL
+	}
+	d.mu.Unlock()
+	return nil
 }
 
 // New builds a Downloader for url. out may be empty, in which case a filename is
@@ -79,7 +131,7 @@ func New(u, out string, opts Options) *Downloader {
 		url:     u,
 		out:     out,
 		opts:    opts,
-		client:  httpc.New(opts.Conns),
+		rc:      newRequestConfig(opts),
 		limiter: NewLimiter(opts.RateLimit),
 	}
 }
@@ -94,7 +146,17 @@ func (d *Downloader) Output() string { return d.out }
 // cancellation the partial file and its .cascade sidecar are left in place so a
 // later Run with Resume can continue.
 func (d *Downloader) Run(ctx context.Context) error {
-	probe, err := Probe(ctx, d.client, d.url)
+	client, err := httpc.New(httpc.Config{
+		MaxConns: d.opts.Conns,
+		Proxy:    d.opts.Proxy,
+		Insecure: d.opts.Insecure,
+	})
+	if err != nil {
+		return err
+	}
+	d.client = client
+
+	probe, err := Probe(ctx, d.client, d.rc, d.currentURL())
 	if err != nil {
 		return err
 	}
@@ -268,7 +330,7 @@ func (d *Downloader) Splits() int {
 // streamWhole downloads the entire body over a single connection. Used when the
 // server has no range support or the size is unknown; not resumable.
 func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.url, nil)
+	req, err := d.rc.newRequest(ctx, http.MethodGet, d.currentURL())
 	if err != nil {
 		return err
 	}

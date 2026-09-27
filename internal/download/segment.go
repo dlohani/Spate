@@ -108,7 +108,8 @@ func (d *Downloader) fetchWindow(ctx context.Context, idx int, start, end int64)
 
 // streamRange performs one ranged GET for [from, end] and writes it at offset.
 func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.url, nil)
+	usedURL := d.currentURL()
+	req, err := d.rc.newRequest(ctx, http.MethodGet, usedURL)
 	if err != nil {
 		return err
 	}
@@ -128,6 +129,15 @@ func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) 
 	case http.StatusOK:
 		return fmt.Errorf("segment %d: got 200 to a ranged request "+
 			"(resource changed mid-download or lost range support)", idx)
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusGone:
+		// URL may have expired; try to refresh it and retry.
+		if d.opts.RefreshURL == nil {
+			return fmt.Errorf("segment %d: %s (no RefreshURL configured)", idx, resp.Status)
+		}
+		if err := d.refresh(ctx, usedURL); err != nil {
+			return fmt.Errorf("segment %d: URL refresh after %s failed: %w", idx, resp.Status, err)
+		}
+		return errURLRefreshed
 	default:
 		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
 			return &httpStatusError{code: resp.StatusCode, status: resp.Status}
@@ -173,6 +183,10 @@ func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) 
 	return nil
 }
 
+// errURLRefreshed signals that the download URL was rotated and the request
+// should be retried against the new URL. It is treated as transient.
+var errURLRefreshed = errors.New("download URL refreshed; retry")
+
 // httpStatusError marks server responses worth retrying (5xx, 429).
 type httpStatusError struct {
 	code   int
@@ -187,6 +201,9 @@ func (e *httpStatusError) Error() string {
 func isTransient(err error) bool {
 	if err == nil {
 		return false
+	}
+	if errors.Is(err, errURLRefreshed) {
+		return true
 	}
 	var se *httpStatusError
 	if errors.As(err, &se) {

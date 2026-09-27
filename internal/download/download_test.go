@@ -68,6 +68,29 @@ type manualServer struct {
 	curConc  atomic.Int64
 	delay    time.Duration
 	slowFrom int64 // ranges whose start >= slowFrom incur delay (default 0 = all)
+
+	// Optional access requirements; when set, requests missing them get 401.
+	reqHeaderKey string
+	reqHeaderVal string
+	reqCookie    string
+	reqUser      string
+	reqPass      string
+}
+
+func (m *manualServer) authOK(r *http.Request) bool {
+	if m.reqHeaderKey != "" && r.Header.Get(m.reqHeaderKey) != m.reqHeaderVal {
+		return false
+	}
+	if m.reqCookie != "" && r.Header.Get("Cookie") != m.reqCookie {
+		return false
+	}
+	if m.reqUser != "" {
+		u, p, ok := r.BasicAuth()
+		if !ok || u != m.reqUser || p != m.reqPass {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *manualServer) handler() http.HandlerFunc {
@@ -80,6 +103,11 @@ func (m *manualServer) handler() http.HandlerFunc {
 			}
 		}
 		defer m.curConc.Add(-1)
+
+		if !m.authOK(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 
 		total := int64(len(m.data))
 		if m.etag != "" {
@@ -359,6 +387,109 @@ func TestWorkStealingCompletesSlowSegment(t *testing.T) {
 	}
 	if d.Splits() < 1 {
 		t.Errorf("expected at least one work-steal split, got %d", d.Splits())
+	}
+}
+
+func TestAuthHeadersAndCookie(t *testing.T) {
+	data := randomBlob(2 << 20)
+	m := &manualServer{
+		data: data, etag: `"v1"`,
+		reqHeaderKey: "X-Token", reqHeaderVal: "secret",
+		reqCookie: "sid=abc",
+		reqUser:   "alice", reqPass: "pw",
+	}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "file.bin")
+
+	// Without credentials: must fail (401 on probe).
+	bad := New(srv.URL, out, Options{Conns: 2})
+	if err := bad.Run(context.Background()); err == nil {
+		t.Fatal("expected failure without credentials")
+	}
+
+	// With all credentials supplied: succeeds.
+	good := New(srv.URL, out, Options{
+		Conns:         4,
+		MinSegment:    256 << 10,
+		Headers:       map[string]string{"X-Token": "secret"},
+		Cookie:        "sid=abc",
+		BasicUser:     "alice",
+		BasicPassword: "pw",
+		SHA256:        sha256hex(data),
+	})
+	if err := good.Run(context.Background()); err != nil {
+		t.Fatalf("Run with credentials: %v", err)
+	}
+	got, _ := os.ReadFile(out)
+	if !bytes.Equal(got, data) {
+		t.Fatal("authenticated download produced wrong content")
+	}
+}
+
+func TestURLRefreshOnExpiry(t *testing.T) {
+	data := randomBlob(4 << 20)
+	total := int64(len(data))
+	half := total / 2
+
+	// The second half of the file requires the refreshed token "B"; requests
+	// for it with the stale token "A" get 403, simulating an expired signed URL.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tok := r.URL.Query().Get("t")
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("ETag", `"v1"`)
+		if r.Method == http.MethodHead {
+			if tok == "" {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Content-Length", strconv.FormatInt(total, 10))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		start, end, ok := parseRange(r.Header.Get("Range"), total)
+		if !ok {
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		if start >= half && tok != "B" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		if start < half && tok == "" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, total))
+		w.Header().Set("Content-Length", strconv.FormatInt(end-start+1, 10))
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(data[start : end+1])
+	}))
+	defer srv.Close()
+
+	out := filepath.Join(t.TempDir(), "file.bin")
+	var refreshCalls atomic.Int64
+	d := New(srv.URL+"?t=A", out, Options{
+		Conns:      4,
+		MinSegment: 256 << 10,
+		SHA256:     sha256hex(data),
+		RefreshURL: func(ctx context.Context, old string) (string, error) {
+			refreshCalls.Add(1)
+			return srv.URL + "?t=B", nil
+		},
+	})
+	if err := d.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, _ := os.ReadFile(out)
+	if !bytes.Equal(got, data) {
+		t.Fatal("refresh download produced wrong content")
+	}
+	if refreshCalls.Load() == 0 {
+		t.Error("expected RefreshURL to be called")
+	}
+	if !strings.Contains(d.currentURL(), "t=B") {
+		t.Errorf("expected URL to be refreshed to t=B, got %s", d.currentURL())
 	}
 }
 

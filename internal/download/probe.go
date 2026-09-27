@@ -29,13 +29,13 @@ func (p ProbeResult) Validator() string {
 // Probe inspects url with a HEAD request, falling back to a single-byte ranged
 // GET when HEAD is unhelpful (some servers don't implement HEAD, or omit
 // Accept-Ranges on it).
-func Probe(ctx context.Context, client *http.Client, url string) (ProbeResult, error) {
-	res, err := probeHEAD(ctx, client, url)
+func Probe(ctx context.Context, client *http.Client, rc requestConfig, url string) (ProbeResult, error) {
+	res, err := probeHEAD(ctx, client, rc, url)
 	if err == nil && res.Size >= 0 && res.AcceptRanges {
 		return res, nil
 	}
 	// HEAD was missing range info or size; confirm with a 1-byte range GET.
-	gres, gerr := probeRangeGET(ctx, client, url)
+	gres, gerr := probeRangeGET(ctx, client, rc, url)
 	if gerr != nil {
 		if err != nil {
 			return ProbeResult{}, fmt.Errorf("probe failed: HEAD: %v; ranged GET: %w", err, gerr)
@@ -46,8 +46,8 @@ func Probe(ctx context.Context, client *http.Client, url string) (ProbeResult, e
 	return gres, nil
 }
 
-func probeHEAD(ctx context.Context, client *http.Client, url string) (ProbeResult, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
+func probeHEAD(ctx context.Context, client *http.Client, rc requestConfig, url string) (ProbeResult, error) {
+	req, err := rc.newRequest(ctx, http.MethodHead, url)
 	if err != nil {
 		return ProbeResult{}, err
 	}
@@ -70,8 +70,8 @@ func probeHEAD(ctx context.Context, client *http.Client, url string) (ProbeResul
 	return r, nil
 }
 
-func probeRangeGET(ctx context.Context, client *http.Client, url string) (ProbeResult, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func probeRangeGET(ctx context.Context, client *http.Client, rc requestConfig, url string) (ProbeResult, error) {
+	req, err := rc.newRequest(ctx, http.MethodGet, url)
 	if err != nil {
 		return ProbeResult{}, err
 	}
