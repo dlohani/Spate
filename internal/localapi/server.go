@@ -2,10 +2,12 @@
 // (or any local helper) posts download requests to, so downloads started in a
 // browser are handed to cascade automatically without copy/paste.
 //
-// It binds to 127.0.0.1 only and requires a shared token, so a random web page
-// cannot silently enqueue downloads. Native messaging is a more locked-down
-// alternative (no open port); this loopback+token design is chosen for
-// cross-browser uniformity and simple setup.
+// Security model: binds to 127.0.0.1 only; /add requires a shared token; and
+// requests carrying a web Origin are rejected (only browser-extension origins
+// or origin-less local clients are accepted), so a random web page cannot
+// enqueue downloads or trigger pairing. Native messaging is a more locked-down
+// alternative (no open port); this design is chosen for cross-browser
+// uniformity and one-click setup.
 package localapi
 
 import (
@@ -17,6 +19,8 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
 	"cascade/internal/download"
@@ -33,6 +37,15 @@ type Server struct {
 	defaultDir string
 	httpSrv    *http.Server
 	addr       string
+
+	// PairFunc, when set, is called on GET /pair to ask the user whether a
+	// browser extension may connect. It should block until the user decides (or
+	// a timeout) and return true to release the token. nil disables pairing.
+	PairFunc func() bool
+
+	mu       sync.Mutex
+	lastExt  time.Time // last contact from a browser extension (heartbeat)
+	pairBusy bool      // a pairing prompt is already showing
 }
 
 // New builds a Server. token guards /add; defaultDir is where files land when a
@@ -44,12 +57,20 @@ func New(mgr *job.Manager, token, defaultDir string) *Server {
 // Addr returns the listening address (valid after Start).
 func (s *Server) Addr() string { return s.addr }
 
-// Start binds 127.0.0.1 (DefaultPort, then a few fallbacks) and serves in the
-// background. It returns the chosen address.
+// LastExtensionContact returns when a browser extension last checked in (zero
+// if never). The app shows this as a "connected" indicator.
+func (s *Server) LastExtensionContact() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastExt
+}
+
+// Start binds 127.0.0.1 (DefaultPort, then two fallbacks the extension also
+// probes) and serves in the background. It returns the chosen address.
 func (s *Server) Start() (string, error) {
 	var ln net.Listener
 	var err error
-	for _, p := range []int{DefaultPort, DefaultPort + 1, DefaultPort + 2, 0} {
+	for _, p := range []int{DefaultPort, DefaultPort + 1, DefaultPort + 2} {
 		ln, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
 		if err == nil {
 			break
@@ -62,6 +83,7 @@ func (s *Server) Start() (string, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", s.handlePing)
+	mux.HandleFunc("/pair", s.handlePair)
 	mux.HandleFunc("/add", s.handleAdd)
 
 	s.httpSrv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
@@ -80,11 +102,30 @@ func (s *Server) Close() error {
 func cors(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Cascade-Token")
-	// Chrome Private Network Access: a fetch from a browser context to a
-	// loopback address is preflighted and requires this header, or the request
-	// (including the extension's) is blocked.
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Cascade-Token, X-Cascade-Client")
+	// Chrome Private Network Access: a browser-context fetch to loopback is
+	// preflighted and requires this header.
 	w.Header().Set("Access-Control-Allow-Private-Network", "true")
+}
+
+// originOK accepts origin-less local clients (curl, native helpers) and browser
+// extension origins, and rejects any web page origin.
+func originOK(r *http.Request) bool {
+	o := r.Header.Get("Origin")
+	if o == "" {
+		return true
+	}
+	return strings.HasPrefix(o, "chrome-extension://") ||
+		strings.HasPrefix(o, "moz-extension://") ||
+		strings.HasPrefix(o, "safari-web-extension://")
+}
+
+func (s *Server) noteExtension(r *http.Request) {
+	if r.Header.Get("X-Cascade-Client") == "extension" || r.URL.Query().Get("client") == "extension" {
+		s.mu.Lock()
+		s.lastExt = time.Now()
+		s.mu.Unlock()
+	}
 }
 
 func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +133,45 @@ func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		return
 	}
+	s.noteExtension(r)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "app": "cascade"})
+}
+
+// handlePair lets a browser extension obtain the token after the user approves
+// in the app window. Only extension origins may ask; web pages are rejected.
+func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
+	cors(w)
+	if r.Method == http.MethodOptions {
+		return
+	}
+	if !originOK(r) {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
+	if s.PairFunc == nil {
+		http.Error(w, "pairing unavailable", http.StatusNotFound)
+		return
+	}
+	s.mu.Lock()
+	if s.pairBusy {
+		s.mu.Unlock()
+		http.Error(w, "pairing already in progress", http.StatusConflict)
+		return
+	}
+	s.pairBusy = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.pairBusy = false
+		s.mu.Unlock()
+	}()
+
+	s.noteExtension(r)
+	if !s.PairFunc() {
+		http.Error(w, "pairing declined", http.StatusForbidden)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"token": s.token})
 }
 
 type addRequest struct {
@@ -113,10 +192,16 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
 	}
+	if !originOK(r) {
+		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
 	if !s.authOK(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	s.noteExtension(r)
+
 	var req addRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -146,13 +231,25 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = filenameFor(req.URL)
 	}
+	out := filepath.Join(dir, name)
+
+	// Dedupe: if a download to this exact path is already queued or running
+	// (e.g. the user re-clicks the link, or an orphan was auto-resumed), reuse it
+	// instead of starting a second job that would write the same file.
+	for _, st := range s.mgr.Statuses() {
+		if st.Out == out && !st.State.Terminal() {
+			writeJSON(w, http.StatusOK, map[string]any{"id": st.ID, "existing": true})
+			return
+		}
+	}
 
 	id, err := s.mgr.Add(job.Spec{
 		URL: req.URL,
-		Out: filepath.Join(dir, name),
+		Out: out,
 		Options: download.Options{
 			Headers: headers,
 			Cookie:  req.Cookie,
+			Resume:  true, // continue a partial file of the same name if present
 		},
 	})
 	if err != nil {

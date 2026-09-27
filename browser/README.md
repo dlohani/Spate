@@ -24,16 +24,27 @@ actually exit (which stops capture). If capture silently stops working, the
 first thing to check is that the app is running (the extension's Options page
 "Test connection" button confirms this).
 
-## Setup
+## Setup (one click, no token to copy)
 
-1. Run the Cascade app. Its window shows the capture endpoint and a token.
-2. Load the extension (Chromium: Chrome/Edge/Brave/Vivaldi):
+1. Run the Cascade app (it stays in the menu bar).
+2. Load the extension in the browser you actually download with (Chromium:
+   Chrome/Edge/Brave/Vivaldi):
    - Go to `chrome://extensions`, enable **Developer mode**.
    - **Load unpacked** and select `browser/extension`.
-3. Click the extension's icon (or its Options), paste the **token** from the app
-   window, keep "Capture browser downloads" checked, Save. Use **Test
-   connection** to confirm the app is reachable.
+3. The extension immediately asks the app to connect: click **Allow** in the
+   Cascade window. (If you missed it, open the extension's Options and click
+   **Pair with Cascade app**.) The app window then shows
+   "Extension: connected".
 4. Download anything in the browser: it appears in the Cascade window instead.
+
+The app window's "Extension:" line is the quickest health check: it says
+"not connected" until the extension is loaded in the browser and has paired.
+The extension's Options page also shows the last capture event and why.
+
+Downloads interrupted by a quit or crash are resumed automatically the next
+time the app starts (their `.cascade` sidecar is picked up from the download
+folder). Re-downloading a file that is already in progress reuses that job
+rather than starting a duplicate.
 
 ## Security
 
