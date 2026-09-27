@@ -16,6 +16,7 @@ type ProbeResult struct {
 	ETag         string // strong/weak validator, if any
 	LastModified string // fallback validator, if any
 	Filename     string // suggested name from Content-Disposition, if any
+	ContentType  string // Content-Type, used to infer a file extension
 }
 
 // Validator returns the value to send in If-Range on resume, preferring ETag.
@@ -66,6 +67,7 @@ func probeHEAD(ctx context.Context, client *http.Client, rc requestConfig, url s
 		ETag:         resp.Header.Get("ETag"),
 		LastModified: resp.Header.Get("Last-Modified"),
 		Filename:     filenameFromDisposition(resp.Header.Get("Content-Disposition")),
+		ContentType:  resp.Header.Get("Content-Type"),
 	}
 	return r, nil
 }
@@ -90,6 +92,7 @@ func probeRangeGET(ctx context.Context, client *http.Client, rc requestConfig, u
 		ETag:         resp.Header.Get("ETag"),
 		LastModified: resp.Header.Get("Last-Modified"),
 		Filename:     filenameFromDisposition(resp.Header.Get("Content-Disposition")),
+		ContentType:  resp.Header.Get("Content-Type"),
 	}
 	switch resp.StatusCode {
 	case http.StatusPartialContent: // 206: ranges honored

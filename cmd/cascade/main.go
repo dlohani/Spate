@@ -20,6 +20,7 @@ import (
 
 	"cascade/internal/download"
 	"cascade/internal/job"
+	"cascade/internal/policy"
 	"cascade/internal/progress"
 )
 
@@ -42,6 +43,9 @@ func run(args []string) int {
 		proxy    = fs.String("proxy", "", "proxy URL, e.g. http://user:pass@host:port")
 		insecure = fs.Bool("insecure", false, "skip TLS certificate verification")
 		maxConc  = fs.Int("max-concurrent", 2, "max simultaneous downloads when several URLs are given")
+		extract  = fs.String("extract", "", "after download, extract a .zip archive into this directory")
+		wifiOnly = fs.Bool("wifi-only", false, "only download while on Wi-Fi (macOS)")
+		battMin  = fs.Int("battery-min", 0, "only download when battery >= N%% or on AC power (macOS)")
 	)
 	fs.Var(&headers, "H", "extra request header 'Key: Value' (repeatable)")
 	fs.Usage = func() {
@@ -74,6 +78,11 @@ func run(args []string) int {
 	if *user != "" {
 		basicUser, basicPass, _ = strings.Cut(*user, ":")
 	}
+	gate, err := policy.Gate(policy.Options{WiFiOnly: *wifiOnly, BatteryMin: *battMin})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cascade: %v\n", err)
+		return 2
+	}
 
 	opts := download.Options{
 		Conns:         *conns,
@@ -87,6 +96,8 @@ func run(args []string) int {
 		BasicPassword: basicPass,
 		Proxy:         *proxy,
 		Insecure:      *insecure,
+		ExtractTo:     *extract,
+		Gate:          gate,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
