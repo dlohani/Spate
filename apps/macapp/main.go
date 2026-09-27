@@ -1,6 +1,6 @@
-// Command cascade-mac is a minimal native macOS GUI over the cascade engine,
-// built with Fyne (pure Go, no full Xcode required). It drives the same
-// internal/job manager the CLI uses, so it exercises the real download core.
+// Command cascade-mac is the native macOS app over the cascade engine, built
+// with Fyne (pure Go, no full Xcode required). It drives the same internal/job
+// manager the CLI uses; the UI lives in the ui package (design system + views).
 package main
 
 import (
@@ -15,18 +15,16 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
 
+	"cascade/apps/macapp/ui"
 	"cascade/internal/download"
 	"cascade/internal/job"
 	"cascade/internal/localapi"
@@ -48,15 +46,13 @@ func main() {
 	// Browser capture endpoint (the extension posts downloads here).
 	token := loadOrCreateToken()
 	capSrv := localapi.New(mgr, token, defaultDownloadDir())
-	captureURL := ""
-	if addr, err := capSrv.Start(); err == nil {
-		captureURL = "http://" + addr
-	}
+	_, _ = capSrv.Start()
 	defer capSrv.Close()
 
 	a := app.New()
+	a.Settings().SetTheme(ui.Theme{})
 	w := a.NewWindow("Cascade")
-	w.Resize(fyne.NewSize(720, 480))
+	w.Resize(fyne.NewSize(760, 540))
 
 	// One-click pairing: when the browser extension asks to connect, show an
 	// Allow/Deny prompt and release the token only on Allow.
@@ -81,9 +77,7 @@ func main() {
 	// remain next to the partial file).
 	resumeOrphans(mgr, defaultDownloadDir())
 
-	// Stay resident: closing the window hides it, so the capture endpoint and
-	// any running downloads keep going. The app lives in the menu bar; use
-	// "Quit" there to actually exit.
+	// Stay resident: closing the window hides it; the app lives in the menu bar.
 	w.SetCloseIntercept(func() { w.Hide() })
 	if desk, ok := a.(desktop.App); ok {
 		desk.SetSystemTrayMenu(fyne.NewMenu("Cascade",
@@ -94,64 +88,12 @@ func main() {
 		desk.SetSystemTrayIcon(theme.DownloadIcon())
 	}
 
-	urlEntry := widget.NewEntry()
-	urlEntry.SetPlaceHolder("https://example.com/file.bin")
+	view := ui.Build(&controller{mgr: mgr}, defaultDownloadDir(), func() fyne.ThemeVariant {
+		return a.Settings().ThemeVariant()
+	})
+	w.SetContent(view.Root)
 
-	destEntry := widget.NewEntry()
-	destEntry.SetText(defaultDownloadDir())
-
-	connEntry := widget.NewEntry()
-	connEntry.SetText("8")
-
-	status := widget.NewLabel("")
-
-	rows := container.NewVBox()
-	scroll := container.NewVScroll(rows)
-
-	add := func() {
-		u := urlEntry.Text
-		if u == "" {
-			status.SetText("enter a URL")
-			return
-		}
-		if _, err := url.ParseRequestURI(u); err != nil {
-			status.SetText("invalid URL: " + err.Error())
-			return
-		}
-		conns, _ := strconv.Atoi(connEntry.Text)
-		out := filepath.Join(destEntry.Text, filenameFor(u))
-		if _, err := mgr.Add(job.Spec{URL: u, Out: out, Options: download.Options{Conns: conns}}); err != nil {
-			status.SetText("add failed: " + err.Error())
-			return
-		}
-		status.SetText("queued " + out)
-		urlEntry.SetText("")
-	}
-
-	addBtn := widget.NewButton("Download", add)
-	urlEntry.OnSubmitted = func(string) { add() }
-
-	// Browser capture runs silently in the background (see the menu bar and the
-	// extension's Options page for its status); the window shows downloads only.
-	_ = captureURL
-
-	form := container.NewVBox(
-		widget.NewLabel("URL"),
-		urlEntry,
-		container.NewGridWithColumns(2,
-			container.NewVBox(widget.NewLabel("Save to"), destEntry),
-			container.NewVBox(widget.NewLabel("Connections"), connEntry),
-		),
-		addBtn,
-		widget.NewSeparator(),
-		container.NewBorder(nil, nil, widget.NewLabel("Downloads"), container.NewHBox(
-			widget.NewButton("Cancel all", func() { mgr.CancelAll() }),
-			widget.NewButton("Clear finished", func() { mgr.ClearFinished() }),
-		)),
-	)
-	w.SetContent(container.NewBorder(form, status, nil, nil, scroll))
-
-	// Refresh the job list on a timer, on the UI thread.
+	// Refresh the list on a timer, on the UI thread (rows update in place).
 	go func() {
 		t := time.NewTicker(500 * time.Millisecond)
 		defer t.Stop()
@@ -160,14 +102,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				snap := mgr.Statuses()
-				fyne.Do(func() {
-					rows.Objects = nil
-					for _, s := range snap {
-						rows.Add(makeRow(mgr, s))
-					}
-					rows.Refresh()
-				})
+				fyne.Do(view.Refresh)
 			}
 		}
 	}()
@@ -175,71 +110,27 @@ func main() {
 	w.ShowAndRun()
 }
 
-func makeRow(mgr *job.Manager, s job.Status) fyne.CanvasObject {
-	pct := 0.0
-	if s.Total > 0 {
-		pct = float64(s.Bytes) / float64(s.Total)
-	}
-	// Show the file and where it comes from, not the internal job id.
-	fname := filepath.Base(s.Out)
-	if fname == "" || fname == "." || fname == "/" {
-		fname = filenameFor(s.URL)
-	}
-	source := ""
-	if u, err := url.Parse(s.URL); err == nil && u.Host != "" {
-		source = "  ·  " + u.Host
-	}
-	title := fmt.Sprintf("%s%s  [%s]  %s / %s", fname, source, s.State,
-		humanBytes(s.Bytes), humanBytes(s.Total))
-	if s.Err != nil {
-		title += "  " + s.Err.Error()
-	}
-	name := widget.NewLabel(title)
+// controller adapts the job manager to what the UI needs.
+type controller struct{ mgr *job.Manager }
 
-	bar := widget.NewProgressBar()
-	bar.SetValue(pct)
-
-	id := s.ID
-	var primary *widget.Button
-	switch s.State {
-	case job.Running, job.Pending:
-		primary = widget.NewButton("Pause", func() { _ = mgr.Pause(id) })
-	case job.Paused:
-		primary = widget.NewButton("Resume", func() { _ = mgr.Resume(id) })
-	case job.Done:
-		// Reveal the finished file in Finder (safer than launching it directly).
-		out := s.Out
-		primary = widget.NewButton("Show in Finder", func() {
-			_ = exec.Command("open", "-R", out).Start()
-		})
-	default:
-		primary = widget.NewButton(stateLabel(s.State), nil)
-		primary.Disable()
+func (c *controller) Statuses() []job.Status     { return c.mgr.Statuses() }
+func (c *controller) Pause(id string) error      { return c.mgr.Pause(id) }
+func (c *controller) Resume(id string) error     { return c.mgr.Resume(id) }
+func (c *controller) Cancel(id string) error     { return c.mgr.Cancel(id) }
+func (c *controller) Remove(id string) error     { return c.mgr.Remove(id) }
+func (c *controller) ClearFinished() int         { return c.mgr.ClearFinished() }
+func (c *controller) CancelAll()                 { c.mgr.CancelAll() }
+func (c *controller) Reveal(p string)            { _ = exec.Command("open", "-R", p).Start() }
+func (c *controller) Add(rawURL, dir string, conns int) error {
+	if _, err := url.ParseRequestURI(rawURL); err != nil {
+		return fmt.Errorf("invalid URL")
 	}
-
-	var secondary *widget.Button
-	if s.State.Terminal() {
-		secondary = widget.NewButton("Remove", func() { _ = mgr.Remove(id) })
-	} else {
-		secondary = widget.NewButton("Cancel", func() { _ = mgr.Cancel(id) })
+	if dir == "" {
+		dir = defaultDownloadDir()
 	}
-
-	buttons := container.NewHBox(primary, secondary)
-	return container.NewVBox(container.NewBorder(nil, nil, nil, buttons, name), bar)
-}
-
-// stateLabel returns a short label for a terminal state's disabled primary button.
-func stateLabel(s job.State) string {
-	switch s {
-	case job.Done:
-		return "Done"
-	case job.Failed:
-		return "Failed"
-	case job.Cancelled:
-		return "Cancelled"
-	default:
-		return "-"
-	}
+	out := filepath.Join(dir, filenameFor(rawURL))
+	_, err := c.mgr.Add(job.Spec{URL: rawURL, Out: out, Options: download.Options{Conns: conns, Resume: true}})
+	return err
 }
 
 // alreadyRunning reports whether a Cascade endpoint is already up on the ports
@@ -289,8 +180,7 @@ func randToken() string {
 }
 
 // loadOrCreateToken returns a stable capture token: the CASCADE_TOKEN env if set,
-// otherwise one persisted under the user config dir (generated once). A stable
-// token means the browser extension is configured only once, not per restart.
+// otherwise one persisted under the user config dir (generated once).
 func loadOrCreateToken() string {
 	if t := os.Getenv("CASCADE_TOKEN"); t != "" {
 		return t
@@ -331,17 +221,4 @@ func filenameFor(rawURL string) string {
 		}
 	}
 	return "download.bin"
-}
-
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for x := n / unit; x >= unit; x /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
