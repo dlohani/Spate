@@ -7,19 +7,39 @@
 package httpc
 
 import (
+	"crypto/tls"
+	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
 
-// New returns an *http.Client tuned for segmented downloads with up to
-// maxConns simultaneous connections to one host.
-func New(maxConns int) *http.Client {
+// Config tunes the shared client.
+type Config struct {
+	MaxConns int    // parallel connections to one host
+	Proxy    string // explicit proxy URL (http/https/socks5); "" uses env
+	Insecure bool   // skip TLS certificate verification
+}
+
+// New returns an *http.Client tuned for segmented downloads. An explicit proxy
+// URL (which may include user:pass credentials) overrides the environment; an
+// empty proxy falls back to HTTP(S)_PROXY.
+func New(cfg Config) (*http.Client, error) {
+	maxConns := cfg.MaxConns
 	if maxConns < 1 {
 		maxConns = 1
 	}
+	proxyFn := http.ProxyFromEnvironment
+	if cfg.Proxy != "" {
+		pu, err := url.Parse(cfg.Proxy)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proxy URL %q: %w", cfg.Proxy, err)
+		}
+		proxyFn = http.ProxyURL(pu)
+	}
 	t := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
+		Proxy: proxyFn,
 		DialContext: (&net.Dialer{
 			Timeout:   15 * time.Second,
 			KeepAlive: 30 * time.Second,
@@ -37,10 +57,13 @@ func New(maxConns int) *http.Client {
 		// would report transfer-encoded sizes that don't line up with offsets.
 		DisableCompression: true,
 	}
+	if cfg.Insecure {
+		t.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // opt-in via -insecure
+	}
 	return &http.Client{
 		Transport: t,
 		// No whole-request timeout: downloads are long-lived. Cancellation is
 		// driven by context instead.
 		Timeout: 0,
-	}
+	}, nil
 }

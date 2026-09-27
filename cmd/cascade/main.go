@@ -28,14 +28,20 @@ func main() {
 
 func run(args []string) int {
 	fs := flag.NewFlagSet("cascade", flag.ContinueOnError)
+	var headers headerFlags
 	var (
-		out     = fs.String("o", "", "output file path (default: derived from URL)")
-		conns   = fs.Int("n", 8, "number of parallel connections")
-		resume  = fs.Bool("resume", false, "resume from an existing .cascade sidecar if present")
-		limit   = fs.String("limit", "", "aggregate rate limit, e.g. 2M or 500K (default: unlimited)")
-		sha     = fs.String("sha256", "", "expected SHA-256 hex digest to verify on completion")
-		retries = fs.Int("retries", 5, "per-segment retry attempts")
+		out      = fs.String("o", "", "output file path (default: derived from URL)")
+		conns    = fs.Int("n", 8, "number of parallel connections")
+		resume   = fs.Bool("resume", false, "resume from an existing .cascade sidecar if present")
+		limit    = fs.String("limit", "", "aggregate rate limit, e.g. 2M or 500K (default: unlimited)")
+		sha      = fs.String("sha256", "", "expected SHA-256 hex digest to verify on completion")
+		retries  = fs.Int("retries", 5, "per-segment retry attempts")
+		cookie   = fs.String("cookie", "", "Cookie header value")
+		user     = fs.String("user", "", "HTTP basic auth as user:password")
+		proxy    = fs.String("proxy", "", "proxy URL, e.g. http://user:pass@host:port")
+		insecure = fs.Bool("insecure", false, "skip TLS certificate verification")
 	)
+	fs.Var(&headers, "H", "extra request header 'Key: Value' (repeatable)")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "usage: cascade [flags] <url>\n\nflags:\n")
 		fs.PrintDefaults()
@@ -54,16 +60,31 @@ func run(args []string) int {
 		fmt.Fprintf(os.Stderr, "cascade: invalid --limit: %v\n", err)
 		return 2
 	}
+	hdrMap, err := headers.toMap()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cascade: invalid -H: %v\n", err)
+		return 2
+	}
+	var basicUser, basicPass string
+	if *user != "" {
+		basicUser, basicPass, _ = strings.Cut(*user, ":")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	d := download.New(rawURL, *out, download.Options{
-		Conns:     *conns,
-		Retries:   *retries,
-		RateLimit: rate,
-		SHA256:    *sha,
-		Resume:    *resume,
+		Conns:         *conns,
+		Retries:       *retries,
+		RateLimit:     rate,
+		SHA256:        *sha,
+		Resume:        *resume,
+		Headers:       hdrMap,
+		Cookie:        *cookie,
+		BasicUser:     basicUser,
+		BasicPassword: basicPass,
+		Proxy:         *proxy,
+		Insecure:      *insecure,
 	})
 
 	done := make(chan error, 1)
@@ -113,6 +134,31 @@ func printLine(m *progress.Meter) {
 		fmt.Fprintf(os.Stderr, "\r%s  %s/s        ",
 			humanBytes(doneBytes), humanBytes(int64(bps)))
 	}
+}
+
+// headerFlags collects repeatable -H "Key: Value" flags.
+type headerFlags []string
+
+func (h *headerFlags) String() string { return strings.Join(*h, ", ") }
+
+func (h *headerFlags) Set(v string) error {
+	*h = append(*h, v)
+	return nil
+}
+
+func (h headerFlags) toMap() (map[string]string, error) {
+	if len(h) == 0 {
+		return nil, nil
+	}
+	m := make(map[string]string, len(h))
+	for _, raw := range h {
+		k, v, ok := strings.Cut(raw, ":")
+		if !ok {
+			return nil, fmt.Errorf("header %q must be in 'Key: Value' form", raw)
+		}
+		m[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	return m, nil
 }
 
 // parseSize parses a byte count with an optional K/M/G suffix (base 1024).
