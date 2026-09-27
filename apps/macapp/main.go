@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -205,6 +206,12 @@ func makeRow(mgr *job.Manager, s job.Status) fyne.CanvasObject {
 		primary = widget.NewButton("Pause", func() { _ = mgr.Pause(id) })
 	case job.Paused:
 		primary = widget.NewButton("Resume", func() { _ = mgr.Resume(id) })
+	case job.Done:
+		// Reveal the finished file in Finder (safer than launching it directly).
+		out := s.Out
+		primary = widget.NewButton("Show in Finder", func() {
+			_ = exec.Command("open", "-R", out).Start()
+		})
 	default:
 		primary = widget.NewButton(stateLabel(s.State), nil)
 		primary.Disable()
