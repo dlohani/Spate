@@ -59,13 +59,45 @@ async function pair() {
   }
 }
 
+// ensureApp returns {base, token} for a running app, launching it through the
+// native-messaging host if it is not running. With the host installed the
+// token comes back over the browser-enforced trusted channel, so no Allow
+// prompt is needed; without the host, it falls back to /pair (Allow prompt).
+async function ensureApp() {
+  let base = await findBase();
+  let { token } = await getConfig();
+  if (base && token) return { base, token };
+  try {
+    const r = await chrome.runtime.sendNativeMessage("com.cascade.host", { type: "ensure" });
+    if (r && r.ok) {
+      base = "http://" + r.addr;
+      if (r.token) {
+        token = r.token;
+        await chrome.storage.local.set({ token });
+      }
+      if (r.launched) await note("launched Cascade app via native host");
+    } else {
+      log("native host replied:", r && r.error);
+    }
+  } catch (e) {
+    // Host not installed (run scripts/install-macos.sh) or not allowed for this
+    // extension ID; fall back to the app already running + /pair.
+    log("native host unavailable:", e && e.message);
+  }
+  if (!base) base = await findBase();
+  if (base && !token) {
+    const p = await pair();
+    if (p.ok) token = (await getConfig()).token;
+  }
+  return { base, token };
+}
+
 async function heartbeat() {
+  // Keep the app's "Extension: connected" indicator fresh; pair if needed. Does
+  // not launch the app (launch happens on demand when a download starts).
   const base = await findBase();
   const { token } = await getConfig();
-  if (base && !token) {
-    // Not paired yet but the app is running: ask now (prompts the user once).
-    await pair();
-  }
+  if (base && !token) await pair();
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -111,19 +143,18 @@ chrome.downloads.onCreated.addListener(async (item) => {
     return;
   }
 
-  const base = await findBase();
+  // P0: make sure the app is running (launch it via the native host if not)
+  // and that we hold its token; only then hand the download over.
+  const app = await ensureApp();
+  const base = app.base;
+  token = app.token;
   if (!base) {
-    await note("app not reachable on 8760-8762 (is it running?)", item.url);
+    await note("app not running and could not be launched (install the native host); leaving to browser", item.url);
     return;
   }
   if (!token) {
-    // Try to pair on the spot; the app prompts the user.
-    const p = await pair();
-    if (!p.ok) {
-      await note("not paired (" + p.reason + "); leaving to browser", item.url);
-      return;
-    }
-    token = (await getConfig()).token;
+    await note("not paired; leaving to browser", item.url);
+    return;
   }
 
   const cookie = await cookieHeader(item.url);

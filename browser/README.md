@@ -24,18 +24,37 @@ actually exit (which stops capture). If capture silently stops working, the
 first thing to check is that the app is running (the extension's Options page
 "Test connection" button confirms this).
 
-## Setup (one click, no token to copy)
+## Setup (macOS, launch-on-demand)
 
-1. Run the Cascade app (it stays in the menu bar).
-2. Load the extension in the browser you actually download with (Chromium:
-   Chrome/Edge/Brave/Vivaldi):
-   - Go to `chrome://extensions`, enable **Developer mode**.
-   - **Load unpacked** and select `browser/extension`.
-3. The extension immediately asks the app to connect: click **Allow** in the
-   Cascade window. (If you missed it, open the extension's Options and click
-   **Pair with Cascade app**.) The app window then shows
-   "Extension: connected".
-4. Download anything in the browser: it appears in the Cascade window instead.
+1. Install the app and the native-messaging host, and register the host with
+   every Chromium-family browser present (Chromium, Chrome, Brave, Edge,
+   Vivaldi):
+
+       scripts/install-macos.sh
+
+   This builds to `~/Library/Application Support/cascade/bin/` and writes
+   `com.cascade.host.json` into each browser's `NativeMessagingHosts` folder.
+2. Load the extension in the browser you actually download with:
+   `chrome://extensions` → **Developer mode** → **Load unpacked** →
+   `browser/extension`.
+3. Download anything. **You do not need to start the app**: when a download
+   begins, the extension asks the browser to run the native host, which
+   launches Cascade if it is not running, waits for it, and hands the download
+   over. Pairing is automatic through that channel (the browser only lets the
+   extension IDs listed in the host manifest invoke it), so there is no token
+   to copy and no prompt to click.
+
+If the extension was loaded from a path other than this checkout, its ID
+differs from the default; pass it: `scripts/install-macos.sh <EXTENSION_ID>`
+(shown on `chrome://extensions`).
+
+Without the native host (e.g. a browser it wasn't registered with), capture
+still works as long as the app is running: the extension asks the app to
+connect and you click **Allow** once in the Cascade window (or Options →
+**Pair with Cascade app**).
+
+Note for custom profiles: a browser started with `--user-data-dir=<dir>` looks
+for host manifests in `<dir>/NativeMessagingHosts/`, not the default location.
 
 The app window's "Extension:" line is the quickest health check: it says
 "not connected" until the extension is loaded in the browser and has paired.
