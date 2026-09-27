@@ -239,6 +239,93 @@ func TestPauseAndResume(t *testing.T) {
 	}
 }
 
+func TestCancelPendingAndClearFinished(t *testing.T) {
+	data := blob(256 << 10)
+	srv := httptest.NewServer(rangeServer(data, 0, nil, nil, nil))
+	defer srv.Close()
+	dir := t.TempDir()
+
+	m := New(1) // one slot, so later jobs stay pending
+	var ids []string
+	for i := 0; i < 3; i++ {
+		id, _ := m.Add(Spec{URL: srv.URL + fmt.Sprintf("/f%d", i),
+			Out: filepath.Join(dir, fmt.Sprintf("f%d.bin", i)),
+			Options: download.Options{Conns: 2, MinSegment: 64 << 10}})
+		ids = append(ids, id)
+	}
+	// Cancel a job before Run drains the queue.
+	if err := m.Cancel(ids[2]); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if st, _ := m.Status(ids[2]); st.State != Cancelled {
+		t.Fatalf("job2 state = %s, want cancelled", st.State)
+	}
+
+	if err := m.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// After Run: job0/job1 done, job2 cancelled -> 3 terminal jobs.
+	if got := len(m.Statuses()); got != 3 {
+		t.Fatalf("expected 3 jobs, got %d", got)
+	}
+	removed := m.ClearFinished()
+	if removed != 3 {
+		t.Errorf("ClearFinished removed %d, want 3", removed)
+	}
+	if got := len(m.Statuses()); got != 0 {
+		t.Errorf("after clear, %d jobs remain, want 0", got)
+	}
+}
+
+func TestCancelRunningJob(t *testing.T) {
+	data := blob(4 << 20)
+	srv := httptest.NewServer(rangeServer(data, 25*time.Millisecond, nil, nil, nil))
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "f.bin")
+
+	m := New(1)
+	id, _ := m.Add(Spec{URL: srv.URL + "/f", Out: out,
+		Options: download.Options{Conns: 2, MinSegment: 256 << 10, WindowSize: 256 << 10}})
+
+	runErr := make(chan error, 1)
+	go func() { runErr <- m.Run(context.Background()) }()
+
+	waitFor(t, 3*time.Second, func() bool {
+		st, _ := m.Status(id)
+		return st.State == Running && st.Bytes > 0
+	})
+	if err := m.Cancel(id); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	// Run should return once the cancelled job becomes terminal.
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after cancel")
+	}
+	if st, _ := m.Status(id); st.State != Cancelled {
+		t.Fatalf("final state = %s, want cancelled", st.State)
+	}
+}
+
+func TestRemoveJob(t *testing.T) {
+	data := blob(128 << 10)
+	srv := httptest.NewServer(rangeServer(data, 0, nil, nil, nil))
+	defer srv.Close()
+	m := New(1)
+	id, _ := m.Add(Spec{URL: srv.URL + "/f", Out: filepath.Join(t.TempDir(), "f.bin"),
+		Options: download.Options{Conns: 1}})
+	if err := m.Remove(id); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if _, ok := m.Status(id); ok {
+		t.Fatal("job still present after Remove")
+	}
+}
+
 func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)

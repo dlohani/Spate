@@ -37,6 +37,7 @@ const (
 	Paused
 	Done
 	Failed
+	Cancelled
 )
 
 func (s State) String() string {
@@ -51,10 +52,15 @@ func (s State) String() string {
 		return "done"
 	case Failed:
 		return "failed"
+	case Cancelled:
+		return "cancelled"
 	default:
 		return "unknown"
 	}
 }
+
+// Terminal reports whether a state is final (won't run again).
+func (s State) Terminal() bool { return s == Done || s == Failed || s == Cancelled }
 
 // Spec describes a download to enqueue.
 type Spec struct {
@@ -73,9 +79,10 @@ type Job struct {
 	state State
 	err   error
 
-	cancel  context.CancelFunc
-	paused  bool // a pause was requested for the current run
-	dl      *download.Downloader
+	cancel    context.CancelFunc
+	paused    bool // a pause was requested for the current run
+	cancelReq bool // a force-cancel was requested for the current run
+	dl        *download.Downloader
 }
 
 // Status is an immutable snapshot of a job.
@@ -150,6 +157,82 @@ func (m *Manager) Pause(id string) error {
 	}
 	m.signal()
 	return nil
+}
+
+// Cancel force-cancels a job. A running job is stopped (partial file and its
+// .cascade sidecar remain on disk); a pending or paused job is marked cancelled.
+func (m *Manager) Cancel(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[id]
+	if !ok {
+		return fmt.Errorf("no such job %q", id)
+	}
+	switch j.state {
+	case Running:
+		j.cancelReq = true
+		if j.cancel != nil {
+			j.cancel()
+		}
+	case Pending, Paused:
+		j.state = Cancelled
+	default:
+		return fmt.Errorf("job %q is %s, cannot cancel", id, j.state)
+	}
+	m.signal()
+	return nil
+}
+
+// Remove cancels a job if it is still active and deletes it from the queue.
+func (m *Manager) Remove(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[id]
+	if !ok {
+		return fmt.Errorf("no such job %q", id)
+	}
+	if j.state == Running && j.cancel != nil {
+		j.cancelReq = true
+		j.cancel() // running goroutine will decrement the running counter
+	}
+	delete(m.jobs, id)
+	m.signal()
+	return nil
+}
+
+// ClearFinished removes all terminal jobs (done, failed, cancelled) from the
+// queue and returns how many were removed.
+func (m *Manager) ClearFinished() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	n := 0
+	for id, j := range m.jobs {
+		if j.state.Terminal() {
+			delete(m.jobs, id)
+			n++
+		}
+	}
+	m.signal()
+	return n
+}
+
+// CancelAll force-cancels every active job but leaves them in the list (as
+// cancelled) so their partial state is visible.
+func (m *Manager) CancelAll() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, j := range m.jobs {
+		switch j.state {
+		case Running:
+			j.cancelReq = true
+			if j.cancel != nil {
+				j.cancel()
+			}
+		case Pending, Paused:
+			j.state = Cancelled
+		}
+	}
+	m.signal()
 }
 
 // Resume makes a paused job eligible to run again, continuing from disk.
@@ -301,6 +384,9 @@ func (m *Manager) launchLocked(ctx context.Context, j *Job) {
 		case err == nil:
 			j.state = Done
 			j.err = nil
+		case j.cancelReq && errors.Is(err, context.Canceled):
+			j.state = Cancelled
+			j.err = nil
 		case j.paused && errors.Is(err, context.Canceled):
 			j.state = Paused
 			j.err = nil
@@ -339,7 +425,7 @@ func (m *Manager) nextScheduledLocked() time.Time {
 
 func (m *Manager) allTerminalLocked() bool {
 	for _, j := range m.jobs {
-		if j.state != Done && j.state != Failed {
+		if !j.state.Terminal() {
 			return false
 		}
 	}
