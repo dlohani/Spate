@@ -19,6 +19,8 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"cascade/internal/download"
@@ -44,6 +46,19 @@ func main() {
 	a := app.New()
 	w := a.NewWindow("Cascade")
 	w.Resize(fyne.NewSize(720, 480))
+
+	// Stay resident: closing the window hides it, so the capture endpoint and
+	// any running downloads keep going. The app lives in the menu bar; use
+	// "Quit" there to actually exit.
+	w.SetCloseIntercept(func() { w.Hide() })
+	if desk, ok := a.(desktop.App); ok {
+		desk.SetSystemTrayMenu(fyne.NewMenu("Cascade",
+			fyne.NewMenuItem("Open Cascade", func() { w.Show(); w.RequestFocus() }),
+			fyne.NewMenuItemSeparator(),
+			fyne.NewMenuItem("Quit", func() { a.Quit() }),
+		))
+		desk.SetSystemTrayIcon(theme.DownloadIcon())
+	}
 
 	urlEntry := widget.NewEntry()
 	urlEntry.SetPlaceHolder("https://example.com/file.bin")

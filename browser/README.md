@@ -17,6 +17,13 @@ Browser download starts
 If the app is not running or no token is set, the browser download proceeds as
 normal, so the extension is safe to leave installed.
 
+**The app must be running for capture to work.** It stays resident: closing its
+window only hides it, and it keeps running in the menu bar (with a download
+icon). Use **Open Cascade** there to bring the window back, and **Quit** to
+actually exit (which stops capture). If capture silently stops working, the
+first thing to check is that the app is running (the extension's Options page
+"Test connection" button confirms this).
+
 ## Setup
 
 1. Run the Cascade app. Its window shows the capture endpoint and a token.
