@@ -35,26 +35,38 @@ async function cookieHeader(url) {
 
 const log = (...a) => console.log("[cascade]", ...a);
 
+async function note(result, url) {
+  log(result, url || "");
+  try {
+    await chrome.storage.local.set({
+      lastEvent: { time: new Date().toISOString(), url: url || "", result },
+    });
+  } catch (e) {}
+}
+
 chrome.downloads.onCreated.addListener(async (item) => {
   const { token, enabled } = await getConfig();
   log("download detected:", item.url, "enabled:", enabled, "hasToken:", !!token);
   if (!enabled) {
-    log("capture disabled in options; leaving to browser");
+    await note("skipped: capture disabled", item.url);
     return;
   }
   if (!token) {
-    log("no token set; open the extension options and paste the app's token");
+    await note("skipped: no token set (open Options and paste the app token)", item.url);
     return;
   }
   if (!item.url || !/^https?:/i.test(item.url)) {
-    log("skipping non-http url");
+    await note("skipped: non-http url", item.url);
     return;
   }
-  if (item.url.includes("127.0.0.1")) return;
+  if (item.url.includes("127.0.0.1")) {
+    await note("skipped: localhost url", item.url);
+    return;
+  }
 
   const base = await findBase();
   if (!base) {
-    log("Cascade app not reachable on 8760-8762; leaving to browser");
+    await note("app not reachable on 8760-8762 (is it running?)", item.url);
     return;
   }
   log("app reachable at", base);
@@ -75,9 +87,9 @@ chrome.downloads.onCreated.addListener(async (item) => {
       }),
     });
     handedOff = resp.ok;
-    log("POST /add ->", resp.status, handedOff ? "handed off" : "rejected");
+    await note(handedOff ? "handed off to app" : `app rejected: HTTP ${resp.status}`, item.url);
   } catch (e) {
-    log("POST /add failed:", e && e.message);
+    await note("POST failed: " + (e && e.message), item.url);
     handedOff = false;
   }
 
