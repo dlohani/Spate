@@ -88,6 +88,7 @@ type Job struct {
 // Status is an immutable snapshot of a job.
 type Status struct {
 	ID       string
+	Out      string // output path
 	State    State
 	Priority int
 	Err      error
@@ -279,7 +280,7 @@ func (m *Manager) Statuses() []Status {
 }
 
 func (m *Manager) statusLocked(j *Job) Status {
-	st := Status{ID: j.ID, State: j.state, Priority: j.Priority, Err: j.err}
+	st := Status{ID: j.ID, Out: j.Out, State: j.state, Priority: j.Priority, Err: j.err}
 	if j.dl != nil {
 		if meter := j.dl.Meter(); meter != nil {
 			st.Bytes = meter.Done()

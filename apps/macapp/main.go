@@ -19,6 +19,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -46,6 +47,29 @@ func main() {
 	a := app.New()
 	w := a.NewWindow("Cascade")
 	w.Resize(fyne.NewSize(720, 480))
+
+	// One-click pairing: when the browser extension asks to connect, show an
+	// Allow/Deny prompt and release the token only on Allow.
+	capSrv.PairFunc = func() bool {
+		decided := make(chan bool, 1)
+		fyne.Do(func() {
+			w.Show()
+			w.RequestFocus()
+			dialog.ShowConfirm("Browser extension",
+				"A browser extension wants to connect to Cascade to hand off downloads.\nAllow?",
+				func(ok bool) { decided <- ok }, w)
+		})
+		select {
+		case ok := <-decided:
+			return ok
+		case <-time.After(90 * time.Second):
+			return false
+		}
+	}
+
+	// Resume any downloads orphaned by a previous run (their .cascade sidecars
+	// remain next to the partial file).
+	resumeOrphans(mgr, defaultDownloadDir())
 
 	// Stay resident: closing the window hides it, so the capture endpoint and
 	// any running downloads keep going. The app lives in the menu bar; use
@@ -102,6 +126,14 @@ func main() {
 	tokenField := widget.NewEntry()
 	tokenField.SetText(token)
 	captureLabel := widget.NewLabel("Browser capture: " + orDisabled(captureURL))
+	extLabel := widget.NewLabel("Extension: not connected (load it in chrome://extensions, then Pair)")
+	extStatus := func() string {
+		last := capSrv.LastExtensionContact()
+		if last.IsZero() {
+			return "Extension: not connected (load it in chrome://extensions, then Pair)"
+		}
+		return fmt.Sprintf("Extension: connected (last contact %ds ago)", int(time.Since(last).Seconds()))
+	}
 
 	form := container.NewVBox(
 		widget.NewLabel("URL"),
@@ -113,7 +145,8 @@ func main() {
 		addBtn,
 		widget.NewSeparator(),
 		captureLabel,
-		container.NewVBox(widget.NewLabel("Extension token (paste into the browser extension)"), tokenField),
+		extLabel,
+		container.NewVBox(widget.NewLabel("Extension token (only needed for manual setup; use Pair instead)"), tokenField),
 		widget.NewSeparator(),
 		container.NewBorder(nil, nil, widget.NewLabel("Downloads"), container.NewHBox(
 			widget.NewButton("Cancel all", func() { mgr.CancelAll() }),
@@ -132,7 +165,9 @@ func main() {
 				return
 			case <-t.C:
 				snap := mgr.Statuses()
+				ext := extStatus()
 				fyne.Do(func() {
+					extLabel.SetText(ext)
 					rows.Objects = nil
 					for _, s := range snap {
 						rows.Add(makeRow(mgr, s))
@@ -195,6 +230,23 @@ func stateLabel(s job.State) string {
 		return "Cancelled"
 	default:
 		return "-"
+	}
+}
+
+// resumeOrphans re-queues downloads whose .cascade sidecar is still present in
+// dir (left by a crash, quit, or restart), continuing from where they stopped.
+func resumeOrphans(mgr *job.Manager, dir string) {
+	sidecars, _ := filepath.Glob(filepath.Join(dir, "*.cascade"))
+	for _, sc := range sidecars {
+		out := strings.TrimSuffix(sc, ".cascade")
+		ctrl, err := download.LoadControl(out)
+		if err != nil || ctrl == nil || ctrl.URL == "" {
+			continue
+		}
+		if _, err := os.Stat(out); err != nil {
+			continue // partial file gone; nothing to resume
+		}
+		_, _ = mgr.Add(job.Spec{URL: ctrl.URL, Out: out, Options: download.Options{Resume: true}})
 	}
 }
 
