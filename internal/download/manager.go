@@ -137,7 +137,18 @@ func New(u, out string, opts Options) *Downloader {
 }
 
 // Meter exposes live progress; valid after Run has begun. May be nil before.
-func (d *Downloader) Meter() *progress.Meter { return d.meter }
+// Safe to call from another goroutine (e.g. a status poller).
+func (d *Downloader) Meter() *progress.Meter {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.meter
+}
+
+func (d *Downloader) setMeter(m *progress.Meter) {
+	d.mu.Lock()
+	d.meter = m
+	d.mu.Unlock()
+}
 
 // Output returns the resolved output path (valid after Run resolves it).
 func (d *Downloader) Output() string { return d.out }
@@ -175,9 +186,10 @@ func (d *Downloader) Run(ctx context.Context) error {
 	}
 	defer d.file.Close()
 
-	d.meter = progress.New(probe.Size)
+	meter := progress.New(probe.Size)
 	// Account for bytes already on disk from a resumed run.
-	d.meter.Add(d.ctrl.BytesDone())
+	meter.Add(d.ctrl.BytesDone())
+	d.setMeter(meter)
 
 	// Persist resume state periodically while workers run.
 	stop := make(chan struct{})
@@ -349,7 +361,7 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 	}
 	defer f.Close()
 
-	d.meter = progress.New(size)
+	d.setMeter(progress.New(size))
 	buf := make([]byte, chunkSize)
 	for {
 		n, rerr := resp.Body.Read(buf)
