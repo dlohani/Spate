@@ -36,8 +36,10 @@ type Control struct {
 	Conns     int       `json:"conns"`
 	Segments  []Segment `json:"segments"`
 
-	path string       // sidecar path; not serialized
-	mu   sync.Mutex   // guards Segments + file writes across worker goroutines
+	path     string       // sidecar path; not serialized
+	mu       sync.Mutex   // guards Segments, assigned, splits
+	assigned map[int]bool // segment index -> owned by a worker (not serialized)
+	splits   int          // count of work-steal splits performed (not serialized)
 }
 
 // controlPath returns the sidecar path for a given output path.
@@ -52,6 +54,7 @@ func NewControl(outPath, url string, total int64, validator string, segs []Segme
 		Conns:     len(segs),
 		Segments:  segs,
 		path:      controlPath(outPath),
+		assigned:  make(map[int]bool),
 	}
 }
 
@@ -71,6 +74,7 @@ func LoadControl(outPath string) (*Control, error) {
 		return nil, err
 	}
 	c.path = p
+	c.assigned = make(map[int]bool)
 	return &c, nil
 }
 

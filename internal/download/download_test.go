@@ -63,10 +63,11 @@ type manualServer struct {
 	data    []byte
 	etag    string
 	noRange bool
-	budget  *atomic.Int64 // nil = unlimited
-	maxConc atomic.Int64
-	curConc atomic.Int64
-	delay   time.Duration
+	budget   *atomic.Int64 // nil = unlimited
+	maxConc  atomic.Int64
+	curConc  atomic.Int64
+	delay    time.Duration
+	slowFrom int64 // ranges whose start >= slowFrom incur delay (default 0 = all)
 }
 
 func (m *manualServer) handler() http.HandlerFunc {
@@ -79,9 +80,6 @@ func (m *manualServer) handler() http.HandlerFunc {
 			}
 		}
 		defer m.curConc.Add(-1)
-		if m.delay > 0 {
-			time.Sleep(m.delay)
-		}
 
 		total := int64(len(m.data))
 		if m.etag != "" {
@@ -110,6 +108,9 @@ func (m *manualServer) handler() http.HandlerFunc {
 		if !ok {
 			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
 			return
+		}
+		if m.delay > 0 && start >= m.slowFrom {
+			time.Sleep(m.delay)
 		}
 		reqLen := end - start + 1
 		allowed := reqLen
@@ -291,15 +292,87 @@ func TestNoRangeFallback(t *testing.T) {
 	}
 }
 
+func TestNextWorkStealsLargestTail(t *testing.T) {
+	const total = int64(100 << 20)
+	segs := PlanSegments(total, 2, 1<<20) // two 50 MiB segments
+	c := NewControl("out.bin", "http://x", total, `"v1"`, segs)
+
+	// Both segments are owned by workers; seg0 nearly done, seg1 untouched.
+	c.assigned[0] = true
+	c.assigned[1] = true
+	c.Segments[0].Done = c.Segments[0].Length() - (1 << 10) // 1 KiB left
+	oldEnd := c.Segments[1].End
+
+	idx, ok := c.nextWork(8 << 20)
+	if !ok {
+		t.Fatal("expected a steal, got none")
+	}
+	if idx != 2 {
+		t.Fatalf("expected new tail segment index 2, got %d", idx)
+	}
+	victim := c.Segments[1] // largest remaining tail must be the victim
+	tail := c.Segments[2]
+	if victim.End >= oldEnd {
+		t.Errorf("victim end not reduced: got %d, was %d", victim.End, oldEnd)
+	}
+	if tail.Start != victim.End+1 || tail.End != oldEnd {
+		t.Errorf("tail bounds wrong: tail=%+v victim.End=%d oldEnd=%d", tail, victim.End, oldEnd)
+	}
+	if !c.assigned[2] {
+		t.Error("stolen tail should be marked assigned")
+	}
+	if c.Splits() != 1 {
+		t.Errorf("expected 1 split, got %d", c.Splits())
+	}
+
+	// A tail below the threshold must not be split.
+	if _, ok := c.nextWork(1 << 62); ok {
+		t.Error("did not expect a steal when no tail meets the threshold")
+	}
+}
+
+func TestWorkStealingCompletesSlowSegment(t *testing.T) {
+	data := randomBlob(8 << 20) // 8 MiB
+	// Make the second half slow so the worker on the first half finishes early
+	// and steals the laggard's tail.
+	m := &manualServer{data: data, etag: `"v1"`, delay: 80 * time.Millisecond, slowFrom: 4 << 20}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+
+	out := filepath.Join(t.TempDir(), "file.bin")
+	d := New(srv.URL, out, Options{
+		Conns:             2,
+		MinSegment:        4 << 20,   // two initial 4 MiB segments
+		WindowSize:        512 << 10, // small windows so steals can take effect
+		StealMinRemaining: 1 << 20,
+		SHA256:            sha256hex(data),
+	})
+	if err := d.Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Fatal("work-stealing produced wrong content")
+	}
+	if d.Splits() < 1 {
+		t.Errorf("expected at least one work-steal split, got %d", d.Splits())
+	}
+}
+
 func TestCancellationLeavesResumableState(t *testing.T) {
-	data := randomBlob(4 << 20)
+	data := randomBlob(8 << 20)
 	m := &manualServer{data: data, etag: `"v1"`, delay: 40 * time.Millisecond}
 	srv := httptest.NewServer(m.handler())
 	defer srv.Close()
 
 	out := filepath.Join(t.TempDir(), "file.bin")
 	ctx, cancel := context.WithCancel(context.Background())
-	d := New(srv.URL, out, Options{Conns: 4, MinSegment: 256 << 10, Retries: 2, Resume: true})
+	// Small windows so each segment needs several delayed requests, keeping the
+	// transfer in flight long enough to be cancelled mid-download.
+	d := New(srv.URL, out, Options{Conns: 4, MinSegment: 256 << 10, WindowSize: 256 << 10, Retries: 2, Resume: true})
 
 	var wg sync.WaitGroup
 	wg.Add(1)
