@@ -44,7 +44,12 @@ func New(cfg Config) (*http.Client, error) {
 			Timeout:   15 * time.Second,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		ForceAttemptHTTP2: true,
+		// Force HTTP/1.1: a segmented downloader wants N independent TCP
+		// connections, not one multiplexed HTTP/2 connection. This gives true
+		// parallelism and isolates a connection-level failure (e.g. a corrupted
+		// TLS record) to a single segment, which then retries on its own socket.
+		ForceAttemptHTTP2: false,
+		TLSNextProto:      map[string]func(string, *tls.Conn) http.RoundTripper{},
 		// Allow many idle connections to the same host so segment workers reuse
 		// sockets instead of re-dialing.
 		MaxIdleConns:          maxConns * 2,

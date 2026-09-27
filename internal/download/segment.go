@@ -119,7 +119,7 @@ func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) 
 	}
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return err
+		return &netError{err} // dial/handshake/TLS error: retry on a fresh connection
 	}
 	defer resp.Body.Close()
 
@@ -174,7 +174,7 @@ func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) 
 			break
 		}
 		if rerr != nil {
-			return rerr
+			return &netError{rerr} // read error mid-body (incl. TLS bad record MAC): retry
 		}
 	}
 	if got < want {
@@ -197,6 +197,14 @@ func (e *httpStatusError) Error() string {
 	return fmt.Sprintf("server error: %s", e.status)
 }
 
+// netError marks a network-level failure (dial, TLS handshake, or a read error
+// mid-body such as "tls: bad record MAC" from a corrupted/tampered record) as
+// retryable: a fresh connection usually succeeds and progress resumes via Range.
+type netError struct{ err error }
+
+func (e *netError) Error() string { return e.err.Error() }
+func (e *netError) Unwrap() error { return e.err }
+
 // isTransient reports whether err is worth retrying.
 func isTransient(err error) bool {
 	if err == nil {
@@ -207,6 +215,10 @@ func isTransient(err error) bool {
 	}
 	var se *httpStatusError
 	if errors.As(err, &se) {
+		return true
+	}
+	var ne2 *netError
+	if errors.As(err, &ne2) {
 		return true
 	}
 	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
