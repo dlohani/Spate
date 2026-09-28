@@ -9,7 +9,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -41,9 +44,40 @@ type Service struct {
 	pairCh      chan bool
 }
 
+// ErrAlreadyRunning is returned by Start when another Cascade instance already
+// answers on the capture ports; a shell should exit quietly (or defer to it).
+var ErrAlreadyRunning = errors.New("cascade is already running")
+
+// AlreadyRunning reports whether a Cascade capture endpoint is already up on
+// one of the ports the browser extension probes.
+func AlreadyRunning() bool {
+	c := &http.Client{Timeout: 300 * time.Millisecond}
+	for _, p := range []int{localapi.DefaultPort, localapi.DefaultPort + 1, localapi.DefaultPort + 2} {
+		resp, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d/ping", p))
+		if err != nil {
+			continue
+		}
+		var body struct {
+			App string `json:"app"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&body)
+		resp.Body.Close()
+		if body.App == "cascade" {
+			return true
+		}
+	}
+	return false
+}
+
 // Start brings the service up: manager loop, capture endpoint, orphan resume.
-// downloadDir "" selects the platform default.
+// downloadDir "" selects the platform default. It refuses to start a second
+// instance (ErrAlreadyRunning) so login items, the native host and manual
+// launches can never stack up duplicate resident apps.
 func Start(maxConcurrent int, downloadDir string) (*Service, error) {
+	// CASCADE_ALLOW_MULTIPLE=1 disables the guard (tests, development).
+	if os.Getenv("CASCADE_ALLOW_MULTIPLE") != "1" && AlreadyRunning() {
+		return nil, ErrAlreadyRunning
+	}
 	if downloadDir == "" {
 		downloadDir = DefaultDownloadDir()
 	}

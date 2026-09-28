@@ -14,6 +14,7 @@ import (
 
 func TestStartAddAndPair(t *testing.T) {
 	t.Setenv("CASCADE_TOKEN", "test-token")
+	t.Setenv("CASCADE_ALLOW_MULTIPLE", "1") // a real Cascade may be running on this machine
 	dir := t.TempDir()
 
 	data := make([]byte, 512<<10)

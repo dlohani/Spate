@@ -21,16 +21,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 )
 
 const (
-	appBundle  = "Cascade.app" // Flutter app bundle installed next to this host (preferred)
-	appBinary  = "cascade-mac" // Fyne fallback binary installed next to this host
-	launchWait = 20 * time.Second
-	ports      = "8760,8761,8762"
+	appBundle      = "Cascade.app" // macOS: Flutter app bundle installed next to this host (preferred)
+	linuxBundleDir = "cascade_app" // Linux: Flutter bundle directory installed next to this host
+	linuxBinary    = "cascade_app" // Linux: executable inside the bundle directory
+	appBinary      = "cascade-mac" // Fyne fallback binary installed next to this host
+	launchWait     = 20 * time.Second
+	ports          = "8760,8761,8762"
 )
 
 type request struct {
@@ -112,18 +115,21 @@ func launchApp() error {
 		return err
 	}
 	dir := filepath.Dir(exe)
-	// Prefer the Flutter app bundle (launched through LaunchServices so it gets
-	// a proper GUI session); fall back to the Fyne binary.
+	// Prefer the Flutter app; fall back to the Fyne binary. On macOS the bundle
+	// is launched through LaunchServices so it gets a proper GUI session; on
+	// Linux/Windows the bundle's executable is started detached.
 	var cmd *exec.Cmd
-	if bundle := filepath.Join(dir, appBundle); dirExists(bundle) {
-		cmd = exec.Command("open", "-a", bundle)
-	} else {
-		app := filepath.Join(dir, appBinary)
-		if _, err := os.Stat(app); err != nil {
-			return fmt.Errorf("no app found at %s or %s", bundle, app)
-		}
-		cmd = exec.Command(app)
+	switch {
+	case runtime.GOOS == "darwin" && dirExists(filepath.Join(dir, appBundle)):
+		cmd = exec.Command("open", "-a", filepath.Join(dir, appBundle))
+	case fileExists(filepath.Join(dir, linuxBundleDir, linuxBinary)):
+		cmd = exec.Command(filepath.Join(dir, linuxBundleDir, linuxBinary))
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	case fileExists(filepath.Join(dir, appBinary)):
+		cmd = exec.Command(filepath.Join(dir, appBinary))
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // own session; outlives us
+	default:
+		return fmt.Errorf("no Cascade app found next to %s", exe)
 	}
 
 	cfg, _ := os.UserConfigDir()
@@ -151,6 +157,11 @@ func launchApp() error {
 func dirExists(p string) bool {
 	fi, err := os.Stat(p)
 	return err == nil && fi.IsDir()
+}
+
+func fileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && !fi.IsDir()
 }
 
 // readToken returns the persisted capture token the app uses ("" if none yet;

@@ -74,7 +74,8 @@ class Cascade {
     final candidates = <String>[
       '$exeDir/../Frameworks/$name', // macOS .app bundle
       '$exeDir/$name', // Windows/Linux next to the executable
-      'dist/$name', // running from apps/flutter? no; from repo root
+      '$exeDir/lib/$name', // Linux Flutter bundle's lib/ directory
+      'dist/$name', // running from the repo root
       '../../dist/$name', // running/testing from apps/flutter
     ];
     for (final c in candidates) {

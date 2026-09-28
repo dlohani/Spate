@@ -41,14 +41,34 @@ Requires Go 1.22+. The core has no external dependencies (standard library only)
 
 ## Install on macOS (app + browser capture)
 
-    scripts/install-macos.sh
+    scripts/flutter-macos.sh build   # Flutter UI with the Go core bundled
+    scripts/install-macos.sh         # host, app, browser registration, login item
 
-Builds the resident app and the browser native-messaging host into
-`~/Library/Application Support/cascade/bin/` and registers the host with the
-Chromium-family browsers on the machine. Then load `browser/extension` in the
-browser (`chrome://extensions` → Load unpacked). From then on a download started
-in the browser launches Cascade if it isn't running and is handed to it, with no
-copy/paste and no token setup. See `browser/README.md`.
+Installs the resident app and the browser native-messaging host into
+`~/Library/Application Support/cascade/bin/`, registers the host with the
+Chromium-family browsers on the machine, and adds a per-user LaunchAgent so
+Cascade starts **hidden at login** (menu-bar icon only; `CASCADE_NO_LOGIN=1`
+skips it, `launchctl bootout gui/$UID/dev.d3xt3r.cascade` removes it). Then load
+`browser/extension` in the browser (`chrome://extensions` → Load unpacked). From
+then on a download started in the browser launches Cascade if it isn't running
+and is handed to it, with no copy/paste and no token setup. Closing the window
+hides it; quit from the menu-bar icon. The core refuses to start a second
+instance, so login item, native host and manual launches never stack up. See
+`browser/README.md`.
+
+## Install on Linux
+
+Run on the Linux machine, after `flutter build linux` in `apps/flutter`:
+
+    scripts/install-linux.sh
+
+Builds the Go core (`libcascade.so`) and native host, installs the Flutter
+bundle under `~/.local/share/cascade/bin/`, registers the host with Chromium,
+Chrome, Brave, Edge and Vivaldi, adds an application-menu entry and an XDG
+autostart entry (`--background`, tray only). A tray icon needs a desktop with
+AppIndicator support (KDE, or GNOME with the extension); without one the app
+still works from its window. Prepared and syntax-checked here; not yet
+exercised on a Linux desktop.
 
 ## Cross-platform
 

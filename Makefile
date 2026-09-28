@@ -50,6 +50,13 @@ ios:
 	@mkdir -p $(DIST)
 	gomobile bind -target=ios -o $(DIST)/Cascade.xcframework $(PKG_MOB)
 
+# Cross-compile the (pure Go) native host for Linux from any OS. libcascade.so
+# needs cgo and is built natively on Linux by scripts/install-linux.sh.
+host-linux:
+	@mkdir -p $(DIST)/linux-amd64 $(DIST)/linux-arm64
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -o $(DIST)/linux-amd64/cascade-host ./cmd/cascade-host
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GO) build -o $(DIST)/linux-arm64/cascade-host ./cmd/cascade-host
+
 # Install/initialize gomobile (one-time).
 tools:
 	$(GO) install golang.org/x/mobile/cmd/gomobile@latest
