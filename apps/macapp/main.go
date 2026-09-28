@@ -108,6 +108,14 @@ func main() {
 		}
 	}()
 
+	// --background (autostart): run with only the tray icon; the window opens
+	// from the tray menu or when a download arrives.
+	for _, arg := range os.Args[1:] {
+		if arg == "--background" {
+			a.Run()
+			return
+		}
+	}
 	w.ShowAndRun()
 }
 

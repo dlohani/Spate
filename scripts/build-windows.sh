@@ -25,23 +25,33 @@ echo "==> cascade.dll (core, C ABI)"
 echo "==> cascade-gui.exe (Fyne UI; first build compiles GLFW, takes a while)"
 (cd "$ROOT/apps/macapp" && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC="$CC" go build -ldflags "-s -w -H windowsgui" -o "$OUT/cascade-gui.exe" .)
 
+echo "==> cascade-setup.exe (single-file installer embedding the binaries + extension)"
+PAY="$ROOT/cmd/cascade-setup/payload"
+rm -rf "$PAY" && mkdir -p "$PAY/bin" "$PAY/extension"
+cp "$OUT/cascade-gui.exe" "$OUT/cascade-host.exe" "$OUT/cascade.exe" "$OUT/cascade.dll" "$PAY/bin/"
+cp -R "$ROOT/browser/extension/." "$PAY/extension/"
+(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o "$OUT/cascade-setup.exe" ./cmd/cascade-setup)
+
 echo "==> packaging"
 cp -R "$ROOT/browser/extension" "$OUT/extension"
 cp "$ROOT/scripts/install-windows.ps1" "$ROOT/scripts/flutter-windows.ps1" "$OUT/"
 cat > "$OUT/README-windows.txt" <<'TXT'
-Cascade for Windows (amd64) -- test build
+Cascade for Windows (amd64) -- dev build
 
-1. Right-click install-windows.ps1 -> Run with PowerShell
-   (or: powershell -ExecutionPolicy Bypass -File install-windows.ps1)
-   Installs to %LOCALAPPDATA%\Cascade\bin, registers the browser native host
-   (Chrome, Chromium, Edge, Brave) in the registry, and adds a Run-key autostart.
-2. Load the extension: chrome://extensions -> Developer mode -> Load unpacked
-   -> the "extension" folder.
-3. Start cascade-gui.exe (or download something in the browser: the host
-   launches it). Windows SmartScreen may warn: the binaries are unsigned.
+Quick start: double-click cascade-setup.exe. It installs to
+%LOCALAPPDATA%\Cascade, registers the browser native host (Chrome, Chromium,
+Edge, Brave), adds a hidden autostart, and launches the app. Then load the
+extension it extracted (chrome://extensions -> Developer mode -> Load unpacked
+-> %LOCALAPPDATA%\Cascade\extension). If the extension's Options page shows a
+different ID than setup printed, run: cascade-setup.exe --extension-id <ID>
+Windows SmartScreen will warn: the binaries are unsigned.
 
+  cascade-setup.exe --uninstall   removes it again
+
+Manual alternative: install-windows.ps1 (same steps via PowerShell).
 cascade.exe is the command-line downloader. cascade.dll is the core for the
-Flutter UI, which you build on Windows with flutter-windows.ps1.
+Flutter UI, which you build on Windows with flutter-windows.ps1; the setup
+prefers cascade_app\cascade_app.exe when it is present next to it.
 TXT
 (cd "$ROOT/dist" && rm -f cascade-windows-amd64.zip && zip -qr cascade-windows-amd64.zip windows-amd64)
 ls -la "$OUT" "$ROOT/dist/cascade-windows-amd64.zip"
