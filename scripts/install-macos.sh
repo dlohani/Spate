@@ -61,6 +61,29 @@ for dir in \
   echo "    $dir/${HOST_NAME}.json"
 done
 
+# Start at login (hidden, menu bar only) via a per-user LaunchAgent. Skip with
+# CASCADE_NO_LOGIN=1. Remove with: launchctl bootout gui/$UID/dev.d3xt3r.cascade
+if [ -d "$BIN/Cascade.app" ] && [ "${CASCADE_NO_LOGIN:-0}" != "1" ]; then
+  echo "==> registering login item (LaunchAgent)"
+  LA="$HOME/Library/LaunchAgents"; mkdir -p "$LA"
+  PLIST="$LA/dev.d3xt3r.cascade.plist"
+  cat > "$PLIST" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.d3xt3r.cascade</string>
+  <key>ProgramArguments</key>
+  <array><string>${BIN}/Cascade.app/Contents/MacOS/cascade_app</string><string>--background</string></array>
+  <key>EnvironmentVariables</key>
+  <dict><key>CASCADE_BACKGROUND</key><string>1</string></dict>
+  <key>RunAtLoad</key><true/>
+</dict></plist>
+PL
+  launchctl bootout "gui/$(id -u)/dev.d3xt3r.cascade" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || launchctl load "$PLIST" 2>/dev/null || true
+  echo "    $PLIST (starts Cascade hidden at login)"
+fi
+
 echo "==> done. Extension IDs allowed: ${EXT_IDS[*]}"
 echo "    Load browser/extension in chrome://extensions (Developer mode -> Load unpacked)."
 echo "    Downloads will launch $BIN/cascade-mac automatically when it is not running."

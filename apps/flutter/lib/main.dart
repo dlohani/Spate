@@ -12,19 +12,34 @@ import 'package:window_manager/window_manager.dart';
 import 'src/app.dart';
 import 'src/ffi/cascade_ffi.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // The Go core owns the engine, the queue, the browser-capture endpoint and
-  // pairing; this app is a thin shell over it via the C ABI.
-  final core = Cascade.start(maxConcurrent: 3);
+  // pairing; this app is a thin shell over it via the C ABI. The core refuses
+  // to start a second instance, so a duplicate launch (login item + native
+  // host + a manual open) just exits quietly.
+  final Cascade core;
+  try {
+    core = Cascade.start(maxConcurrent: 3);
+  } on StateError {
+    exit(0);
+  }
   final controller = CascadeController(core);
+
+  // --background: started at login (or by the native host for a silent hand-off);
+  // stay in the tray without showing the window.
+  final background = args.contains('--background') || Platform.environment['CASCADE_BACKGROUND'] == '1';
 
   final desktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
   if (desktop) {
     await windowManager.ensureInitialized();
     const opts = WindowOptions(size: Size(960, 660), minimumSize: Size(640, 480), center: true, title: 'Cascade');
     windowManager.waitUntilReadyToShow(opts, () async {
+      // In background mode the window simply is never shown (it stays hidden
+      // until "Open Cascade" in the tray menu); the AppDelegate keeps the
+      // process alive with no windows.
+      if (background) return;
       await windowManager.show();
       await windowManager.focus();
     });
