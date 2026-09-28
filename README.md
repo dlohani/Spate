@@ -63,9 +63,19 @@ design (layers, the media-capture analysis for TikTok/IG/YouTube, per-OS gating)
 | Android | `cascade.aar` | `make android` (needs Android SDK/NDK) |
 | iOS | `Cascade.xcframework` | `make ios` (needs Xcode) |
 
-- `export/cshared` is the C ABI (for Flutter `dart:ffi` and native C).
+- `export/cshared` is the C ABI (for Flutter `dart:ffi` and native C). It
+  exposes the whole app service (`internal/service`: engine, queue, browser
+  capture endpoint, pairing, orphan resume), so UI shells stay thin.
 - `mobile/` is the gomobile facade (native Kotlin/Swift shells).
 - Both expose the same JSON status schema.
+
+### Flutter app (all platforms, one UI)
+
+`apps/flutter` is the unified Material 3 frontend over the C ABI. Its FFI test
+drives the real `libcascade` (`cd apps/flutter && flutter test`). Building the
+macOS app needs full Xcode and CocoaPods: `scripts/flutter-macos.sh run` (dev)
+or `scripts/flutter-macos.sh build` (bundles `libcascade.dylib` into the app).
+`apps/macapp` (Fyne) remains as the lightweight fallback shell.
 
 ## Use
 
