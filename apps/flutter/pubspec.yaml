@@ -36,6 +36,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   # dart:ffi helpers (Utf8 marshalling) for the libcascade C ABI binding.
   ffi: ^2.1.0
+  window_manager: ^0.5.2
+  tray_manager: ^0.7.0
 
 dev_dependencies:
   flutter_test:
@@ -53,6 +55,9 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  assets:
+    - assets/tray/icon.png
+    - assets/tray/icon@2x.png
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
