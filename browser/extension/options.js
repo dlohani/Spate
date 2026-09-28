@@ -79,6 +79,14 @@ document.getElementById("testadd").addEventListener("click", async () => {
   }
 });
 
+// The unpacked extension's ID depends on its folder path, so it differs per
+// machine; the native-host manifest must list it. Show it and let it be copied.
+document.getElementById("extId").textContent = chrome.runtime.id;
+document.getElementById("copyId").addEventListener("click", async () => {
+  await navigator.clipboard.writeText(chrome.runtime.id);
+  setStatus("Extension ID copied.", true);
+});
+
 function setStatus(msg, ok) {
   statusEl.textContent = msg;
   statusEl.className = ok ? "ok" : "bad";
