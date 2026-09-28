@@ -50,6 +50,10 @@ ios:
 	@mkdir -p $(DIST)
 	gomobile bind -target=ios -o $(DIST)/Cascade.xcframework $(PKG_MOB)
 
+# Cross-compile and package the Windows amd64 binaries (needs mingw-w64).
+windows:
+	scripts/build-windows.sh
+
 # Cross-compile the (pure Go) native host for Linux from any OS. libcascade.so
 # needs cgo and is built natively on Linux by scripts/install-linux.sh.
 host-linux:

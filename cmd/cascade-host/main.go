@@ -23,17 +23,17 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 )
 
 const (
-	appBundle      = "Cascade.app" // macOS: Flutter app bundle installed next to this host (preferred)
-	linuxBundleDir = "cascade_app" // Linux: Flutter bundle directory installed next to this host
-	linuxBinary    = "cascade_app" // Linux: executable inside the bundle directory
-	appBinary      = "cascade-mac" // Fyne fallback binary installed next to this host
-	launchWait     = 20 * time.Second
-	ports          = "8760,8761,8762"
+	appBundle    = "Cascade.app" // macOS: Flutter app bundle installed next to this host (preferred)
+	bundleDir    = "cascade_app" // Linux/Windows: Flutter bundle directory installed next to this host
+	bundleBinary = "cascade_app" // executable inside the bundle directory (+ .exe on Windows)
+	guiBinary    = "cascade-gui" // Fyne fallback GUI binary (+ .exe on Windows)
+	legacyBinary = "cascade-mac" // older name of the Fyne binary on macOS installs
+	launchWait   = 20 * time.Second
+	ports        = "8760,8761,8762"
 )
 
 type request struct {
@@ -115,36 +115,41 @@ func launchApp() error {
 		return err
 	}
 	dir := filepath.Dir(exe)
-	// Prefer the Flutter app; fall back to the Fyne binary. On macOS the bundle
-	// is launched through LaunchServices so it gets a proper GUI session; on
-	// Linux/Windows the bundle's executable is started detached.
+	ext := ""
+	if runtime.GOOS == "windows" {
+		ext = ".exe"
+	}
+	// Prefer the Flutter app; fall back to the Fyne GUI binary. On macOS the
+	// bundle is launched through LaunchServices so it gets a proper GUI session;
+	// elsewhere the executable is started detached from this host.
 	var cmd *exec.Cmd
 	switch {
 	case runtime.GOOS == "darwin" && dirExists(filepath.Join(dir, appBundle)):
 		cmd = exec.Command("open", "-a", filepath.Join(dir, appBundle))
-	case fileExists(filepath.Join(dir, linuxBundleDir, linuxBinary)):
-		cmd = exec.Command(filepath.Join(dir, linuxBundleDir, linuxBinary))
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	case fileExists(filepath.Join(dir, appBinary)):
-		cmd = exec.Command(filepath.Join(dir, appBinary))
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // own session; outlives us
+	case fileExists(filepath.Join(dir, bundleDir, bundleBinary+ext)):
+		cmd = exec.Command(filepath.Join(dir, bundleDir, bundleBinary+ext))
+		detach(cmd)
+	case fileExists(filepath.Join(dir, guiBinary+ext)):
+		cmd = exec.Command(filepath.Join(dir, guiBinary+ext))
+		detach(cmd)
+	case fileExists(filepath.Join(dir, legacyBinary)):
+		cmd = exec.Command(filepath.Join(dir, legacyBinary))
+		detach(cmd)
 	default:
 		return fmt.Errorf("no Cascade app found next to %s", exe)
 	}
 
+	// Serialize concurrent launches (two downloads arriving at once).
 	cfg, _ := os.UserConfigDir()
 	lockPath := filepath.Join(cfg, "cascade", "launch.lock")
 	_ = os.MkdirAll(filepath.Dir(lockPath), 0o700)
-	lf, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
-	if err == nil {
-		defer lf.Close()
-		if err := syscall.Flock(int(lf.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-			return nil // another host is launching it; the caller polls /ping
-		}
-		defer syscall.Flock(int(lf.Fd()), syscall.LOCK_UN)
-		if findApp() != "" {
-			return nil // came up while we waited for the lock
-		}
+	unlock, ok := tryLock(lockPath)
+	if !ok {
+		return nil // another host is launching it; the caller polls /ping
+	}
+	defer unlock()
+	if findApp() != "" {
+		return nil // came up while we waited for the lock
 	}
 
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
