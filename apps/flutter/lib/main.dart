@@ -36,10 +36,13 @@ Future<void> main(List<String> args) async {
     await windowManager.ensureInitialized();
     const opts = WindowOptions(size: Size(960, 660), minimumSize: Size(640, 480), center: true, title: 'Cascade');
     windowManager.waitUntilReadyToShow(opts, () async {
-      // In background mode the window simply is never shown (it stays hidden
-      // until "Open Cascade" in the tray menu); the AppDelegate keeps the
-      // process alive with no windows.
-      if (background) return;
+      if (background) {
+        // Stay in the tray until "Open Cascade". On macOS the window is hidden
+        // at launch by MainFlutterWindow; the Windows/Linux runners show it
+        // themselves, so hide it here.
+        if (!Platform.isMacOS) await windowManager.hide();
+        return;
+      }
       await windowManager.show();
       await windowManager.focus();
     });

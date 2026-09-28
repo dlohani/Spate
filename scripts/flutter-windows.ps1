@@ -6,10 +6,17 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Dll  = Join-Path $Root "dist\windows-amd64\cascade.dll"
 if (-not (Test-Path $Dll)) {
-  Write-Host "building cascade.dll natively (needs Go + a C compiler such as MSYS2/mingw-w64 gcc)"
+  # Prefer a DLL already installed from the cross-compiled zip; else build it.
+  $installed = Join-Path $env:LOCALAPPDATA "Cascade\bin\cascade.dll"
   New-Item -ItemType Directory -Force -Path (Split-Path $Dll) | Out-Null
-  $env:CGO_ENABLED = "1"
-  & go build -buildmode=c-shared -o $Dll (Join-Path $Root "export\cshared")
+  if (Test-Path $installed) {
+    Copy-Item $installed $Dll -Force
+    Write-Host "using installed cascade.dll from $installed"
+  } else {
+    Write-Host "building cascade.dll natively (needs Go + a C compiler such as MSYS2/mingw-w64 gcc)"
+    $env:CGO_ENABLED = "1"
+    & go build -buildmode=c-shared -o $Dll (Join-Path $Root "export\cshared")
+  }
 }
 Push-Location (Join-Path $Root "apps\flutter")
 & flutter build windows --release
