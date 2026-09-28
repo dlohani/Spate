@@ -25,6 +25,15 @@ chmod +x "$BIN/cascade-host" "$BIN/cascade-mac"
 echo "    $BIN/cascade-mac"
 echo "    $BIN/cascade-host"
 
+# Flutter app bundle (preferred by the native host when present). Built by
+# scripts/flutter-macos.sh build; installed here as Cascade.app.
+FLUTTER_APP="$(ls -d "$ROOT"/apps/flutter/build/macos/Build/Products/Release/*.app 2>/dev/null | head -1 || true)"
+if [ -n "$FLUTTER_APP" ]; then
+  rm -rf "$BIN/Cascade.app"
+  cp -R "$FLUTTER_APP" "$BIN/Cascade.app"
+  echo "    $BIN/Cascade.app  (Flutter UI; launched on demand by the native host)"
+fi
+
 origins=""
 for id in "${EXT_IDS[@]}"; do
   origins+="${origins:+, }\"chrome-extension://${id}/\""

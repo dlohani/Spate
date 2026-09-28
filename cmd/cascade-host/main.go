@@ -27,8 +27,9 @@ import (
 )
 
 const (
-	appBinary  = "cascade-mac"  // installed next to this host
-	launchWait = 15 * time.Second
+	appBundle  = "Cascade.app" // Flutter app bundle installed next to this host (preferred)
+	appBinary  = "cascade-mac" // Fyne fallback binary installed next to this host
+	launchWait = 20 * time.Second
 	ports      = "8760,8761,8762"
 )
 
@@ -110,9 +111,19 @@ func launchApp() error {
 	if err != nil {
 		return err
 	}
-	app := filepath.Join(filepath.Dir(exe), appBinary)
-	if _, err := os.Stat(app); err != nil {
-		return fmt.Errorf("app binary not found at %s", app)
+	dir := filepath.Dir(exe)
+	// Prefer the Flutter app bundle (launched through LaunchServices so it gets
+	// a proper GUI session); fall back to the Fyne binary.
+	var cmd *exec.Cmd
+	if bundle := filepath.Join(dir, appBundle); dirExists(bundle) {
+		cmd = exec.Command("open", "-a", bundle)
+	} else {
+		app := filepath.Join(dir, appBinary)
+		if _, err := os.Stat(app); err != nil {
+			return fmt.Errorf("no app found at %s or %s", bundle, app)
+		}
+		cmd = exec.Command(app)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // own session; outlives us
 	}
 
 	cfg, _ := os.UserConfigDir()
@@ -130,13 +141,16 @@ func launchApp() error {
 		}
 	}
 
-	cmd := exec.Command(app)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // own session; outlives us
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, nil, nil
 	if err := cmd.Start(); err != nil {
 		return err
 	}
 	return cmd.Process.Release()
+}
+
+func dirExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
 }
 
 // readToken returns the persisted capture token the app uses ("" if none yet;
