@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -120,7 +121,16 @@ func (c *controller) Cancel(id string) error     { return c.mgr.Cancel(id) }
 func (c *controller) Remove(id string) error     { return c.mgr.Remove(id) }
 func (c *controller) ClearFinished() int         { return c.mgr.ClearFinished() }
 func (c *controller) CancelAll()                 { c.mgr.CancelAll() }
-func (c *controller) Reveal(p string)            { _ = exec.Command("open", "-R", p).Start() }
+func (c *controller) Reveal(p string) {
+	switch runtime.GOOS {
+	case "darwin":
+		_ = exec.Command("open", "-R", p).Start()
+	case "windows":
+		_ = exec.Command("explorer", "/select,", p).Start()
+	default:
+		_ = exec.Command("xdg-open", filepath.Dir(p)).Start()
+	}
+}
 func (c *controller) Add(rawURL, dir string, conns int) error {
 	if _, err := url.ParseRequestURI(rawURL); err != nil {
 		return fmt.Errorf("invalid URL")
