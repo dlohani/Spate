@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'ffi/cascade_ffi.dart';
 import 'model/job.dart' show humanBytes;
 import 'model/settings.dart';
+import 'model/ui_prefs.dart';
 
 const _dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -11,7 +12,8 @@ const _dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /// concurrency. Saved as one document through the C ABI.
 class SettingsScreen extends StatefulWidget {
   final Cascade core;
-  const SettingsScreen({super.key, required this.core});
+  final UiPrefs prefs;
+  const SettingsScreen({super.key, required this.core, required this.prefs});
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
@@ -67,6 +69,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: ListView(
             padding: const EdgeInsets.all(20),
             children: [
+              _section(context, 'Appearance', Icons.palette_outlined, [
+                // Applies immediately and is remembered; nothing to save.
+                AnimatedBuilder(
+                  animation: widget.prefs,
+                  builder: (context, _) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    SegmentedButton<ThemeMode>(
+                      segments: const [
+                        ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto_outlined), label: Text('System')),
+                        ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode_outlined), label: Text('Light')),
+                        ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode_outlined), label: Text('Dark')),
+                      ],
+                      selected: {widget.prefs.mode},
+                      onSelectionChanged: (s) => widget.prefs.setMode(s.first),
+                    ),
+                    const SizedBox(height: 12),
+                    Text('Accent', style: Theme.of(context).textTheme.labelLarge),
+                    const SizedBox(height: 6),
+                    Wrap(spacing: 8, runSpacing: 8, children: [
+                      for (final e in accentColors.entries)
+                        Tooltip(
+                          message: e.key[0].toUpperCase() + e.key.substring(1),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(999),
+                            onTap: () => widget.prefs.setAccent(e.key),
+                            child: Container(
+                              width: 30, height: 30,
+                              decoration: BoxDecoration(
+                                color: e.value,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: widget.prefs.accent == e.key ? cs.onSurface : Colors.transparent, width: 2.5),
+                              ),
+                              child: widget.prefs.accent == e.key ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
+                            ),
+                          ),
+                        ),
+                    ]),
+                  ]),
+                ),
+              ]),
               _section(context, 'Downloads folder', Icons.folder_outlined, [
                 TextField(controller: _dir, onChanged: (_) => _touch(), decoration: const InputDecoration(labelText: 'Base folder')),
                 const SizedBox(height: 8),

@@ -130,7 +130,7 @@ func CascadeInfoJSON(handle C.longlong) *C.char {
 	if s == nil {
 		return cstr("{}")
 	}
-	b, _ := json.Marshal(map[string]string{"addr": s.Addr, "dir": s.Dir})
+	b, _ := json.Marshal(map[string]string{"addr": s.Addr, "dir": s.Dir, "configDir": s.ConfigDir()})
 	return cstr(string(b))
 }
 

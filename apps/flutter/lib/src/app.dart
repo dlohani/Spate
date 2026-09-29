@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'ffi/cascade_ffi.dart';
 import 'model/job.dart';
+import 'model/ui_prefs.dart';
 import 'settings_screen.dart';
 
 /// App state: polls the core twice a second and exposes the queue.
@@ -124,31 +125,33 @@ class _Rate {
 }
 
 // Design tokens shared by both brightnesses.
-const _kSeed = Color(0xFF2563EB);
 const _kRadius = 14.0;
 const _kMaxWidth = 900.0;
 
 class CascadeApp extends StatelessWidget {
   final CascadeController controller;
-  const CascadeApp({super.key, required this.controller});
+  final UiPrefs prefs;
+  const CascadeApp({super.key, required this.controller, required this.prefs});
 
-  ThemeData _theme(Brightness b) {
-    final cs = ColorScheme.fromSeed(seedColor: _kSeed, brightness: b);
-    final border = b == Brightness.dark ? const Color(0xFF2A303A) : const Color(0xFFE5E7EB);
+  /// Light is white surfaces on a soft grey; dark is near-black surfaces.
+  /// Both are seeded from the user's accent colour.
+  static ThemeData theme(Brightness b, Color seed) {
+    final cs = ColorScheme.fromSeed(seedColor: seed, brightness: b);
+    final border = b == Brightness.dark ? const Color(0xFF26282D) : const Color(0xFFE5E7EB);
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
       visualDensity: VisualDensity.comfortable,
-      scaffoldBackgroundColor: b == Brightness.dark ? const Color(0xFF0F1217) : const Color(0xFFF6F7F9),
+      scaffoldBackgroundColor: b == Brightness.dark ? const Color(0xFF0A0B0D) : const Color(0xFFF6F7F9),
       cardTheme: CardThemeData(
         elevation: 0,
-        color: b == Brightness.dark ? const Color(0xFF171B22) : Colors.white,
+        color: b == Brightness.dark ? const Color(0xFF141619) : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_kRadius), side: BorderSide(color: border)),
         margin: EdgeInsets.zero,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: b == Brightness.dark ? const Color(0xFF0F1217) : const Color(0xFFF3F4F6),
+        fillColor: b == Brightness.dark ? const Color(0xFF0A0B0D) : const Color(0xFFF3F4F6),
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
@@ -167,18 +170,23 @@ class CascadeApp extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'Cascade',
-        debugShowCheckedModeBanner: false,
-        theme: _theme(Brightness.light),
-        darkTheme: _theme(Brightness.dark),
-        home: HomeScreen(controller: controller),
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: prefs,
+        builder: (context, _) => MaterialApp(
+          title: 'Cascade',
+          debugShowCheckedModeBanner: false,
+          themeMode: prefs.mode,
+          theme: theme(Brightness.light, prefs.seed),
+          darkTheme: theme(Brightness.dark, prefs.seed),
+          home: HomeScreen(controller: controller, prefs: prefs),
+        ),
       );
 }
 
 class HomeScreen extends StatefulWidget {
   final CascadeController controller;
-  const HomeScreen({super.key, required this.controller});
+  final UiPrefs prefs;
+  const HomeScreen({super.key, required this.controller, required this.prefs});
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -249,7 +257,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openSettings() async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsScreen(core: widget.controller.core)));
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsScreen(core: widget.controller.core, prefs: widget.prefs)));
     setState(() {});
   }
 

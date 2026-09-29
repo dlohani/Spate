@@ -216,6 +216,10 @@ func (s *Service) Add(rawURL, dir, sha256 string, conns int) (string, error) {
 	return s.AddWith(AddOpts{URL: rawURL, Dir: dir, SHA256: sha256, Conns: conns})
 }
 
+// ConfigDir is the per-user folder holding settings.json; front-ends keep
+// their own preference files (UI theme) next to it.
+func (s *Service) ConfigDir() string { return filepath.Dir(s.settingsPath) }
+
 // SettingsJSON returns the current settings document.
 func (s *Service) SettingsJSON() ([]byte, error) { return s.Settings.JSON() }
 
