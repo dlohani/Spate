@@ -17,6 +17,7 @@ class CascadeController extends ChangeNotifier {
   bool pairShown = false; // a pairing dialog is currently on screen
   Timer? _timer;
   String? lastError;
+
   /// Called when another launch of the app asked this instance to show its
   /// window (the desktop shell hooks window_manager here).
   void Function()? onShowRequested;
@@ -61,15 +62,42 @@ class CascadeController extends ChangeNotifier {
   /// speed-limit time windows in Settings.
   int get currentLimit => core.currentLimit;
 
-  void startNow(String id) { core.startNow(id); _tick(); }
-  void pause(String id) { core.pause(id); _tick(); }
-  void resume(String id) { core.resume(id); _tick(); }
-  void cancel(String id) { core.cancel(id); _tick(); }
+  void startNow(String id) {
+    core.startNow(id);
+    _tick();
+  }
+
+  void pause(String id) {
+    core.pause(id);
+    _tick();
+  }
+
+  void resume(String id) {
+    core.resume(id);
+    _tick();
+  }
+
+  void cancel(String id) {
+    core.cancel(id);
+    _tick();
+  }
+
   /// Removes a row. An unfinished download's partial file and resume sidecar
   /// are deleted with it; a finished file stays where it is.
-  void remove(String id) { core.discard(id); _tick(); }
-  void clearFinished() { core.clearFinished(); _tick(); }
-  void cancelAll() { core.cancelAll(); _tick(); }
+  void remove(String id) {
+    core.discard(id);
+    _tick();
+  }
+
+  void clearFinished() {
+    core.clearFinished();
+    _tick();
+  }
+
+  void cancelAll() {
+    core.cancelAll();
+    _tick();
+  }
 
   /// Retry a failed/cancelled download: re-queue the same link into the same
   /// folder (the engine resumes from any partial file) and drop the old row.
@@ -127,6 +155,26 @@ class _Rate {
 // Design tokens shared by both brightnesses.
 const _kRadius = 14.0;
 const _kMaxWidth = 900.0;
+// One motion language: short, decelerating, no slides. Reveal/hover use
+// kMotion; progress bars ease over kMotionSlow so ticks look continuous.
+const kMotion = Duration(milliseconds: 220);
+const kMotionSlow = Duration(milliseconds: 420);
+const kMotionCurve = Curves.easeOutCubic;
+
+/// Fade-through page transition (opacity + a 1.5% scale settle) instead of
+/// the platform slide, which reads as heavy on desktop.
+Route<T> fadeRoute<T>(Widget page) => PageRouteBuilder<T>(
+  transitionDuration: kMotion,
+  reverseTransitionDuration: const Duration(milliseconds: 160),
+  pageBuilder: (_, _, _) => page,
+  transitionsBuilder: (_, anim, _, child) {
+    final a = CurvedAnimation(parent: anim, curve: kMotionCurve, reverseCurve: Curves.easeIn);
+    return FadeTransition(
+      opacity: a,
+      child: ScaleTransition(scale: Tween(begin: 0.985, end: 1.0).animate(a), child: child),
+    );
+  },
+);
 
 class CascadeApp extends StatelessWidget {
   final CascadeController controller;
@@ -149,7 +197,10 @@ class CascadeApp extends StatelessWidget {
       cardTheme: CardThemeData(
         elevation: 0,
         color: b == Brightness.dark ? const Color(0xFF141619) : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_kRadius), side: BorderSide(color: border)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(_kRadius),
+          side: BorderSide(color: border),
+        ),
         margin: EdgeInsets.zero,
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -159,13 +210,22 @@ class CascadeApp extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: cs.primary, width: 1.5)),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: cs.primary, width: 1.5),
+        ),
       ),
       filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: cs.onSurfaceVariant, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+        style: TextButton.styleFrom(
+          foregroundColor: cs.onSurfaceVariant,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
       ),
       tooltipTheme: const TooltipThemeData(waitDuration: Duration(milliseconds: 500)),
       dividerColor: border,
@@ -174,16 +234,18 @@ class CascadeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: prefs,
-        builder: (context, _) => MaterialApp(
-          title: 'Cascade',
-          debugShowCheckedModeBanner: false,
-          themeMode: prefs.mode,
-          theme: theme(Brightness.light, prefs.seed),
-          darkTheme: theme(Brightness.dark, prefs.seed),
-          home: HomeScreen(controller: controller, prefs: prefs),
-        ),
-      );
+    animation: prefs,
+    builder: (context, _) => MaterialApp(
+      title: 'Cascade',
+      debugShowCheckedModeBanner: false,
+      themeMode: prefs.mode,
+      themeAnimationDuration: kMotionSlow,
+      themeAnimationCurve: kMotionCurve,
+      theme: theme(Brightness.light, prefs.seed),
+      darkTheme: theme(Brightness.dark, prefs.seed),
+      home: HomeScreen(controller: controller, prefs: prefs),
+    ),
+  );
 }
 
 class HomeScreen extends StatefulWidget {
@@ -241,7 +303,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void _add() {
     final u = _url.text.trim();
     if (u.isEmpty) return;
-    final ok = widget.controller.add(u, dir: _dir.text.trim(), conns: int.tryParse(_conns.text) ?? 8, startAt: _startAt);
+    final ok = widget.controller.add(
+      u,
+      dir: _dir.text.trim(),
+      conns: int.tryParse(_conns.text) ?? 8,
+      startAt: _startAt,
+    );
     if (ok) {
       _url.clear();
       _startAt = null;
@@ -252,7 +319,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _pickSchedule() async {
     final now = DateTime.now();
     final initial = _startAt ?? now.add(const Duration(hours: 1));
-    final d = await showDatePicker(context: context, initialDate: initial, firstDate: now, lastDate: now.add(const Duration(days: 365)));
+    final d = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
     if (d == null || !mounted) return;
     final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial));
     if (t == null) return;
@@ -260,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openSettings() async {
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsScreen(core: widget.controller.core, prefs: widget.prefs)));
+    await Navigator.of(context).push(fadeRoute(SettingsScreen(core: widget.controller.core, prefs: widget.prefs)));
     setState(() {});
   }
 
@@ -284,9 +356,18 @@ class _HomeScreenState extends State<HomeScreen> {
               constraints: const BoxConstraints(maxWidth: _kMaxWidth),
               child: CustomScrollView(
                 slivers: [
-                  SliverPadding(padding: const EdgeInsets.fromLTRB(24, 22, 24, 10), sliver: SliverToBoxAdapter(child: _header(context, jobs))),
-                  SliverPadding(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6), sliver: SliverToBoxAdapter(child: _addCard(context))),
-                  SliverPadding(padding: const EdgeInsets.fromLTRB(24, 18, 24, 6), sliver: SliverToBoxAdapter(child: _sectionBar(context, jobs))),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(24, 22, 24, 10),
+                    sliver: SliverToBoxAdapter(child: _header(context, jobs)),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+                    sliver: SliverToBoxAdapter(child: _addCard(context)),
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 6),
+                    sliver: SliverToBoxAdapter(child: _sectionBar(context, jobs)),
+                  ),
                   if (jobs.isEmpty)
                     SliverFillRemaining(hasScrollBody: false, child: _empty(context))
                   else
@@ -295,7 +376,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       sliver: SliverList.separated(
                         itemCount: jobs.length,
                         separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (context, i) => DownloadCard(key: ValueKey(jobs[i].id), job: jobs[i], controller: widget.controller),
+                        itemBuilder: (context, i) =>
+                            DownloadCard(key: ValueKey(jobs[i].id), job: jobs[i], controller: widget.controller),
                       ),
                     ),
                 ],
@@ -316,7 +398,8 @@ class _HomeScreenState extends State<HomeScreen> {
     return Row(
       children: [
         Container(
-          width: 28, height: 28,
+          width: 28,
+          height: 28,
           decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(8)),
           child: const Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 17),
         ),
@@ -331,7 +414,10 @@ class _HomeScreenState extends State<HomeScreen> {
           _Pill(text: '${jobs.length} in list', color: cs.onSurfaceVariant, subtle: true),
         if (limit > 0) ...[
           const SizedBox(width: 8),
-          Tooltip(message: 'Speed limit in force (Settings)', child: _Pill(text: 'limit ${humanBytes(limit)}/s', color: cs.tertiary)),
+          Tooltip(
+            message: 'Speed limit in force (Settings)',
+            child: _Pill(text: 'limit ${humanBytes(limit)}/s', color: cs.tertiary),
+          ),
         ],
         const SizedBox(width: 6),
         IconButton(tooltip: 'Settings', icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
@@ -349,53 +435,91 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: _url,
-                  focusNode: _urlFocus,
-                  onSubmitted: (_) => _add(),
-                  decoration: InputDecoration(
-                    hintText: 'Paste a link to download',
-                    prefixIcon: const Icon(Icons.link_rounded),
-                    suffixIcon: IconButton(tooltip: 'Paste and download', icon: const Icon(Icons.content_paste_rounded, size: 18), onPressed: _paste),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _url,
+                    focusNode: _urlFocus,
+                    onSubmitted: (_) => _add(),
+                    decoration: InputDecoration(
+                      hintText: 'Paste a link to download',
+                      prefixIcon: const Icon(Icons.link_rounded),
+                      suffixIcon: IconButton(
+                        tooltip: 'Paste and download',
+                        icon: const Icon(Icons.content_paste_rounded, size: 18),
+                        onPressed: _paste,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              FilledButton.icon(onPressed: _add, icon: const Icon(Icons.download_rounded), label: const Text('Download')),
-            ]),
+                const SizedBox(width: 10),
+                FilledButton.icon(
+                  onPressed: _add,
+                  icon: const Icon(Icons.download_rounded),
+                  label: const Text('Download'),
+                ),
+              ],
+            ),
             AnimatedSize(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOut,
+              duration: kMotion,
+              curve: kMotionCurve,
               alignment: Alignment.topCenter,
               child: _showOptions
                   ? Padding(
                       padding: const EdgeInsets.only(top: 10),
-                      child: Row(children: [
-                        Expanded(flex: 3, child: TextField(controller: _dir, decoration: const InputDecoration(labelText: 'Save to', hintText: 'Automatic (folder rules in Settings)', prefixIcon: Icon(Icons.folder_outlined)))),
-                        const SizedBox(width: 10),
-                        SizedBox(width: 150, child: TextField(controller: _conns, decoration: const InputDecoration(labelText: 'Connections', prefixIcon: Icon(Icons.call_split_rounded)))),
-                      ]),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: TextField(
+                              controller: _dir,
+                              decoration: const InputDecoration(
+                                labelText: 'Save to',
+                                hintText: 'Automatic (folder rules in Settings)',
+                                prefixIcon: Icon(Icons.folder_outlined),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          SizedBox(
+                            width: 150,
+                            child: TextField(
+                              controller: _conns,
+                              decoration: const InputDecoration(
+                                labelText: 'Connections',
+                                prefixIcon: Icon(Icons.call_split_rounded),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     )
                   : const SizedBox(width: double.infinity),
             ),
-            Row(children: [
-              TextButton.icon(
-                onPressed: () => setState(() => _showOptions = !_showOptions),
-                icon: Icon(_showOptions ? Icons.expand_less_rounded : Icons.tune_rounded, size: 18),
-                label: Text(_showOptions ? 'Hide options' : 'Options'),
-              ),
-              TextButton.icon(
-                onPressed: _pickSchedule,
-                icon: const Icon(Icons.schedule_rounded, size: 18),
-                label: Text(_startAt == null ? 'Schedule' : 'Starts ${_fmtWhen(_startAt!)}'),
-              ),
-              if (_startAt != null)
-                IconButton(tooltip: 'Start immediately instead', icon: const Icon(Icons.close_rounded, size: 16), visualDensity: VisualDensity.compact, onPressed: () => setState(() => _startAt = null)),
-              const Spacer(),
-              if (err != null) Text(err, style: tt.bodySmall?.copyWith(color: cs.error)),
-            ]),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () => setState(() => _showOptions = !_showOptions),
+                  icon: Icon(_showOptions ? Icons.expand_less_rounded : Icons.tune_rounded, size: 18),
+                  label: Text(_showOptions ? 'Hide options' : 'Options'),
+                ),
+                TextButton.icon(
+                  onPressed: _pickSchedule,
+                  icon: const Icon(Icons.schedule_rounded, size: 18),
+                  label: Text(_startAt == null ? 'Schedule' : 'Starts ${_fmtWhen(_startAt!)}'),
+                ),
+                if (_startAt != null)
+                  IconButton(
+                    tooltip: 'Start immediately instead',
+                    icon: const Icon(Icons.close_rounded, size: 16),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => setState(() => _startAt = null),
+                  ),
+                const Spacer(),
+                if (err != null) Text(err, style: tt.bodySmall?.copyWith(color: cs.error)),
+              ],
+            ),
           ],
         ),
       ),
@@ -410,11 +534,13 @@ class _HomeScreenState extends State<HomeScreen> {
         const Spacer(),
         TextButton.icon(
           onPressed: jobs.any((j) => !j.isTerminal) ? widget.controller.cancelAll : null,
-          icon: const Icon(Icons.stop_circle_outlined, size: 18), label: const Text('Cancel all'),
+          icon: const Icon(Icons.stop_circle_outlined, size: 18),
+          label: const Text('Cancel all'),
         ),
         TextButton.icon(
           onPressed: jobs.any((j) => j.isTerminal) ? widget.controller.clearFinished : null,
-          icon: const Icon(Icons.playlist_remove_rounded, size: 18), label: const Text('Clear finished'),
+          icon: const Icon(Icons.playlist_remove_rounded, size: 18),
+          label: const Text('Clear finished'),
         ),
       ],
     );
@@ -424,18 +550,25 @@ class _HomeScreenState extends State<HomeScreen> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     return Center(
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-          width: 56, height: 56,
-          decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.08), shape: BoxShape.circle),
-          child: Icon(Icons.download_outlined, size: 26, color: cs.primary),
-        ),
-        const SizedBox(height: 14),
-        Text('Nothing downloading', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-        const SizedBox(height: 4),
-        Text('Downloads you start in the browser show up here.\nOr paste a link above.',
-            textAlign: TextAlign.center, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-      ]),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.08), shape: BoxShape.circle),
+            child: Icon(Icons.download_outlined, size: 26, color: cs.primary),
+          ),
+          const SizedBox(height: 14),
+          Text('Nothing downloading', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          Text(
+            'Downloads you start in the browser show up here.\nOr paste a link above.',
+            textAlign: TextAlign.center,
+            style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -460,11 +593,21 @@ class _Pill extends StatelessWidget {
   final bool subtle;
   const _Pill({required this.text, required this.color, this.subtle = false});
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(color: color.withValues(alpha: subtle ? 0.10 : 0.12), borderRadius: BorderRadius.circular(999)),
-        child: Text(text, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: color, fontWeight: FontWeight.w600)),
-      );
+  Widget build(BuildContext context) => AnimatedContainer(
+    duration: kMotion,
+    curve: kMotionCurve,
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: subtle ? 0.10 : 0.12),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: AnimatedDefaultTextStyle(
+      duration: kMotion,
+      curve: kMotionCurve,
+      style: Theme.of(context).textTheme.labelSmall!.copyWith(color: color, fontWeight: FontWeight.w600),
+      child: Text(text),
+    ),
+  );
 }
 
 class DownloadCard extends StatefulWidget {
@@ -502,69 +645,106 @@ class _DownloadCardState extends State<DownloadCard> {
       if (job.state == 'running' && job.retries > 0) 'retry ${job.retries}',
       if (job.state == 'failed' && job.error != null) job.error!,
     ].join('  ·  ');
-    final right = job.total > 0
-        ? '${humanBytes(job.bytes)} / ${humanBytes(job.total)}'
-        : humanBytes(job.bytes);
+    final right = job.total > 0 ? '${humanBytes(job.bytes)} / ${humanBytes(job.total)}' : humanBytes(job.bytes);
     final pct = job.total > 0 ? '${(job.fraction * 100).toStringAsFixed(0)}%' : '';
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hover = true),
-      onExit: (_) => setState(() => _hover = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(_kRadius),
-          boxShadow: _hover ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 14, offset: const Offset(0, 4))] : const [],
-        ),
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 8, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Row(children: [
-                          Flexible(child: Text(job.filename, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600))),
-                          const SizedBox(width: 8),
-                          _Pill(text: label, color: color),
-                        ]),
-                        const SizedBox(height: 3),
-                        Text(details, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-                      ]),
-                    ),
-                    const SizedBox(width: 8),
-                    ..._actions(context),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(children: [
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: TweenAnimationBuilder<double>(
-                        tween: Tween(end: job.fraction),
-                        duration: const Duration(milliseconds: 450),
-                        curve: Curves.easeOutCubic,
-                        builder: (_, v, _) => LinearProgressIndicator(
-                          value: job.total > 0 ? v : (job.state == 'running' ? null : 0),
-                          minHeight: 6,
-                          color: color,
-                          backgroundColor: cs.surfaceContainerHighest,
+    // New rows rise in once (keyed by job id), then hover only lifts the shadow.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: kMotion,
+      curve: kMotionCurve,
+      builder: (context, v, child) => Opacity(
+        opacity: v,
+        child: Transform.translate(offset: Offset(0, (1 - v) * 6), child: child),
+      ),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: AnimatedContainer(
+          duration: kMotion,
+          curve: kMotionCurve,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(_kRadius),
+            boxShadow: _hover
+                ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 14, offset: const Offset(0, 4))]
+                : const [],
+          ),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    job.filename,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                _Pill(text: label, color: color),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              details,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      ..._actions(context),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    width: 190,
-                    child: Text('$right${pct.isEmpty ? '' : '  ·  $pct'}', textAlign: TextAlign.right, style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()])),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: TweenAnimationBuilder<double>(
+                            tween: Tween(end: job.fraction),
+                            duration: kMotionSlow,
+                            curve: kMotionCurve,
+                            builder: (_, v, _) => LinearProgressIndicator(
+                              value: job.total > 0 ? v : (job.state == 'running' ? null : 0),
+                              minHeight: 6,
+                              color: color,
+                              backgroundColor: cs.surfaceContainerHighest,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 190,
+                        child: Text(
+                          '$right${pct.isEmpty ? '' : '  ·  $pct'}',
+                          textAlign: TextAlign.right,
+                          style: tt.labelSmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ]),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -581,7 +761,11 @@ class _DownloadCardState extends State<DownloadCard> {
       'pending' when job.isScheduled => btn(Icons.play_arrow_rounded, 'Start now', () => c.startNow(job.id)),
       'running' || 'pending' => btn(Icons.pause_rounded, 'Pause', () => c.pause(job.id)),
       'paused' => btn(Icons.play_arrow_rounded, 'Resume', () => c.resume(job.id)),
-      'done' => btn(Icons.folder_open_rounded, Platform.isMacOS ? 'Show in Finder' : 'Show in folder', () => c.reveal(job.out)),
+      'done' => btn(
+        Icons.folder_open_rounded,
+        Platform.isMacOS ? 'Show in Finder' : 'Show in folder',
+        () => c.reveal(job.out),
+      ),
       _ => btn(Icons.refresh_rounded, 'Retry', () => c.retry(job)),
     };
     final more = PopupMenuButton<String>(
@@ -604,11 +788,34 @@ class _DownloadCardState extends State<DownloadCard> {
         }
       },
       itemBuilder: (_) => [
-        const PopupMenuItem(value: 'copy', child: ListTile(dense: true, leading: Icon(Icons.link_rounded), title: Text('Copy link'))),
-        if (job.isScheduled) const PopupMenuItem(value: 'startnow', child: ListTile(dense: true, leading: Icon(Icons.play_arrow_rounded), title: Text('Start now'))),
-        if (job.state == 'done') const PopupMenuItem(value: 'open', child: ListTile(dense: true, leading: Icon(Icons.open_in_new_rounded), title: Text('Open file'))),
-        if (job.state == 'done') PopupMenuItem(value: 'reveal', child: ListTile(dense: true, leading: const Icon(Icons.folder_open_rounded), title: Text(Platform.isMacOS ? 'Show in Finder' : 'Show in folder'))),
-        if (!job.isTerminal) const PopupMenuItem(value: 'cancel', child: ListTile(dense: true, leading: Icon(Icons.close_rounded), title: Text('Cancel'))),
+        const PopupMenuItem(
+          value: 'copy',
+          child: ListTile(dense: true, leading: Icon(Icons.link_rounded), title: Text('Copy link')),
+        ),
+        if (job.isScheduled)
+          const PopupMenuItem(
+            value: 'startnow',
+            child: ListTile(dense: true, leading: Icon(Icons.play_arrow_rounded), title: Text('Start now')),
+          ),
+        if (job.state == 'done')
+          const PopupMenuItem(
+            value: 'open',
+            child: ListTile(dense: true, leading: Icon(Icons.open_in_new_rounded), title: Text('Open file')),
+          ),
+        if (job.state == 'done')
+          PopupMenuItem(
+            value: 'reveal',
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.folder_open_rounded),
+              title: Text(Platform.isMacOS ? 'Show in Finder' : 'Show in folder'),
+            ),
+          ),
+        if (!job.isTerminal)
+          const PopupMenuItem(
+            value: 'cancel',
+            child: ListTile(dense: true, leading: Icon(Icons.close_rounded), title: Text('Cancel')),
+          ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: 'remove',
