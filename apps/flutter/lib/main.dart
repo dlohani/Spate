@@ -40,7 +40,14 @@ Future<void> main(List<String> args) async {
   final desktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
   if (desktop) {
     await windowManager.ensureInitialized();
-    const opts = WindowOptions(size: Size(960, 660), minimumSize: Size(640, 480), center: true, title: 'Cascade');
+    // Open compact (the minimum size unless the user resized it last time);
+    // the layout scales up to 900px wide when the window is stretched.
+    final opts = WindowOptions(
+      size: prefs.windowSize ?? kMinWindowSize,
+      minimumSize: kMinWindowSize,
+      center: true,
+      title: 'Cascade',
+    );
     windowManager.waitUntilReadyToShow(opts, () async {
       if (background) {
         // Stay in the tray until "Open Cascade". On macOS the window is hidden
@@ -55,7 +62,7 @@ Future<void> main(List<String> args) async {
     // Stay resident: closing the window hides it; downloads and browser
     // capture keep running. Quit from the menu-bar/tray icon.
     await windowManager.setPreventClose(true);
-    windowManager.addListener(_Resident());
+    windowManager.addListener(_Resident(prefs));
     // A second launch (Spotlight, Finder, Dock) lands here as a show request.
     controller.onShowRequested = () async {
       await windowManager.show();
@@ -68,9 +75,18 @@ Future<void> main(List<String> args) async {
 }
 
 class _Resident with WindowListener {
+  final UiPrefs prefs;
+  _Resident(this.prefs);
+
   @override
   void onWindowClose() async {
     await windowManager.hide();
+  }
+
+  // Remember the size the user settled on; next launch opens at that size.
+  @override
+  void onWindowResized() async {
+    prefs.setWindowSize(await windowManager.getSize());
   }
 }
 
