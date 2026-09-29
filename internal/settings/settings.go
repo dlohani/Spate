@@ -288,12 +288,26 @@ func (s *Settings) Due(now time.Time) []Recurring {
 			continue
 		}
 		due = append(due, *r)
-		iv, _ := interval(r.Every)
 		for !r.NextAt.After(now) {
-			r.NextAt = r.NextAt.Add(iv)
+			r.NextAt = advance(r.NextAt, r.Every)
 		}
 	}
 	return due
+}
+
+// advance moves a recurrence to its next occurrence. Daily and weekly step
+// by calendar days in the local zone so "every day at 09:00" stays at 09:00
+// across a daylight-saving change (a fixed 24h would drift by an hour);
+// hourly steps by an hour of real time.
+func advance(t time.Time, every string) time.Time {
+	switch strings.ToLower(every) {
+	case "daily":
+		return t.In(time.Local).AddDate(0, 0, 1)
+	case "weekly":
+		return t.In(time.Local).AddDate(0, 0, 7)
+	default:
+		return t.Add(time.Hour)
+	}
 }
 
 // Snapshot returns a copy safe to read without the lock (for UIs).

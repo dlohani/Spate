@@ -107,3 +107,43 @@ func TestApplyValidatesAndPersists(t *testing.T) {
 		t.Errorf("round trip mismatch: %+v", back.Snapshot())
 	}
 }
+
+func TestRecurringKeepsWallClockAcrossDST(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("tz database unavailable:", err)
+	}
+	// Daily at 09:00 local on the day before US DST starts (2026-03-08).
+	first := time.Date(2026, 3, 7, 9, 0, 0, 0, ny)
+	s := Default("/dl")
+	s.Recurring = []Recurring{{ID: "a", URL: "https://x/a", Every: "daily", NextAt: first, Enabled: true}}
+	prevLocal := time.Local
+	time.Local = ny
+	defer func() { time.Local = prevLocal }()
+
+	due := s.Due(first.Add(time.Minute))
+	if len(due) != 1 {
+		t.Fatalf("due = %d, want 1", len(due))
+	}
+	next := s.Snapshot().Recurring[0].NextAt.In(ny)
+	if next.Day() != 8 || next.Hour() != 9 || next.Minute() != 0 {
+		t.Fatalf("next run = %v, want 2026-03-08 09:00 local (wall clock kept across DST)", next)
+	}
+	if got := next.Sub(first); got != 23*time.Hour {
+		t.Fatalf("elapsed = %v, want 23h on the DST-start day", got)
+	}
+
+	// Weekly steps seven calendar days; hourly stays real-time.
+	s.Recurring = []Recurring{
+		{ID: "w", URL: "https://x/w", Every: "weekly", NextAt: first, Enabled: true},
+		{ID: "h", URL: "https://x/h", Every: "hourly", NextAt: first, Enabled: true},
+	}
+	s.Due(first.Add(time.Minute))
+	rs := s.Snapshot().Recurring
+	if w := rs[0].NextAt.In(ny); w.Day() != 14 || w.Hour() != 9 {
+		t.Fatalf("weekly next = %v, want 2026-03-14 09:00", w)
+	}
+	if h := rs[1].NextAt; h.Sub(first) != time.Hour {
+		t.Fatalf("hourly next = %v, want +1h", h)
+	}
+}
