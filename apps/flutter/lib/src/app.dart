@@ -64,7 +64,9 @@ class CascadeController extends ChangeNotifier {
   void pause(String id) { core.pause(id); _tick(); }
   void resume(String id) { core.resume(id); _tick(); }
   void cancel(String id) { core.cancel(id); _tick(); }
-  void remove(String id) { core.remove(id); _tick(); }
+  /// Removes a row. An unfinished download's partial file and resume sidecar
+  /// are deleted with it; a finished file stays where it is.
+  void remove(String id) { core.discard(id); _tick(); }
   void clearFinished() { core.clearFinished(); _tick(); }
   void cancelAll() { core.cancelAll(); _tick(); }
 
@@ -597,7 +599,14 @@ class _DownloadCardState extends State<DownloadCard> {
         if (job.state == 'done') PopupMenuItem(value: 'reveal', child: ListTile(dense: true, leading: const Icon(Icons.folder_open_rounded), title: Text(Platform.isMacOS ? 'Show in Finder' : 'Show in folder'))),
         if (!job.isTerminal) const PopupMenuItem(value: 'cancel', child: ListTile(dense: true, leading: Icon(Icons.close_rounded), title: Text('Cancel'))),
         const PopupMenuDivider(),
-        const PopupMenuItem(value: 'remove', child: ListTile(dense: true, leading: Icon(Icons.delete_outline_rounded), title: Text('Remove from list'))),
+        PopupMenuItem(
+          value: 'remove',
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.delete_outline_rounded),
+            title: Text(job.state == 'done' ? 'Remove from list' : 'Remove and delete partial file'),
+          ),
+        ),
       ],
     );
     return [primary, more];

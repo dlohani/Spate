@@ -417,3 +417,51 @@ func TestSetMaxConcurrentAppliesLive(t *testing.T) {
 	m.SetMaxConcurrent(3)
 	waitFor(t, 3*time.Second, func() bool { return running() == 3 })
 }
+
+func TestDiscardDeletesPartialAndClearFinishedDropsCancelled(t *testing.T) {
+	data := blob(4 << 20)
+	srv := httptest.NewServer(rangeServer(data, 25*time.Millisecond, nil, nil, nil))
+	defer srv.Close()
+	dir := t.TempDir()
+	opts := download.Options{Conns: 2, MinSegment: 256 << 10, WindowSize: 256 << 10}
+
+	m := New(2)
+	a, _ := m.Add(Spec{URL: srv.URL + "/a", Out: filepath.Join(dir, "a.bin"), Options: opts})
+	b, _ := m.Add(Spec{URL: srv.URL + "/b", Out: filepath.Join(dir, "b.bin"), Options: opts})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = m.Serve(ctx) }()
+
+	progressing := func(id string) bool { st, _ := m.Status(id); return st.State == Running && st.Bytes > 0 }
+	waitFor(t, 5*time.Second, func() bool { return progressing(a) && progressing(b) })
+
+	// Discard a running job: row gone, output and sidecar gone.
+	if err := m.Discard(a); err != nil {
+		t.Fatalf("Discard: %v", err)
+	}
+	if _, ok := m.Status(a); ok {
+		t.Fatal("job still listed after Discard")
+	}
+	for _, p := range []string{filepath.Join(dir, "a.bin"), filepath.Join(dir, "a.bin.cascade")} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("%s still exists after Discard (err=%v)", p, err)
+		}
+	}
+
+	// Cancel keeps the partial (resumable); clearing the cancelled row deletes it.
+	if err := m.Cancel(b); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	waitFor(t, 5*time.Second, func() bool { st, _ := m.Status(b); return st.State == Cancelled })
+	if _, err := os.Stat(filepath.Join(dir, "b.bin")); err != nil {
+		t.Fatalf("partial should survive Cancel: %v", err)
+	}
+	if n := m.ClearFinished(); n != 1 {
+		t.Fatalf("ClearFinished = %d, want 1", n)
+	}
+	for _, p := range []string{filepath.Join(dir, "b.bin"), filepath.Join(dir, "b.bin.cascade")} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("%s still exists after ClearFinished (err=%v)", p, err)
+		}
+	}
+}

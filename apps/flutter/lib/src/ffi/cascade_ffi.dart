@@ -41,6 +41,7 @@ class Cascade {
   late final _IdActD _resume = _lib.lookupFunction<_IdActC, _IdActD>('CascadeResume');
   late final _IdActD _cancel = _lib.lookupFunction<_IdActC, _IdActD>('CascadeCancel');
   late final _IdActD _remove = _lib.lookupFunction<_IdActC, _IdActD>('CascadeRemove');
+  late final _IdActD _discard = _lib.lookupFunction<_IdActC, _IdActD>('CascadeDiscard');
   late final _HandleIntD _clearFinished = _lib.lookupFunction<_HandleIntC, _HandleIntD>('CascadeClearFinished');
   late final _HandleVoidD _cancelAll = _lib.lookupFunction<_HandleVoidC, _HandleVoidD>('CascadeCancelAll');
   late final _HandleStrD _status = _lib.lookupFunction<_HandleStrC, _HandleStrD>('CascadeStatusJSON');
@@ -165,7 +166,12 @@ class Cascade {
   bool pause(String id) => _idAct(_pause, id);
   bool resume(String id) => _idAct(_resume, id);
   bool cancel(String id) => _idAct(_cancel, id);
+  /// Removes the row; files on disk are kept.
   bool remove(String id) => _idAct(_remove, id);
+
+  /// Removes the row and deletes the partial download (stops it first);
+  /// a finished file is never deleted.
+  bool discard(String id) => _idAct(_discard, id);
   int clearFinished() => _clearFinished(_h);
   void cancelAll() => _cancelAll(_h);
 

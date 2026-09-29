@@ -80,10 +80,20 @@ type Job struct {
 	err   error
 
 	cancel      context.CancelFunc
-	paused      bool // a pause was requested for the current run
-	cancelReq   bool // a force-cancel was requested for the current run
-	autoRetries int  // times re-queued after a transient (network) failure
+	done        chan struct{} // closed when the current run's goroutine exits
+	paused      bool          // a pause was requested for the current run
+	cancelReq   bool          // a force-cancel was requested for the current run
+	autoRetries int           // times re-queued after a transient (network) failure
 	dl          *download.Downloader
+}
+
+// outputPath is where the job's data lives on disk (the spec's Out, or the
+// name the engine derived). Caller holds m.mu.
+func (j *Job) outputPath() string {
+	if j.Out == "" && j.dl != nil {
+		return j.dl.Output()
+	}
+	return j.Out
 }
 
 // Broken-download recovery: a job that fails on a transient network error is
@@ -201,6 +211,8 @@ func (m *Manager) Cancel(id string) error {
 }
 
 // Remove cancels a job if it is still active and deletes it from the queue.
+// Files on disk are kept (a partial download stays resumable, e.g. by
+// re-adding the same link); see Discard to delete them.
 func (m *Manager) Remove(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -217,19 +229,67 @@ func (m *Manager) Remove(id string) error {
 	return nil
 }
 
+// Discard removes a job from the queue and deletes its partial download from
+// disk (the output file and the resume sidecar), stopping it first if it is
+// running. A finished download's file is never deleted: for Done jobs this
+// is the same as Remove.
+func (m *Manager) Discard(id string) error {
+	m.mu.Lock()
+	j, ok := m.jobs[id]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("no such job %q", id)
+	}
+	if j.state == Done {
+		delete(m.jobs, id)
+		m.mu.Unlock()
+		m.signal()
+		return nil
+	}
+	var done chan struct{}
+	if j.state == Running && j.cancel != nil {
+		j.cancelReq = true
+		j.cancel()
+		done = j.done
+	}
+	out := j.outputPath()
+	delete(m.jobs, id)
+	m.mu.Unlock()
+	m.signal()
+	// Wait for the writer goroutine to close the file before deleting it, so
+	// a final sidecar flush cannot resurrect what we just removed.
+	if done != nil {
+		<-done
+	}
+	if out == "" {
+		return nil
+	}
+	return download.RemovePartial(out)
+}
+
 // ClearFinished removes all terminal jobs (done, failed, cancelled) from the
-// queue and returns how many were removed.
+// queue and returns how many were removed. Failed and cancelled jobs leave
+// the list for good, so their partial files are deleted; finished files stay.
 func (m *Manager) ClearFinished() int {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	n := 0
+	var partials []string
 	for id, j := range m.jobs {
 		if j.state.Terminal() {
+			if j.state != Done {
+				if out := j.outputPath(); out != "" {
+					partials = append(partials, out)
+				}
+			}
 			delete(m.jobs, id)
 			n++
 		}
 	}
+	m.mu.Unlock()
 	m.signal()
+	for _, out := range partials {
+		_ = download.RemovePartial(out)
+	}
 	return n
 }
 
@@ -434,11 +494,14 @@ func (m *Manager) launchLocked(ctx context.Context, j *Job) {
 	j.state = Running
 	j.err = nil
 	j.dl = download.New(j.URL, j.Out, j.Options)
+	j.done = make(chan struct{})
+	done := j.done
 	m.running++
 	m.wg.Add(1)
 
 	go func() {
 		defer m.wg.Done()
+		defer close(done)
 		err := j.dl.Run(jctx)
 		cancel()
 
