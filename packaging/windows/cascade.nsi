@@ -22,6 +22,8 @@ RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
 !define MUI_ABORTWARNING
+!define MUI_ICON "..\..\assets\brand\cascade.ico"
+!define MUI_UNICON "..\..\assets\brand\cascade.ico"
 !define MUI_WELCOMEPAGE_TEXT "Cascade takes over downloads from your browser: parallel connections, resume, a queue, and a tray app that starts at login.$\r$\n$\r$\nThis installs for the current user only (no administrator rights) and registers the browser integration for Chrome, Chromium, Edge and Brave.$\r$\n$\r$\nOne manual step remains afterwards: loading the Cascade extension in the browser (the final page shows where it is)."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY

@@ -52,6 +52,7 @@ func main() {
 
 	a := app.New()
 	a.Settings().SetTheme(ui.Theme{})
+	a.SetIcon(fyne.NewStaticResource("cascade.png", appIconPNG))
 	w := a.NewWindow("Cascade")
 	w.Resize(fyne.NewSize(760, 540))
 
