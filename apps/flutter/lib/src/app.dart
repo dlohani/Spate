@@ -436,10 +436,15 @@ class _HomeScreenState extends State<HomeScreen> {
       ],
     );
     if (mac) {
+      // Hairline under the header so it reads as a title bar, not a gap.
       return DragToMoveArea(
-        child: SizedBox(
+        child: Container(
           height: 52,
-          child: Padding(padding: const EdgeInsets.only(right: 12), child: row),
+          padding: const EdgeInsets.only(right: 12),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
+          ),
+          child: row,
         ),
       );
     }

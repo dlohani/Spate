@@ -18,6 +18,10 @@ const accentColors = <String, Color>{
 /// Smallest window the layout is designed for; also the default size.
 const kMinWindowSize = Size(600, 440);
 
+/// Largest window: a download list does not benefit from a full screen, and
+/// the layout is designed for a utility-sized window.
+const kMaxWindowSize = Size(1100, 800);
+
 /// UI-only preferences (theme mode, accent, last window size). Stored as
 /// ui.json next to the core's settings.json so they survive reinstalls like
 /// everything else; the core never reads them.
@@ -30,6 +34,7 @@ class UiPrefs extends ChangeNotifier {
   /// Saved without notifying: the window itself already has the size.
   void setWindowSize(Size s) {
     if (s.width < kMinWindowSize.width || s.height < kMinWindowSize.height) return;
+    if (s.width > kMaxWindowSize.width || s.height > kMaxWindowSize.height) return;
     if (windowSize == s) return;
     windowSize = s;
     _save();
@@ -58,12 +63,21 @@ class UiPrefs extends ChangeNotifier {
   void _load() {
     try {
       final j = jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>;
-      mode = switch (j['theme']) { 'light' => ThemeMode.light, 'dark' => ThemeMode.dark, _ => ThemeMode.system };
+      mode = switch (j['theme']) {
+        'light' => ThemeMode.light,
+        'dark' => ThemeMode.dark,
+        _ => ThemeMode.system,
+      };
       final a = j['accent'] as String?;
       if (a != null && accentColors.containsKey(a)) accent = a;
       final w = (j['windowW'] as num?)?.toDouble();
       final h = (j['windowH'] as num?)?.toDouble();
-      if (w != null && h != null && w >= kMinWindowSize.width && h >= kMinWindowSize.height) {
+      if (w != null &&
+          h != null &&
+          w >= kMinWindowSize.width &&
+          h >= kMinWindowSize.height &&
+          w <= kMaxWindowSize.width &&
+          h <= kMaxWindowSize.height) {
         windowSize = Size(w, h);
       }
     } catch (_) {
@@ -74,12 +88,14 @@ class UiPrefs extends ChangeNotifier {
   void _save() {
     try {
       File(path).parent.createSync(recursive: true);
-      File(path).writeAsStringSync(jsonEncode({
-        'theme': mode.name,
-        'accent': accent,
-        if (windowSize != null) 'windowW': windowSize!.width,
-        if (windowSize != null) 'windowH': windowSize!.height,
-      }));
+      File(path).writeAsStringSync(
+        jsonEncode({
+          'theme': mode.name,
+          'accent': accent,
+          if (windowSize != null) 'windowW': windowSize!.width,
+          if (windowSize != null) 'windowH': windowSize!.height,
+        }),
+      );
     } catch (_) {
       // Preferences are a convenience; never fail the UI over them.
     }
