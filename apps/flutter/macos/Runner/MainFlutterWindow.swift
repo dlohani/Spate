@@ -29,6 +29,26 @@ class MainFlutterWindow: NSWindow {
     super.awakeFromNib()
   }
 
+  // Minimise (yellow button, Cmd-M) hides the window into the menu bar
+  // instead of the Dock when the "Minimise to the tray" preference is on
+  // (default). The preference is read from ui.json, written by the Dart side.
+  override func miniaturize(_ sender: Any?) {
+    if minimizeToTrayPreferred() {
+      orderOut(nil)
+      return
+    }
+    super.miniaturize(sender)
+  }
+
+  private func minimizeToTrayPreferred() -> Bool {
+    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+    guard let url = support?.appendingPathComponent("cascade/ui.json"),
+          let data = try? Data(contentsOf: url),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let v = json["minimizeToTray"] as? Bool else { return true }
+    return v
+  }
+
   // Keep the window hidden at launch; Dart decides when to show it (normal
   // start shows immediately, --background start leaves it hidden in the tray).
   override public func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {

@@ -70,14 +70,18 @@ Future<void> main(List<String> args) async {
     await windowManager.setPreventClose(true);
     windowManager.addListener(_Resident(prefs));
     // A second launch (Spotlight, Finder, Dock) lands here as a show request.
-    controller.onShowRequested = () async {
-      await windowManager.show();
-      await windowManager.focus();
-    };
+    controller.onShowRequested = showWindow;
     await _setupTray(core, controller);
   }
 
   runApp(CascadeApp(controller: controller, prefs: prefs));
+}
+
+/// Brings the window back from hidden or minimised state.
+Future<void> showWindow() async {
+  if (await windowManager.isMinimized()) await windowManager.restore();
+  await windowManager.show();
+  await windowManager.focus();
 }
 
 class _Resident with WindowListener {
@@ -89,6 +93,16 @@ class _Resident with WindowListener {
     await windowManager.hide();
   }
 
+  // Minimise -> into the tray (when the preference is on): the window leaves
+  // the Dock/taskbar and comes back from the tray menu or a second launch.
+  @override
+  void onWindowMinimize() async {
+    if (!prefs.minimizeToTray) return;
+    // orderOut on the miniaturised window drops it from the Dock/taskbar;
+    // showWindow() de-miniaturises before showing it again.
+    await windowManager.hide();
+  }
+
   // Remember the size the user settled on; next launch opens at that size.
   @override
   void onWindowResized() async {
@@ -96,20 +110,19 @@ class _Resident with WindowListener {
   }
 }
 
-/// Menu-bar / tray icon: the app icon's silhouette (template on macOS so it
-/// follows the menu bar tint; colour on Linux/Windows), plus a live summary
+/// Menu-bar / tray icon: the app icon, plus a live summary
 /// while downloading: "2 · 43%" beside the icon on macOS, the same in the
 /// tooltip and as the first line of the menu everywhere.
 Future<void> _setupTray(Cascade core, CascadeController controller) async {
   final tray = TrayManager.instance;
   tray.addListener(_TrayClicks());
   try {
-    final icon = Platform.isWindows
-        ? 'assets/tray/icon.ico'
-        : Platform.isLinux
-        ? 'assets/tray/icon-color.png'
-        : 'assets/tray/icon.png';
-    await tray.setIcon(icon, isTemplate: Platform.isMacOS);
+    // The app icon itself, in colour, on every platform (assets/tray is
+    // generated from the master by scripts/tray-icon.swift). The monochrome
+    // template variant (icon.png) is kept for anyone who prefers the macOS
+    // convention.
+    final icon = Platform.isWindows ? 'assets/tray/icon.ico' : 'assets/tray/icon-color.png';
+    await tray.setIcon(icon);
     final status = _TrayStatus(tray, core, controller);
     await status.apply(force: true);
     controller.addListener(status.apply);
@@ -158,13 +171,7 @@ class _TrayStatus {
         items: [
           MenuItem(label: line, disabled: true),
           MenuItem.separator(),
-          MenuItem(
-            label: 'Open Cascade',
-            onClick: (_) async {
-              await windowManager.show();
-              await windowManager.focus();
-            },
-          ),
+          MenuItem(label: 'Open Cascade', onClick: (_) => showWindow()),
           MenuItem.separator(),
           MenuItem(
             label: 'Quit Cascade',
