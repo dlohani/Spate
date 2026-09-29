@@ -45,6 +45,7 @@ Future<void> main(List<String> args) async {
     final opts = WindowOptions(
       size: prefs.windowSize ?? kMinWindowSize,
       minimumSize: kMinWindowSize,
+      maximumSize: kMaxWindowSize,
       center: true,
       title: 'Cascade',
       // macOS: the app's header row is the title bar (one "Cascade", not a

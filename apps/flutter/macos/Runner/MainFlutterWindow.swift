@@ -12,12 +12,19 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     // The app draws its own header as the title bar (native title hidden,
-    // traffic lights kept; see main.dart). A taller title bar keeps the
-    // traffic lights vertically centred on that 52px header.
-    let spacer = NSTitlebarAccessoryViewController()
-    spacer.view = NSView(frame: NSRect(x: 0, y: 0, width: 0, height: 24))
-    spacer.layoutAttribute = .right
-    self.addTitlebarAccessoryViewController(spacer)
+    // traffic lights kept; see main.dart). An empty unified toolbar makes the
+    // title bar 52px tall with the traffic lights vertically centred, the
+    // same geometry as Finder or Safari; Flutter draws beneath it.
+    self.toolbar = NSToolbar()
+    self.toolbarStyle = .unified
+    self.titlebarAppearsTransparent = true
+    self.titleVisibility = .hidden
+    self.styleMask.insert(.fullSizeContentView)
+
+    // Utility window: no full-screen mode (the green button zooms within the
+    // size limits set from Dart instead).
+    self.collectionBehavior.insert(.fullScreenNone)
+    self.collectionBehavior.remove(.fullScreenPrimary)
 
     super.awakeFromNib()
   }
