@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app.dart' show kMotion, kMotionCurve;
 import 'ffi/cascade_ffi.dart';
 import 'model/job.dart' show humanBytes;
 import 'model/settings.dart';
@@ -229,8 +230,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           else
             header,
           AnimatedSize(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
+            duration: kMotion,
+            curve: kMotionCurve,
             alignment: Alignment.topCenter,
             child: open
                 ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const SizedBox(height: 10), ...children])
