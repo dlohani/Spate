@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'ffi/cascade_ffi.dart';
 import 'model/job.dart';
+import 'settings_screen.dart';
 
 /// App state: polls the core twice a second and exposes the queue.
 class CascadeController extends ChangeNotifier {
@@ -37,13 +38,25 @@ class CascadeController extends ChangeNotifier {
 
   bool get pairPending => core.pairPending;
 
-  bool add(String url, {String dir = '', int conns = 8}) {
-    final id = core.add(url, dir: dir, conns: conns);
+  /// Enqueues a link. An empty [dir] lets the destination rules decide
+  /// (site rule > category > base folder); [startAt] schedules the start.
+  bool add(String url, {String dir = '', int conns = 8, DateTime? startAt}) {
+    final id = core.addJson({
+      'url': url,
+      'dir': dir,
+      'conns': conns,
+      'startAt': startAt == null ? 0 : startAt.millisecondsSinceEpoch ~/ 1000,
+    });
     lastError = id == null ? 'That does not look like a downloadable link.' : null;
     _tick();
     return id != null;
   }
 
+  /// Bytes/sec cap in force right now (0 = unlimited); changes with the
+  /// speed-limit time windows in Settings.
+  int get currentLimit => core.currentLimit;
+
+  void startNow(String id) { core.startNow(id); _tick(); }
   void pause(String id) { core.pause(id); _tick(); }
   void resume(String id) { core.resume(id); _tick(); }
   void cancel(String id) { core.cancel(id); _tick(); }
@@ -167,14 +180,15 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _url = TextEditingController();
   final _urlFocus = FocusNode();
-  late final TextEditingController _dir;
+  // Empty = automatic: the destination rules in Settings pick the folder.
+  final _dir = TextEditingController();
   final _conns = TextEditingController(text: '8');
   bool _showOptions = false;
+  DateTime? _startAt; // set by "Schedule"; null = start now
 
   @override
   void initState() {
     super.initState();
-    _dir = TextEditingController(text: (widget.controller.core.info()['dir'] as String?) ?? '');
     widget.controller.addListener(_maybePromptPairing);
   }
 
@@ -210,8 +224,26 @@ class _HomeScreenState extends State<HomeScreen> {
   void _add() {
     final u = _url.text.trim();
     if (u.isEmpty) return;
-    final ok = widget.controller.add(u, dir: _dir.text.trim(), conns: int.tryParse(_conns.text) ?? 8);
-    if (ok) _url.clear();
+    final ok = widget.controller.add(u, dir: _dir.text.trim(), conns: int.tryParse(_conns.text) ?? 8, startAt: _startAt);
+    if (ok) {
+      _url.clear();
+      _startAt = null;
+    }
+    setState(() {});
+  }
+
+  Future<void> _pickSchedule() async {
+    final now = DateTime.now();
+    final initial = _startAt ?? now.add(const Duration(hours: 1));
+    final d = await showDatePicker(context: context, initialDate: initial, firstDate: now, lastDate: now.add(const Duration(days: 365)));
+    if (d == null || !mounted) return;
+    final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial));
+    if (t == null) return;
+    setState(() => _startAt = DateTime(d.year, d.month, d.day, t.hour, t.minute));
+  }
+
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsScreen(core: widget.controller.core)));
     setState(() {});
   }
 
@@ -263,6 +295,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final tt = Theme.of(context).textTheme;
     final active = jobs.where((j) => j.state == 'running').length;
     final speed = widget.controller.totalSpeed;
+    final limit = widget.controller.currentLimit;
     return Row(
       children: [
         Container(
@@ -279,6 +312,12 @@ class _HomeScreenState extends State<HomeScreen> {
           _Pill(text: '$active active', color: cs.onSurfaceVariant, subtle: true),
         ] else if (jobs.isNotEmpty)
           _Pill(text: '${jobs.length} in list', color: cs.onSurfaceVariant, subtle: true),
+        if (limit > 0) ...[
+          const SizedBox(width: 8),
+          Tooltip(message: 'Speed limit in force (Settings)', child: _Pill(text: 'limit ${humanBytes(limit)}/s', color: cs.tertiary)),
+        ],
+        const SizedBox(width: 6),
+        IconButton(tooltip: 'Settings', icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
       ],
     );
   }
@@ -317,7 +356,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? Padding(
                       padding: const EdgeInsets.only(top: 10),
                       child: Row(children: [
-                        Expanded(flex: 3, child: TextField(controller: _dir, decoration: const InputDecoration(labelText: 'Save to', prefixIcon: Icon(Icons.folder_outlined)))),
+                        Expanded(flex: 3, child: TextField(controller: _dir, decoration: const InputDecoration(labelText: 'Save to', hintText: 'Automatic (folder rules in Settings)', prefixIcon: Icon(Icons.folder_outlined)))),
                         const SizedBox(width: 10),
                         SizedBox(width: 150, child: TextField(controller: _conns, decoration: const InputDecoration(labelText: 'Connections', prefixIcon: Icon(Icons.call_split_rounded)))),
                       ]),
@@ -330,6 +369,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 icon: Icon(_showOptions ? Icons.expand_less_rounded : Icons.tune_rounded, size: 18),
                 label: Text(_showOptions ? 'Hide options' : 'Options'),
               ),
+              TextButton.icon(
+                onPressed: _pickSchedule,
+                icon: const Icon(Icons.schedule_rounded, size: 18),
+                label: Text(_startAt == null ? 'Schedule' : 'Starts ${_fmtWhen(_startAt!)}'),
+              ),
+              if (_startAt != null)
+                IconButton(tooltip: 'Start immediately instead', icon: const Icon(Icons.close_rounded, size: 16), visualDensity: VisualDensity.compact, onPressed: () => setState(() => _startAt = null)),
               const Spacer(),
               if (err != null) Text(err, style: tt.bodySmall?.copyWith(color: cs.error)),
             ]),
@@ -377,6 +423,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+/// "14:30" for today, "Tue 14:30" within a week, else "2026-10-03 14:30".
+String _fmtWhen(DateTime t) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  final now = DateTime.now();
+  final hm = '${two(t.hour)}:${two(t.minute)}';
+  final sameDay = t.year == now.year && t.month == now.month && t.day == now.day;
+  if (sameDay) return hm;
+  if (t.difference(now).inDays < 6) {
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return '${names[t.weekday - 1]} $hm';
+  }
+  return '${t.year}-${two(t.month)}-${two(t.day)} $hm';
+}
+
 class _Pill extends StatelessWidget {
   final String text;
   final Color color;
@@ -413,11 +473,13 @@ class _DownloadCardState extends State<DownloadCard> {
       'failed' => (cs.error, 'Failed'),
       'paused' => (cs.outline, 'Paused'),
       'cancelled' => (cs.outline, 'Cancelled'),
+      'pending' when job.isScheduled => (cs.tertiary, 'Scheduled'),
       'pending' => (cs.onSurfaceVariant, 'Queued'),
       _ => (cs.primary, 'Downloading'),
     };
     final details = <String>[
       if (job.host.isNotEmpty) job.host,
+      if (job.isScheduled) 'starts ${_fmtWhen(job.startAt!)}',
       if (job.state == 'running') '${humanBytes(bps.round())}/s',
       if (job.state == 'running' && job.total > 0 && bps > 0) '${humanEta((job.total - job.bytes) / bps)} left',
       if (job.state == 'running' && job.retries > 0) 'retry ${job.retries}',
@@ -499,6 +561,7 @@ class _DownloadCardState extends State<DownloadCard> {
     IconButton btn(IconData icon, String tip, VoidCallback? onTap) =>
         IconButton(tooltip: tip, icon: Icon(icon, size: 20), onPressed: onTap, visualDensity: VisualDensity.compact);
     final primary = switch (job.state) {
+      'pending' when job.isScheduled => btn(Icons.play_arrow_rounded, 'Start now', () => c.startNow(job.id)),
       'running' || 'pending' => btn(Icons.pause_rounded, 'Pause', () => c.pause(job.id)),
       'paused' => btn(Icons.play_arrow_rounded, 'Resume', () => c.resume(job.id)),
       'done' => btn(Icons.folder_open_rounded, Platform.isMacOS ? 'Show in Finder' : 'Show in folder', () => c.reveal(job.out)),
@@ -511,6 +574,8 @@ class _DownloadCardState extends State<DownloadCard> {
         switch (k) {
           case 'copy':
             Clipboard.setData(ClipboardData(text: job.url));
+          case 'startnow':
+            c.startNow(job.id);
           case 'open':
             c.openFile(job.out);
           case 'reveal':
@@ -523,6 +588,7 @@ class _DownloadCardState extends State<DownloadCard> {
       },
       itemBuilder: (_) => [
         const PopupMenuItem(value: 'copy', child: ListTile(dense: true, leading: Icon(Icons.link_rounded), title: Text('Copy link'))),
+        if (job.isScheduled) const PopupMenuItem(value: 'startnow', child: ListTile(dense: true, leading: Icon(Icons.play_arrow_rounded), title: Text('Start now'))),
         if (job.state == 'done') const PopupMenuItem(value: 'open', child: ListTile(dense: true, leading: Icon(Icons.open_in_new_rounded), title: Text('Open file'))),
         if (job.state == 'done') PopupMenuItem(value: 'reveal', child: ListTile(dense: true, leading: const Icon(Icons.folder_open_rounded), title: Text(Platform.isMacOS ? 'Show in Finder' : 'Show in folder'))),
         if (!job.isTerminal) const PopupMenuItem(value: 'cancel', child: ListTile(dense: true, leading: Icon(Icons.close_rounded), title: Text('Cancel'))),

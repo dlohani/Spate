@@ -143,6 +143,31 @@ Examples:
 
 Exit codes: 0 success, 1 error, 2 usage, 130 interrupted (resumable).
 
+## Organization and scheduling
+
+Downloads are filed and timed by rules, so you set them once and stop
+thinking about them. Everything lives in one document, `settings.json`, in the
+per-user config folder (`~/Library/Application Support/cascade` on macOS,
+`%AppData%\cascade` on Windows, `~/.config/cascade` on Linux; override with
+`CASCADE_SETTINGS=<path>`). The Flutter app edits it under Settings; any
+front-end can read/write it through `CascadeSettingsJSON`/`CascadeSettingsApply`.
+
+- Destination rules: a base folder, optional category folders by extension
+  (editable defaults), and per-site folders (`host` matches the host and its
+  subdomains). Resolution order: site rule > category > base. Browser hand-offs
+  and pasted links use the same rules unless a folder is given explicitly.
+- Scheduled start: any download can be given a start time ("Schedule" in the
+  add bar, `startAt` in the JSON spec); it sits in the queue as Scheduled until
+  then, or until "Start now".
+- Download window: only start queued downloads inside a time window (e.g.
+  22:00 to 06:00 on weekdays). Running downloads finish normally. Windows may
+  span midnight and can be restricted to weekdays.
+- Speed limit with time windows: a default cap plus per-window caps, so the
+  limit can be 500 KB/s during work hours and unlimited at night. The cap is
+  shared by every running download and changes on schedule.
+- Recurring downloads: re-fetch a link hourly, daily or weekly (a report, a
+  nightly build); the scheduler enqueues it when due and advances `nextAt`.
+
 ## How resume works
 
 Progress is tracked in a sidecar `<output>.cascade` (JSON) holding the URL, total

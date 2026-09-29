@@ -23,6 +23,10 @@ typedef _ResolveC = Void Function(LongLong, Int32);
 typedef _ResolveD = void Function(int, int);
 typedef _FreeC = Void Function(Pointer<Utf8>);
 typedef _FreeD = void Function(Pointer<Utf8>);
+typedef _StrActC = Pointer<Utf8> Function(LongLong, Pointer<Utf8>);
+typedef _StrActD = Pointer<Utf8> Function(int, Pointer<Utf8>);
+typedef _HandleLongC = LongLong Function(LongLong);
+typedef _HandleLongD = int Function(int);
 
 /// Thin, synchronous binding to libcascade. One instance == one running
 /// service (engine + queue + browser-capture endpoint).
@@ -43,6 +47,11 @@ class Cascade {
   late final _HandleIntD _pairPending = _lib.lookupFunction<_HandleIntC, _HandleIntD>('CascadePairPending');
   late final _ResolveD _pairResolve = _lib.lookupFunction<_ResolveC, _ResolveD>('CascadePairResolve');
   late final _FreeD _free = _lib.lookupFunction<_FreeC, _FreeD>('CascadeFreeString');
+  late final _StrActD _addJson = _lib.lookupFunction<_StrActC, _StrActD>('CascadeAddJSON');
+  late final _HandleStrD _settingsJson = _lib.lookupFunction<_HandleStrC, _HandleStrD>('CascadeSettingsJSON');
+  late final _IdActD _settingsApply = _lib.lookupFunction<_IdActC, _IdActD>('CascadeSettingsApply');
+  late final _IdActD _startNow = _lib.lookupFunction<_IdActC, _IdActD>('CascadeStartNow');
+  late final _HandleLongD _currentLimit = _lib.lookupFunction<_HandleLongC, _HandleLongD>('CascadeCurrentLimit');
 
   Cascade._(this._lib, this._h);
 
@@ -132,6 +141,30 @@ class Cascade {
 
   bool get pairPending => _pairPending(_h) != 0;
   void resolvePair(bool ok) => _pairResolve(_h, ok ? 1 : 0);
+
+  /// Enqueues a download from a spec: url, dir, sha256, conns, priority,
+  /// startAt (Unix seconds; 0 = now). Returns the job id or null.
+  String? addJson(Map<String, dynamic> spec) {
+    final p = jsonEncode(spec).toNativeUtf8();
+    try {
+      final id = _take(_addJson(_h, p));
+      return id.isEmpty ? null : id;
+    } finally {
+      malloc.free(p);
+    }
+  }
+
+  /// The persisted settings document (see internal/settings).
+  Map<String, dynamic> settings() => jsonDecode(_take(_settingsJson(_h))) as Map<String, dynamic>;
+
+  /// Applies and persists settings; omitted fields keep their current values.
+  bool applySettings(Map<String, dynamic> doc) => _idAct(_settingsApply, jsonEncode(doc));
+
+  /// Drops a pending job's scheduled start so it runs as soon as possible.
+  bool startNow(String id) => _idAct(_startNow, id);
+
+  /// Bytes/sec cap currently in force (0 = unlimited).
+  int get currentLimit => _currentLimit(_h);
 
   void stop() => _stop(_h);
 }

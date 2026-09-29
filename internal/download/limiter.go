@@ -34,10 +34,52 @@ func NewLimiter(bytesPerSec int64) *Limiter {
 	}
 }
 
-// Wait blocks until n tokens are available or ctx is done. A nil Limiter
-// returns immediately.
+// NewSharedLimiter returns a non-nil limiter that is initially unlimited and
+// can be shared by every download; SetRate changes it at any time (used for
+// a global cap and scheduled limit windows).
+func NewSharedLimiter() *Limiter {
+	return &Limiter{lastFill: time.Now()}
+}
+
+// SetRate changes the cap in bytes/sec; <= 0 means unlimited.
+func (l *Limiter) SetRate(bytesPerSec int64) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if bytesPerSec <= 0 {
+		l.rate, l.burst, l.tokens = 0, 0, 0
+		return
+	}
+	r := float64(bytesPerSec)
+	l.rate, l.burst = r, r
+	if l.tokens > r {
+		l.tokens = r
+	}
+	l.lastFill = time.Now()
+}
+
+// Rate returns the current cap (0 = unlimited).
+func (l *Limiter) Rate() int64 {
+	if l == nil {
+		return 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return int64(l.rate)
+}
+
+// Wait blocks until n tokens are available or ctx is done. A nil or unlimited
+// Limiter returns immediately.
 func (l *Limiter) Wait(ctx context.Context, n int) error {
 	if l == nil || n <= 0 {
+		return nil
+	}
+	l.mu.Lock()
+	unlimited := l.rate <= 0
+	l.mu.Unlock()
+	if unlimited {
 		return nil
 	}
 	need := float64(n)
@@ -46,6 +88,13 @@ func (l *Limiter) Wait(ctx context.Context, n int) error {
 	}
 	for {
 		l.mu.Lock()
+		if l.rate <= 0 { // became unlimited while waiting
+			l.mu.Unlock()
+			return nil
+		}
+		if need > l.burst {
+			need = l.burst
+		}
 		now := time.Now()
 		l.tokens += l.rate * now.Sub(l.lastFill).Seconds()
 		if l.tokens > l.burst {

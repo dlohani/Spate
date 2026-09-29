@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,7 +35,8 @@ type Options struct {
 	StealMinRemaining int64  // min tail to justify a work-steal split (default 2*WindowSize)
 	Retries           int    // per-window extra attempts; 0 = keep retrying for RetryFor
 	RetryFor          time.Duration // how long a window keeps retrying when Retries == 0 (default 15m)
-	RateLimit         int64  // aggregate bytes/sec, 0 = unlimited
+	RateLimit         int64  // this download's cap in bytes/sec, 0 = unlimited
+	SharedLimiter     *Limiter // if set, a limiter shared across downloads (global cap); overrides RateLimit
 	SHA256            string // optional expected hex digest to verify on completion
 	Resume            bool   // reuse an existing .cascade sidecar if valid
 	ExtractTo         string // if set, extract a downloaded archive into this dir
@@ -140,7 +142,7 @@ func (d *Downloader) refresh(ctx context.Context, stale string) error {
 // derived from the URL (or the server's Content-Disposition) during Run.
 func New(u, out string, opts Options) *Downloader {
 	opts.setDefaults()
-	return &Downloader{
+	d := &Downloader{
 		url:     u,
 		out:     out,
 		opts:    opts,
@@ -148,6 +150,10 @@ func New(u, out string, opts Options) *Downloader {
 		limiter: NewLimiter(opts.RateLimit),
 		conns:   newConnLimiter(opts.Conns),
 	}
+	if opts.SharedLimiter != nil {
+		d.limiter = opts.SharedLimiter // global cap shared by all downloads
+	}
+	return d
 }
 
 // Meter exposes live progress; valid after Run has begun. May be nil before.
@@ -355,6 +361,10 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 		}
 	}
 
+	// Destination folders may not exist yet (category / per-site rules).
+	if err := os.MkdirAll(filepath.Dir(d.out), 0o755); err != nil {
+		return err
+	}
 	f, err := os.OpenFile(d.out, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
@@ -458,6 +468,9 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 		return fmt.Errorf("GET %s: unexpected status %s", d.url, resp.Status)
 	}
 
+	if err := os.MkdirAll(filepath.Dir(d.out), 0o755); err != nil {
+		return err
+	}
 	f, err := os.OpenFile(d.out, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err

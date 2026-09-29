@@ -9,6 +9,7 @@ class JobStatus {
   final int total;
   final int retries;
   final String? error;
+  final DateTime? startAt; // scheduled start, when set
 
   const JobStatus({
     required this.id,
@@ -19,7 +20,11 @@ class JobStatus {
     required this.total,
     required this.retries,
     this.error,
+    this.startAt,
   });
+
+  /// Pending and waiting for a scheduled time in the future.
+  bool get isScheduled => state == 'pending' && startAt != null && startAt!.isAfter(DateTime.now());
 
   factory JobStatus.fromJson(Map<String, dynamic> j) => JobStatus(
         id: j['id'] as String? ?? '',
@@ -30,6 +35,9 @@ class JobStatus {
         total: (j['total'] as num?)?.toInt() ?? 0,
         retries: (j['retries'] as num?)?.toInt() ?? 0,
         error: j['error'] as String?,
+        startAt: (j['startAt'] as num?) != null && (j['startAt'] as num) > 0
+            ? DateTime.fromMillisecondsSinceEpoch((j['startAt'] as num).toInt() * 1000)
+            : null,
       );
 
   String get filename {
