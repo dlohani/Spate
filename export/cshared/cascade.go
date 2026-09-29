@@ -269,11 +269,21 @@ func CascadeCancel(handle C.longlong, jobID *C.char) C.int {
 	return act(handle, jobID, func(s *service.Service, id string) error { return s.Mgr.Cancel(id) })
 }
 
-// CascadeRemove removes a job from the queue (0 ok, -1 error).
+// CascadeRemove removes a job from the queue, keeping its files on disk
+// (0 ok, -1 error).
 //
 //export CascadeRemove
 func CascadeRemove(handle C.longlong, jobID *C.char) C.int {
 	return act(handle, jobID, func(s *service.Service, id string) error { return s.Mgr.Remove(id) })
+}
+
+// CascadeDiscard removes a job from the queue and deletes its partial
+// download (output file + resume sidecar), stopping it first if running. A
+// finished download's file is kept (0 ok, -1 error).
+//
+//export CascadeDiscard
+func CascadeDiscard(handle C.longlong, jobID *C.char) C.int {
+	return act(handle, jobID, func(s *service.Service, id string) error { return s.Mgr.Discard(id) })
 }
 
 // CascadeClearFinished removes finished jobs; returns how many.
