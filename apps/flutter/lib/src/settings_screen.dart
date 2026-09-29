@@ -64,8 +64,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: DragToMoveArea(
           child: AppBar(
             toolbarHeight: Platform.isMacOS ? 52 : null,
-            leadingWidth: Platform.isMacOS ? 78 + 48 : null,
-            leading: Platform.isMacOS ? const Padding(padding: EdgeInsets.only(left: 78), child: BackButton()) : null,
+            leadingWidth: Platform.isMacOS ? 96 + 48 : null,
+            leading: Platform.isMacOS ? const Padding(padding: EdgeInsets.only(left: 96), child: BackButton()) : null,
             title: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
