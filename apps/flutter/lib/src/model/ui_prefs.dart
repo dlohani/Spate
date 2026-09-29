@@ -15,13 +15,25 @@ const accentColors = <String, Color>{
   'graphite': Color(0xFF52525B),
 };
 
-/// UI-only preferences (theme mode, accent). Stored as ui.json next to the
-/// core's settings.json so they survive reinstalls like everything else;
-/// the core never reads them.
+/// Smallest window the layout is designed for; also the default size.
+const kMinWindowSize = Size(600, 440);
+
+/// UI-only preferences (theme mode, accent, last window size). Stored as
+/// ui.json next to the core's settings.json so they survive reinstalls like
+/// everything else; the core never reads them.
 class UiPrefs extends ChangeNotifier {
   final String path;
   ThemeMode mode = ThemeMode.system;
   String accent = 'blue';
+  Size? windowSize;
+
+  /// Saved without notifying: the window itself already has the size.
+  void setWindowSize(Size s) {
+    if (s.width < kMinWindowSize.width || s.height < kMinWindowSize.height) return;
+    if (windowSize == s) return;
+    windowSize = s;
+    _save();
+  }
 
   UiPrefs(this.path) {
     _load();
@@ -49,6 +61,11 @@ class UiPrefs extends ChangeNotifier {
       mode = switch (j['theme']) { 'light' => ThemeMode.light, 'dark' => ThemeMode.dark, _ => ThemeMode.system };
       final a = j['accent'] as String?;
       if (a != null && accentColors.containsKey(a)) accent = a;
+      final w = (j['windowW'] as num?)?.toDouble();
+      final h = (j['windowH'] as num?)?.toDouble();
+      if (w != null && h != null && w >= kMinWindowSize.width && h >= kMinWindowSize.height) {
+        windowSize = Size(w, h);
+      }
     } catch (_) {
       // Missing or unreadable: defaults.
     }
@@ -57,7 +74,12 @@ class UiPrefs extends ChangeNotifier {
   void _save() {
     try {
       File(path).parent.createSync(recursive: true);
-      File(path).writeAsStringSync(jsonEncode({'theme': mode.name, 'accent': accent}));
+      File(path).writeAsStringSync(jsonEncode({
+        'theme': mode.name,
+        'accent': accent,
+        if (windowSize != null) 'windowW': windowSize!.width,
+        if (windowSize != null) 'windowH': windowSize!.height,
+      }));
     } catch (_) {
       // Preferences are a convenience; never fail the UI over them.
     }
