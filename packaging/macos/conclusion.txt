@@ -1,12 +1,12 @@
-Cascade is installed and running in your menu bar.
+Cascade is installed and running in your menu bar (also in Spotlight and Launchpad as "Cascade").
 
-Last step, in your browser (Chrome, Chromium, Brave, Edge or Vivaldi):
-  1. Open chrome://extensions and turn on "Developer mode".
-  2. Click "Load unpacked" and choose:
-     ~/Library/Application Support/cascade/extension
-  3. Download anything. Cascade asks once how to handle downloads and remembers your answer.
+Browser integration: the installer registered Cascade with the Chromium-family browsers on this Mac (Chrome, Chromium, Brave, Edge, Vivaldi).
+  - If the Cascade extension is published in the browser's store, restart the browser: it installs the extension by itself and asks once to enable it.
+  - Otherwise load it once by hand: chrome://extensions -> "Developer mode" -> "Load unpacked" -> ~/Library/Application Support/cascade/extension
 
-If the extension's Options page shows a different Extension ID than expected, re-run:
+Then download anything. Cascade asks once how to handle downloads and remembers your answer.
+
+If the extension's Options page shows a different Extension ID than expected, run:
   ~/Library/Application Support/cascade/bin/register-extension <ID>
 
-To uninstall: run ~/Library/Application Support/cascade/bin/uninstall
+To uninstall: ~/Library/Application Support/cascade/bin/uninstall

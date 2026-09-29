@@ -58,6 +58,10 @@ ios:
 windows:
 	scripts/build-windows.sh
 
+# Browser extension zip for the Chrome Web Store / Edge Add-ons upload.
+extension:
+	scripts/package-extension.sh
+
 # Debian/Ubuntu package. On Linux: the full desktop package; elsewhere the
 # CLI-only package (see scripts/package-linux.sh).
 deb:

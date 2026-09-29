@@ -68,6 +68,17 @@ and into the Windows Add/Remove Programs entry. On install:
   deliberately: `CASCADE_FORCE=1` for the scripts, `--force` for
   `cascade-setup.exe`, or uninstall first.
 
+Browser extension, automatically: every installer detects the Chromium-family
+browsers on the machine (Chrome, Chromium, Brave, Vivaldi, Edge) and registers
+the native host with each. Once the extension is published in the Chrome Web
+Store (and Edge Add-ons for Edge), the installers also register the extension
+itself, and each browser installs it from the store on its next start: silent
+on Linux, one "Enable extension" click on Windows and macOS (browsers do not
+allow silent installs of unpublished extensions, so until it is published the
+one manual "Load unpacked" step remains). The switch is
+`browser/extension/store-ids.env`; `scripts/package-extension.sh` builds the
+store upload and `browser/STORE.md` walks through publishing.
+
 There is exactly one copy of the app per machine: `~/Applications/Cascade.app`
 on macOS, `%LOCALAPPDATA%\Cascade\bin` on Windows, `~/.local/share/cascade/bin`
 on Linux. Opening the app while it is already running (Spotlight, Finder,

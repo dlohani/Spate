@@ -9,6 +9,7 @@ case "${1:-}" in
              /etc/opt/edge/native-messaging-hosts; do
       rm -f "$d/com.cascade.host.json"
     done
+    rm -f /usr/share/google-chrome/extensions/@CHROME_WEBSTORE_ID@.json /usr/share/chromium/extensions/@CHROME_WEBSTORE_ID@.json
     if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q /usr/share/applications || true; fi
     ;;
 esac

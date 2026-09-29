@@ -30,7 +30,7 @@ echo "==> cascade-gui.exe (Fyne UI; first build compiles GLFW, takes a while)"
 echo "==> cascade-setup.exe (single-file installer embedding the binaries + extension)"
 PAY="$ROOT/cmd/cascade-setup/payload"
 rm -rf "$PAY" && mkdir -p "$PAY/bin" "$PAY/extension"
-cp "$OUT/cascade-gui.exe" "$OUT/cascade-host.exe" "$OUT/cascade.exe" "$OUT/cascade.dll" "$PAY/bin/"
+cp "$OUT/cascade-gui.exe" "$OUT/cascade-host.exe" "$OUT/cascade.exe" "$OUT/cascade.dll" "$ROOT/browser/extension/store-ids.env" "$PAY/bin/"
 cp -R "$ROOT/browser/extension/." "$PAY/extension/"
 (cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LD" -o "$OUT/cascade-setup.exe" ./cmd/cascade-setup)
 

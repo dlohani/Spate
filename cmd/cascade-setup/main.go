@@ -93,10 +93,14 @@ func main() {
 	must(extractDir("payload/extension", ext))
 
 	// Native messaging host manifest. Authorize: the ID Chrome derives for the
-	// extension folder we just extracted, the dev-Mac ID, and any given ID.
+	// extension folder we just extracted, the dev-Mac ID, the store IDs when
+	// the extension is published, and any given ID.
+	chromeID, edgeID := storeIDs()
 	ids := []string{unpackedIDForPath(ext), defaultExtID}
-	if *extID != "" {
-		ids = append(ids, *extID)
+	for _, id := range []string{chromeID, edgeID, *extID} {
+		if id != "" {
+			ids = append(ids, id)
+		}
 	}
 	manifestPath := filepath.Join(bin, hostName+".json")
 	must(writeManifest(manifestPath, filepath.Join(bin, "cascade-host.exe"), ids))
@@ -108,6 +112,10 @@ func main() {
 			fmt.Println("  registered:", k)
 		}
 	}
+
+	// Published extension: each browser installs it from its store on next
+	// start (Chrome shows a one-time "Enable extension" prompt).
+	registerStoreExtension(chromeID, edgeID)
 
 	app := filepath.Join(bin, "cascade_app", "cascade_app.exe") // Flutter UI, if bundled
 	if _, err := os.Stat(app); err != nil {
@@ -143,12 +151,17 @@ func main() {
 	}
 
 	fmt.Println()
-	fmt.Println("Next, in your browser:")
-	fmt.Println("  1. chrome://extensions  ->  Developer mode  ->  Load unpacked  ->")
-	fmt.Println("     ", ext)
-	fmt.Println("  2. If the extension's Options page shows an ID other than")
-	fmt.Println("     ", ids[0], " run:  cascade-setup.exe --extension-id <ID>")
-	fmt.Println("  3. Download anything: choose Cascade in the popup.")
+	if chromeID != "" {
+		fmt.Println("Next: restart your browser. It installs the Cascade extension from the")
+		fmt.Println("store by itself; click Enable when it asks. Then download anything.")
+	} else {
+		fmt.Println("Next, in your browser:")
+		fmt.Println("  1. chrome://extensions  ->  Developer mode  ->  Load unpacked  ->")
+		fmt.Println("     ", ext)
+		fmt.Println("  2. If the extension's Options page shows an ID other than")
+		fmt.Println("     ", ids[0], " run:  cascade-setup.exe --extension-id <ID>")
+		fmt.Println("  3. Download anything: choose Cascade in the popup.")
+	}
 	fmt.Println()
 	if !*noLaunch {
 		fmt.Println("  starting", filepath.Base(app))
@@ -165,12 +178,67 @@ func doUninstall(root string) {
 	}
 	_ = exec.Command("reg", "delete", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "Cascade", "/f").Run()
 	_ = exec.Command("reg", "delete", uninstallKey, "/f").Run()
+	chromeID, edgeID := storeIDs()
+	for _, k := range storeExtensionKeys(chromeID, edgeID) {
+		_ = exec.Command("reg", "delete", k, "/f").Run()
+	}
 	stopApp()
 	if err := os.RemoveAll(root); err != nil {
 		// The running uninstaller copy cannot delete itself; everything else is gone.
 		fmt.Println("  !", err)
 	}
 	fmt.Println("  done (settings, the token in %APPDATA%\\cascade and downloads were left in place)")
+}
+
+// storeIDs reads the store listing IDs bundled as payload/bin/store-ids.env
+// (empty until the extension is published).
+func storeIDs() (chrome, edge string) {
+	b, err := payload.ReadFile("payload/bin/store-ids.env")
+	if err != nil {
+		return "", ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		k, v, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if !ok || strings.HasPrefix(k, "#") {
+			continue
+		}
+		switch k {
+		case "CHROME_WEBSTORE_ID":
+			chrome = strings.TrimSpace(v)
+		case "EDGE_ADDONS_ID":
+			edge = strings.TrimSpace(v)
+		}
+	}
+	return chrome, edge
+}
+
+// storeExtensionKeys lists the per-browser registry keys that tell each
+// browser to install the extension from its store.
+func storeExtensionKeys(chromeID, edgeID string) []string {
+	var keys []string
+	if chromeID != "" {
+		for _, b := range []string{`Google\Chrome`, `Chromium`, `BraveSoftware\Brave-Browser`} {
+			keys = append(keys, `HKCU\Software\`+b+`\Extensions\`+chromeID)
+		}
+	}
+	if edgeID != "" {
+		keys = append(keys, `HKCU\Software\Microsoft\Edge\Extensions\`+edgeID)
+	}
+	return keys
+}
+
+func registerStoreExtension(chromeID, edgeID string) {
+	for _, k := range storeExtensionKeys(chromeID, edgeID) {
+		url := "https://clients2.google.com/service/update2/crx"
+		if strings.Contains(k, `\Edge\`) {
+			url = "https://edge.microsoft.com/extensionwebstorebase/v1/crx"
+		}
+		if err := regAdd(k, "update_url", url); err != nil {
+			fmt.Println("  ! extension registration:", k, err)
+		} else {
+			fmt.Println("  extension registered:", k)
+		}
+	}
 }
 
 // stopApp ends any running Cascade UI so its files can be replaced or removed.

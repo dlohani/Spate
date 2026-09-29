@@ -11,8 +11,12 @@ set -u
 HOST=/usr/lib/cascade/cascade-host
 EXT=/usr/share/cascade/extension
 NAME=com.cascade.host
+CHROME_WEBSTORE_ID="@CHROME_WEBSTORE_ID@"
+EDGE_ADDONS_ID="@EDGE_ADDONS_ID@"
 ID="$(printf '%s' "$EXT" | sha256sum | cut -c1-32 | tr '0123456789abcdef' 'abcdefghijklmnop')"
 origins="\"chrome-extension://$ID/\", \"chrome-extension://kamlaafhjnegfjdbnfajbanjfkemefga/\""
+[ -n "$CHROME_WEBSTORE_ID" ] && origins="$origins, \"chrome-extension://$CHROME_WEBSTORE_ID/\""
+[ -n "$EDGE_ADDONS_ID" ] && origins="$origins, \"chrome-extension://$EDGE_ADDONS_ID/\""
 for id in "$@"; do origins="$origins, \"chrome-extension://$id/\""; done
 manifest="{
   \"name\": \"$NAME\",
@@ -38,4 +42,14 @@ for dir in \
   n=$((n + 1))
 done
 [ "$n" -gt 0 ] || echo "no browser profile folders found under $CFG"
-echo "extension folder: $EXT  (chrome://extensions -> Developer mode -> Load unpacked)"
+# Published extension: make each browser install it from its store.
+reg_store() { # config-dir store-id update-url
+  [ -n "$2" ] && [ -d "$CFG/$1" ] || return 0
+  mkdir -p "$CFG/$1/External Extensions"
+  printf '{ "external_update_url": "%s" }\n' "$3" > "$CFG/$1/External Extensions/$2.json"
+  echo "extension registered: $1 installs it from the store on next start"
+}
+CHROME_URL=https://clients2.google.com/service/update2/crx
+for b in google-chrome chromium BraveSoftware/Brave-Browser vivaldi; do reg_store "$b" "$CHROME_WEBSTORE_ID" "$CHROME_URL"; done
+reg_store microsoft-edge "$EDGE_ADDONS_ID" https://edge.microsoft.com/extensionwebstorebase/v1/crx
+[ -n "$CHROME_WEBSTORE_ID" ] || echo "extension folder: $EXT  (chrome://extensions -> Developer mode -> Load unpacked)"
