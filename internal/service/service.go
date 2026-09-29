@@ -88,6 +88,34 @@ func AlreadyRunning() bool {
 	return false
 }
 
+// RequestShow asks an already running instance to show its window. A second
+// launch of the app calls this instead of starting a service, then exits.
+// Returns false if no instance answered.
+func RequestShow() bool {
+	token := LoadOrCreateToken()
+	c := &http.Client{Timeout: 500 * time.Millisecond}
+	for _, p := range []int{localapi.DefaultPort, localapi.DefaultPort + 1, localapi.DefaultPort + 2} {
+		req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://127.0.0.1:%d/show", p), nil)
+		if err != nil {
+			continue
+		}
+		req.Header.Set("X-Cascade-Token", token)
+		resp, err := c.Do(req)
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			return true
+		}
+	}
+	return false
+}
+
+// ShowPending reports (and clears) whether another launch asked this instance
+// to show its window.
+func (s *Service) ShowPending() bool { return s.API != nil && s.API.ShowPending() }
+
 // StartOpts configures Start. Zero values select the defaults: settings-file
 // concurrency, platform download folder, per-user settings path, and the
 // single-instance guard.

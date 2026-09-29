@@ -24,7 +24,13 @@ case "$MODE" in
     CASCADE_LIB="$DYLIB" flutter run -d macos
     ;;
   build)
-    flutter build macos --release
+    # Stamp the bundle from the VERSION file (CFBundleShortVersionString); the
+    # installers compare it to refuse downgrades. Keep Spotlight from listing
+    # build products as another "Cascade".
+    VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+    BUILD="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
+    mkdir -p build && touch build/.metadata_never_index
+    flutter build macos --release --build-name="$VERSION" --build-number="$BUILD"
     APP="$(ls -d build/macos/Build/Products/Release/*.app | head -1)"
     mkdir -p "$APP/Contents/Frameworks"
     cp "$DYLIB" "$APP/Contents/Frameworks/libcascade.dylib"

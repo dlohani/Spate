@@ -49,6 +49,7 @@ void main() {
     });
 
     expect(core.info()['dir'], dir.path);
+    expect(core.version, isNotEmpty);
     expect(core.pairPending, isFalse);
 
     final id = core.add('http://127.0.0.1:${server.port}/f.bin', conns: 2);

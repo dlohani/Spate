@@ -16,6 +16,9 @@ class CascadeController extends ChangeNotifier {
   bool pairShown = false; // a pairing dialog is currently on screen
   Timer? _timer;
   String? lastError;
+  /// Called when another launch of the app asked this instance to show its
+  /// window (the desktop shell hooks window_manager here).
+  void Function()? onShowRequested;
 
   CascadeController(this.core) {
     _tick();
@@ -30,6 +33,7 @@ class CascadeController extends ChangeNotifier {
     }
     _rates.removeWhere((id, _) => !next.any((j) => j.id == id));
     jobs = next;
+    if (core.showPending) onShowRequested?.call();
     notifyListeners();
   }
 

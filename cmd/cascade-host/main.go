@@ -85,6 +85,23 @@ func ensure() reply {
 	return r
 }
 
+// macAppBundle returns the installed Cascade.app on macOS: the per-user or
+// system Applications folder (where the installers put it), else the legacy
+// location next to this host. "" when none exists.
+func macAppBundle(hostDir string) string {
+	home, _ := os.UserHomeDir()
+	for _, p := range []string{
+		filepath.Join(home, "Applications", appBundle),
+		filepath.Join("/Applications", appBundle),
+		filepath.Join(hostDir, appBundle),
+	} {
+		if dirExists(p) {
+			return p
+		}
+	}
+	return ""
+}
+
 // findApp returns the address of a running Cascade endpoint, or "".
 func findApp() string {
 	c := &http.Client{Timeout: 400 * time.Millisecond}
@@ -124,8 +141,8 @@ func launchApp() error {
 	// elsewhere the executable is started detached from this host.
 	var cmd *exec.Cmd
 	switch {
-	case runtime.GOOS == "darwin" && dirExists(filepath.Join(dir, appBundle)):
-		cmd = exec.Command("open", "-a", filepath.Join(dir, appBundle))
+	case runtime.GOOS == "darwin" && macAppBundle(dir) != "":
+		cmd = exec.Command("open", "-a", macAppBundle(dir))
 	case fileExists(filepath.Join(dir, bundleDir, bundleBinary+ext)):
 		cmd = exec.Command(filepath.Join(dir, bundleDir, bundleBinary+ext))
 		detach(cmd)

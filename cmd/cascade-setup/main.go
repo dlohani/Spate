@@ -9,7 +9,11 @@
 //	cascade-setup.exe                      install + launch
 //	cascade-setup.exe --extension-id ID    also authorize this extension ID
 //	cascade-setup.exe --no-autostart       skip the Run-key entry
+//	cascade-setup.exe --force              allow installing an older version
 //	cascade-setup.exe --uninstall          remove registry keys and files
+//
+// Running it again reinstalls the same version or upgrades an older one; an
+// older setup than the installed version is refused unless --force.
 package main
 
 import (
@@ -19,11 +23,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"cascade/internal/version"
 )
 
 //go:embed payload
@@ -32,6 +39,9 @@ var payload embed.FS
 const (
 	hostName     = "com.cascade.host"
 	defaultExtID = "kamlaafhjnegfjdbnfajbanjfkemefga" // ID when loaded from the repo path on the dev Mac
+	// Add/Remove Programs entry; shared with the NSIS installer so each
+	// detects what the other installed.
+	uninstallKey = `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Cascade`
 )
 
 var browserKeys = []string{
@@ -46,6 +56,7 @@ func main() {
 	noAuto := flag.Bool("no-autostart", false, "do not start Cascade at login")
 	uninstall := flag.Bool("uninstall", false, "remove Cascade")
 	noLaunch := flag.Bool("no-launch", false, "do not start the app after installing")
+	force := flag.Bool("force", false, "install even if a newer version is installed")
 	flag.Parse()
 
 	root := filepath.Join(os.Getenv("LOCALAPPDATA"), "Cascade")
@@ -58,7 +69,25 @@ func main() {
 		return
 	}
 
-	fmt.Println("Cascade dev setup")
+	fmt.Println("Cascade setup", version.Version)
+	if have := installedVersion(); have != "" {
+		switch c := version.Compare(have, version.Version); {
+		case c > 0 && !*force:
+			fmt.Printf("  Cascade %s is installed and this setup is %s; downgrades are not supported.\n", have, version.Version)
+			fmt.Println("  Uninstall first (cascade-setup.exe --uninstall) or run with --force.")
+			pause()
+			os.Exit(1)
+		case c > 0:
+			fmt.Printf("  downgrading %s -> %s (--force)\n", have, version.Version)
+		case c == 0:
+			fmt.Printf("  Cascade %s is already installed; reinstalling (settings and downloads are kept)\n", have)
+		default:
+			fmt.Printf("  upgrading %s -> %s\n", have, version.Version)
+		}
+	}
+	// Windows will not overwrite a running executable.
+	stopApp()
+
 	fmt.Println("  installing to", root)
 	must(extractDir("payload/bin", bin))
 	must(extractDir("payload/extension", ext))
@@ -92,6 +121,27 @@ func main() {
 		}
 	}
 
+	// Add/Remove Programs entry (also what the next setup reads to compare
+	// versions); the uninstaller is a copy of this setup.
+	self, _ := os.Executable()
+	setupCopy := filepath.Join(root, "cascade-setup.exe")
+	if self != "" && !strings.EqualFold(self, setupCopy) {
+		if err := copyFile(self, setupCopy); err != nil {
+			fmt.Println("  ! uninstaller copy:", err)
+		}
+	}
+	for name, val := range map[string]string{
+		"DisplayName":     "Cascade",
+		"DisplayVersion":  version.Version,
+		"Publisher":       "d3xt3r",
+		"InstallLocation": root,
+		"UninstallString": fmt.Sprintf(`"%s" --uninstall`, setupCopy),
+	} {
+		if err := regAdd(uninstallKey, name, val); err != nil {
+			fmt.Println("  ! registry:", name, err)
+		}
+	}
+
 	fmt.Println()
 	fmt.Println("Next, in your browser:")
 	fmt.Println("  1. chrome://extensions  ->  Developer mode  ->  Load unpacked  ->")
@@ -114,12 +164,53 @@ func doUninstall(root string) {
 		_ = exec.Command("reg", "delete", k, "/f").Run()
 	}
 	_ = exec.Command("reg", "delete", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "Cascade", "/f").Run()
-	_ = exec.Command("taskkill", "/IM", "cascade-gui.exe", "/F").Run()
-	_ = exec.Command("taskkill", "/IM", "cascade_app.exe", "/F").Run()
+	_ = exec.Command("reg", "delete", uninstallKey, "/f").Run()
+	stopApp()
 	if err := os.RemoveAll(root); err != nil {
+		// The running uninstaller copy cannot delete itself; everything else is gone.
 		fmt.Println("  !", err)
 	}
-	fmt.Println("  done (downloads and the token in %APPDATA%\\cascade were left in place)")
+	fmt.Println("  done (settings, the token in %APPDATA%\\cascade and downloads were left in place)")
+}
+
+// stopApp ends any running Cascade UI so its files can be replaced or removed.
+func stopApp() {
+	for _, exe := range []string{"cascade_app.exe", "cascade-gui.exe"} {
+		_ = exec.Command("taskkill", "/IM", exe, "/F").Run()
+	}
+}
+
+// installedVersion reads DisplayVersion from the Add/Remove Programs entry
+// written by this setup or the NSIS installer; "" when not installed.
+func installedVersion() string {
+	out, err := exec.Command("reg", "query", uninstallKey, "/v", "DisplayVersion").Output()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) >= 3 && f[0] == "DisplayVersion" {
+			return f[len(f)-1]
+		}
+	}
+	return ""
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func extractDir(src, dst string) error {

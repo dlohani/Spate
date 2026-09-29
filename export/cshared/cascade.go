@@ -23,7 +23,14 @@ import (
 	"unsafe"
 
 	"cascade/internal/service"
+	"cascade/internal/version"
 )
+
+// CascadeVersion returns the core's version ("0.0.0-dev" for an unstamped
+// build). Caller frees.
+//
+//export CascadeVersion
+func CascadeVersion() *C.char { return cstr(version.Version) }
 
 var (
 	reg    = map[int64]*service.Service{}
@@ -336,6 +343,29 @@ func CascadeStatusJSON(handle C.longlong) *C.char {
 //export CascadePairPending
 func CascadePairPending(handle C.longlong) C.int {
 	if s := lookup(handle); s != nil && s.PairPending() {
+		return 1
+	}
+	return 0
+}
+
+// CascadeShowPending returns 1 (once) when another launch of the app asked
+// this instance to show its window; a shell polls this and raises the window.
+//
+//export CascadeShowPending
+func CascadeShowPending(handle C.longlong) C.int {
+	if s := lookup(handle); s != nil && s.ShowPending() {
+		return 1
+	}
+	return 0
+}
+
+// CascadeRequestShow asks an already running instance to show its window
+// (used when CascadeServiceStart fails because one is running). Returns 1 if
+// an instance answered.
+//
+//export CascadeRequestShow
+func CascadeRequestShow() C.int {
+	if service.RequestShow() {
 		return 1
 	}
 	return 0

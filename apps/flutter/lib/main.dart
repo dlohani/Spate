@@ -18,11 +18,13 @@ Future<void> main(List<String> args) async {
   // The Go core owns the engine, the queue, the browser-capture endpoint and
   // pairing; this app is a thin shell over it via the C ABI. The core refuses
   // to start a second instance, so a duplicate launch (login item + native
-  // host + a manual open) just exits quietly.
+  // host + a manual open) asks the running instance to show its window and
+  // exits.
   final Cascade core;
   try {
     core = Cascade.start(); // concurrency and folder come from settings
   } on StateError {
+    Cascade.requestShow();
     exit(0);
   }
   final controller = CascadeController(core);
@@ -50,6 +52,11 @@ Future<void> main(List<String> args) async {
     // capture keep running. Quit from the menu-bar/tray icon.
     await windowManager.setPreventClose(true);
     windowManager.addListener(_Resident());
+    // A second launch (Spotlight, Finder, Dock) lands here as a show request.
+    controller.onShowRequested = () async {
+      await windowManager.show();
+      await windowManager.focus();
+    };
     await _setupTray(core);
   }
 

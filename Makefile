@@ -14,13 +14,17 @@ DIST    ?= dist
 PKG_CLI  = ./cmd/cascade
 PKG_LIB  = ./export/cshared
 PKG_MOB  = ./mobile
+# The VERSION file is the single source of truth; it is stamped into every
+# binary (internal/version) and into the app bundles and installers.
+VERSION := $(shell tr -d '[:space:]' < VERSION)
+LDFLAGS  = -X cascade/internal/version.Version=$(VERSION)
 
 .PHONY: all cli test race lib android ios tools clean
 
 all: cli lib
 
 cli:
-	$(GO) build -o $(DIST)/cascade $(PKG_CLI)
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(DIST)/cascade $(PKG_CLI)
 
 test:
 	$(GO) test ./...
@@ -38,7 +42,7 @@ lib:
 	  *)       out=$(DIST)/libcascade.so ;; \
 	esac; \
 	echo "building $$out"; \
-	CGO_ENABLED=1 $(GO) build -buildmode=c-shared -o $$out $(PKG_LIB)
+	CGO_ENABLED=1 $(GO) build -ldflags "$(LDFLAGS)" -buildmode=c-shared -o $$out $(PKG_LIB)
 
 # Android AAR (requires: gomobile + Android SDK/NDK; ANDROID_NDK_HOME set).
 android:
@@ -58,8 +62,8 @@ windows:
 # needs cgo and is built natively on Linux by scripts/install-linux.sh.
 host-linux:
 	@mkdir -p $(DIST)/linux-amd64 $(DIST)/linux-arm64
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -o $(DIST)/linux-amd64/cascade-host ./cmd/cascade-host
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GO) build -o $(DIST)/linux-arm64/cascade-host ./cmd/cascade-host
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $(DIST)/linux-amd64/cascade-host ./cmd/cascade-host
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $(DIST)/linux-arm64/cascade-host ./cmd/cascade-host
 
 # Install/initialize gomobile (one-time).
 tools:

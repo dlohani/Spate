@@ -51,7 +51,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Text('Settings'),
+          const SizedBox(width: 10),
+          Text('Cascade ${widget.core.version}', style: Theme.of(context).textTheme.labelMedium?.copyWith(color: cs.onSurfaceVariant)),
+        ]),
         actions: [
           FilledButton.icon(onPressed: _dirty ? _save : null, icon: const Icon(Icons.check), label: const Text('Save')),
           const SizedBox(width: 12),

@@ -52,6 +52,12 @@ class Cascade {
   late final _IdActD _settingsApply = _lib.lookupFunction<_IdActC, _IdActD>('CascadeSettingsApply');
   late final _IdActD _startNow = _lib.lookupFunction<_IdActC, _IdActD>('CascadeStartNow');
   late final _HandleLongD _currentLimit = _lib.lookupFunction<_HandleLongC, _HandleLongD>('CascadeCurrentLimit');
+  late final _HandleIntD _showPending = _lib.lookupFunction<_HandleIntC, _HandleIntD>('CascadeShowPending');
+  late final Pointer<Utf8> Function() _version =
+      _lib.lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>('CascadeVersion');
+
+  /// The core's version, stamped from the repo's VERSION file at build time.
+  String get version => _take(_version());
 
   Cascade._(this._lib, this._h);
 
@@ -82,6 +88,21 @@ class Cascade {
       malloc.free(spec);
     }
   }
+
+  /// Asks an already running instance to show its window (a second launch
+  /// calls this after [Cascade.start] fails, then exits). True if one answered.
+  static bool requestShow({String? libraryPath}) {
+    try {
+      final lib = DynamicLibrary.open(libraryPath ?? locateLibrary());
+      final f = lib.lookupFunction<Int32 Function(), int Function()>('CascadeRequestShow');
+      return f() != 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// True once when another launch asked this instance to show its window.
+  bool get showPending => _showPending(_h) != 0;
 
   /// Finds libcascade for this platform: an explicit CASCADE_LIB path, the app
   /// bundle's Frameworks folder, or the repo's dist/ folder during development.

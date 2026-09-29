@@ -2,7 +2,7 @@
 # GitHub release, fill in url/sha256, and host this file in a tap
 # (e.g. github.com/<you>/homebrew-cascade), then:  brew install --cask <you>/cascade/cascade
 cask "cascade" do
-  version "0.3.0"
+  version "0.4.0"
   sha256 "REPLACE_WITH_SHA256_OF_Cascade-#{version}.pkg"
 
   url "https://github.com/REPLACE_OWNER/cascade/releases/download/v#{version}/Cascade-#{version}.pkg"

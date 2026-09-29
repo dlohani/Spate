@@ -4,16 +4,55 @@
   <welcome file="welcome.txt" mime-type="text/plain"/>
   <conclusion file="conclusion.txt" mime-type="text/plain"/>
   <options customize="never" require-scripts="true" hostArchitectures="arm64,x86_64"/>
-  <!-- Per-user install: no administrator password, everything under ~/Library. -->
+  <!-- Per-user install: no administrator password. The app goes to
+       ~/Applications, helpers and the extension under ~/Library. -->
   <domains enable_currentUserHome="true" enable_localSystem="false" enable_anywhere="false"/>
+
+  <!-- Same version: reinstall (warn, continue). Older package than installed:
+       refuse. Flutter's template defaults (1.0.0 build 1) are an unstamped dev
+       build and never block. -->
+  <installation-check script="checkVersion()"/>
+  <script><![CDATA[
+    function installedVersion() {
+      var plist = system.files.plistAtPath(system.env.HOME + '/Applications/Cascade.app/Contents/Info.plist');
+      if (!plist) return null;
+      var v = plist.CFBundleShortVersionString;
+      if (!v || (v == '1.0.0' && plist.CFBundleVersion == '1')) return null;
+      return v;
+    }
+    function checkVersion() {
+      var have = installedVersion();
+      if (!have) return true;
+      var c = system.compareVersions(have, '@VERSION@');
+      if (c > 0) {
+        my.result.type = 'Fatal';
+        my.result.title = 'A newer Cascade is installed';
+        my.result.message = 'Cascade ' + have + ' is installed and this package is @VERSION@. Downgrades are not supported. To go back anyway, run ~/Library/Application Support/cascade/bin/uninstall first.';
+        return false;
+      }
+      if (c == 0) {
+        my.result.type = 'Warn';
+        my.result.title = 'Cascade @VERSION@ is already installed';
+        my.result.message = 'Continuing reinstalls it. Settings, the browser pairing and downloads are kept.';
+        return false;
+      }
+      return true;
+    }
+  ]]></script>
+
   <choices-outline>
     <line choice="default">
-      <line choice="cascade"/>
+      <line choice="app"/>
+      <line choice="support"/>
     </line>
   </choices-outline>
   <choice id="default"/>
-  <choice id="cascade" visible="false">
+  <choice id="app" visible="false">
+    <pkg-ref id="dev.d3xt3r.cascade.app"/>
+  </choice>
+  <choice id="support" visible="false">
     <pkg-ref id="dev.d3xt3r.cascade"/>
   </choice>
-  <pkg-ref id="dev.d3xt3r.cascade" version="@VERSION@" onConclusion="none">cascade.pkg</pkg-ref>
+  <pkg-ref id="dev.d3xt3r.cascade.app" version="@VERSION@" onConclusion="none">cascade-app.pkg</pkg-ref>
+  <pkg-ref id="dev.d3xt3r.cascade" version="@VERSION@" onConclusion="none">cascade-support.pkg</pkg-ref>
 </installer-gui-script>
