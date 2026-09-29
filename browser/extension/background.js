@@ -10,8 +10,17 @@
 //
 // Modes: "ask" (default), "always" (Cascade without asking), "never" (off).
 // Site rules: {host: "cascade" | "browser"} remembered from the popup.
+//
+// Browsers: Chrome/Chromium/Brave/Edge/Vivaldi (MV3 service worker, this
+// manifest), Firefox (manifest.firefox.json, MV2 event page: same code) and
+// Safari (manifest.safari.json). Safari has no downloads API, so there the
+// capture comes from the right-click menu and from capture.js intercepting
+// clicks on file links; those hand-offs carry no download id.
 
 const PORTS = [8760, 8761, 8762];
+const hasDownloads = typeof chrome !== "undefined" && !!chrome.downloads;
+const action = chrome.action || chrome.browserAction; // MV3 vs Firefox MV2
+const menus = chrome.contextMenus || chrome.menus;
 const CLIENT_HEADERS = { "X-Cascade-Client": "extension" };
 const log = (...a) => console.log("[cascade]", ...a);
 
@@ -119,7 +128,8 @@ async function cookieHeader(url, incognito) {
     let storeId;
     if (incognito) {
       const stores = await chrome.cookies.getAllCookieStores();
-      const inc = stores.find((s) => s.id !== "0"); // "0" is the regular store
+      // Firefox flags the private store; Chrome's regular store is "0".
+      const inc = stores.find((s) => s.incognito === true) || stores.find((s) => s.id !== "0");
       if (!inc) return "";
       storeId = inc.id;
     }
@@ -160,13 +170,18 @@ function hostOf(url) {
 // handOff sends the download to the app and, on success, cancels the browser's
 // copy. If the browser already finished it, nothing is handed off.
 async function handOff(item) {
-  try {
-    const [cur] = await chrome.downloads.search({ id: item.id });
-    if (cur && cur.state === "complete") {
-      await note("already finished in browser; not handed off", item.url);
-      return;
-    }
-  } catch (e) {}
+  // A browser download (has an id) can be checked and cancelled; a link
+  // hand-off (context menu, Safari click capture) has nothing to cancel.
+  const isDownload = hasDownloads && item.id != null;
+  if (isDownload) {
+    try {
+      const [cur] = await chrome.downloads.search({ id: item.id });
+      if (cur && cur.state === "complete") {
+        await note("already finished in browser; not handed off", item.url);
+        return;
+      }
+    } catch (e) {}
+  }
 
   const app = await ensureApp();
   if (!app.base) {
@@ -187,11 +202,13 @@ async function handOff(item) {
   // refuses, the download is restarted in the browser below (the generated
   // direct URLs are time-limited, not single-use).
   let cancelled = false;
-  try {
-    await chrome.downloads.cancel(item.id);
-    cancelled = true;
-    await new Promise((r) => setTimeout(r, 1500)); // let the host release the slot
-  } catch (e) {}
+  if (isDownload) {
+    try {
+      await chrome.downloads.cancel(item.id);
+      cancelled = true;
+      await new Promise((r) => setTimeout(r, 1500)); // let the host release the slot
+    } catch (e) {}
+  }
 
   let handedOff = false;
   try {
@@ -225,9 +242,11 @@ async function handOff(item) {
     await note("POST failed: " + (e && e.message), item.url);
   }
   if (handedOff) {
-    try {
-      await chrome.downloads.erase({ id: item.id });
-    } catch (e) {}
+    if (isDownload) {
+      try {
+        await chrome.downloads.erase({ id: item.id });
+      } catch (e) {}
+    }
     flashBadge("↓");
   } else if (cancelled) {
     // Give the download back to the browser (same URL, same referer).
@@ -261,6 +280,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     pair().then(reply);
     return true;
   }
+  if (msg && msg.type === "link") {
+    // capture.js (Safari) or another page-level source: hand a link off
+    // directly; the reply tells the page whether to fall back to navigation.
+    (async () => {
+      const { enabled, mode } = await getConfig();
+      if (!enabled || mode === "never") {
+        reply({ ok: false });
+        return;
+      }
+      const item = { url: msg.url, referrer: msg.referrer || "", host: hostOf(msg.url), incognito: !!(_sender.tab && _sender.tab.incognito) };
+      await handOff(item);
+      const { lastEvent } = await chrome.storage.local.get("lastEvent");
+      reply({ ok: !!(lastEvent && lastEvent.result === "handed off to app") });
+    })();
+    return true;
+  }
   if (msg && msg.type === "choice") {
     (async () => {
       const { siteRules } = await getConfig();
@@ -282,7 +317,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   }
 });
 
-chrome.downloads.onCreated.addListener(async (raw) => {
+// Right-click a link -> "Download with Cascade" (every browser, including
+// Safari where this is the main entry point).
+if (menus) {
+  const install = () => {
+    try {
+      menus.create({ id: "cascade-link", title: "Download with Cascade", contexts: ["link"] }, () => void chrome.runtime.lastError);
+    } catch (e) {}
+  };
+  chrome.runtime.onInstalled.addListener(install);
+  if (chrome.runtime.onStartup) chrome.runtime.onStartup.addListener(install);
+  menus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId !== "cascade-link" || !info.linkUrl) return;
+    const { enabled } = await getConfig();
+    if (!enabled) return;
+    await handOff({ url: info.linkUrl, referrer: info.pageUrl || "", host: hostOf(info.linkUrl), incognito: !!(tab && tab.incognito) });
+  });
+}
+
+if (hasDownloads) chrome.downloads.onCreated.addListener(async (raw) => {
   const { enabled, mode, siteRules } = await getConfig();
   // Prefer the final URL (after redirects): that is the one a plain GET can
   // actually fetch. raw.url may be the page that initiated the download.
@@ -322,7 +375,7 @@ chrome.downloads.onCreated.addListener(async (raw) => {
 
 function flashBadge(text) {
   try {
-    chrome.action.setBadgeText({ text });
-    setTimeout(() => chrome.action.setBadgeText({ text: "" }), 1500);
+    action.setBadgeText({ text });
+    setTimeout(() => action.setBadgeText({ text: "" }), 1500);
   } catch (e) {}
 }

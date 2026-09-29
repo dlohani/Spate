@@ -98,6 +98,14 @@ Function WriteHostManifest
   FileClose $1
 FunctionEnd
 
+; Firefox: fixed add-on ID; its manifest uses allowed_extensions.
+Function WriteFirefoxManifest
+  ${StrRep} $0 "$INSTDIR\bin\cascade-host.exe" "\" "\\"
+  FileOpen $1 "$INSTDIR\bin\${HOSTNAME}.firefox.json" w
+  FileWrite $1 '{$\r$\n  "name": "${HOSTNAME}",$\r$\n  "description": "Cascade download manager native host",$\r$\n  "path": "$0",$\r$\n  "type": "stdio",$\r$\n  "allowed_extensions": ["cascade@d3xt3r.dev"]$\r$\n}$\r$\n'
+  FileClose $1
+FunctionEnd
+
 Section "Cascade" SecMain
   ; Windows will not overwrite a running executable: stop the app first.
   ExecWait 'taskkill /IM cascade_app.exe /F'
@@ -121,6 +129,8 @@ Section "Cascade" SecMain
     StrCpy $AppExe "$INSTDIR\bin\cascade_app\cascade_app.exe"
 
   Call WriteHostManifest
+  Call WriteFirefoxManifest
+  WriteRegStr HKCU "Software\Mozilla\NativeMessagingHosts\${HOSTNAME}" "" "$INSTDIR\bin\${HOSTNAME}.firefox.json"
   WriteRegStr HKCU "Software\Google\Chrome\NativeMessagingHosts\${HOSTNAME}" "" "$INSTDIR\bin\${HOSTNAME}.json"
   WriteRegStr HKCU "Software\Chromium\NativeMessagingHosts\${HOSTNAME}" "" "$INSTDIR\bin\${HOSTNAME}.json"
   WriteRegStr HKCU "Software\Microsoft\Edge\NativeMessagingHosts\${HOSTNAME}" "" "$INSTDIR\bin\${HOSTNAME}.json"
@@ -161,6 +171,7 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\Chromium\NativeMessagingHosts\${HOSTNAME}"
   DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\${HOSTNAME}"
   DeleteRegKey HKCU "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\${HOSTNAME}"
+  DeleteRegKey HKCU "Software\Mozilla\NativeMessagingHosts\${HOSTNAME}"
 !if "${CHROME_WEBSTORE_ID}" != ""
   DeleteRegKey HKCU "Software\Google\Chrome\Extensions\${CHROME_WEBSTORE_ID}"
   DeleteRegKey HKCU "Software\Chromium\Extensions\${CHROME_WEBSTORE_ID}"

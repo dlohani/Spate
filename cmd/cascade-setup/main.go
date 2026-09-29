@@ -44,6 +44,9 @@ const (
 	uninstallKey = `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Cascade`
 )
 
+const firefoxExtID = "cascade@d3xt3r.dev"
+const firefoxHostKey = `HKCU\Software\Mozilla\NativeMessagingHosts\` + hostName
+
 var browserKeys = []string{
 	`HKCU\Software\Google\Chrome\NativeMessagingHosts\` + hostName,
 	`HKCU\Software\Chromium\NativeMessagingHosts\` + hostName,
@@ -112,6 +115,14 @@ func main() {
 			fmt.Println("  registered:", k)
 		}
 	}
+	// Firefox: fixed add-on ID; its manifest is keyed by allowed_extensions.
+	ffPath := filepath.Join(bin, hostName+".firefox.json")
+	must(writeFirefoxManifest(ffPath, filepath.Join(bin, "cascade-host.exe")))
+	if err := regAdd(firefoxHostKey, "", ffPath); err != nil {
+		fmt.Println("  ! registry:", firefoxHostKey, err)
+	} else {
+		fmt.Println("  registered:", firefoxHostKey)
+	}
 
 	// Published extension: each browser installs it from its store on next
 	// start (Chrome shows a one-time "Enable extension" prompt).
@@ -173,7 +184,7 @@ func main() {
 
 func doUninstall(root string) {
 	fmt.Println("Removing Cascade")
-	for _, k := range browserKeys {
+	for _, k := range append(browserKeys, firefoxHostKey) {
 		_ = exec.Command("reg", "delete", k, "/f").Run()
 	}
 	_ = exec.Command("reg", "delete", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "Cascade", "/f").Run()
@@ -310,6 +321,20 @@ func writeManifest(path, hostExe string, ids []string) error {
 		"path":            hostExe,
 		"type":            "stdio",
 		"allowed_origins": origins,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o644)
+}
+
+func writeFirefoxManifest(path, hostExe string) error {
+	b, err := json.MarshalIndent(map[string]any{
+		"name":               hostName,
+		"description":        "Cascade download manager native host",
+		"path":               hostExe,
+		"type":               "stdio",
+		"allowed_extensions": []string{firefoxExtID},
 	}, "", "  ")
 	if err != nil {
 		return err

@@ -53,6 +53,12 @@ reg "Chromium" "Chromium.app" "$CHROME_WEBSTORE_ID" "$CHROME_UPDATE_URL"
 reg "BraveSoftware/Brave-Browser" "Brave Browser.app" "$CHROME_WEBSTORE_ID" "$CHROME_UPDATE_URL"
 reg "Vivaldi" "Vivaldi.app" "$CHROME_WEBSTORE_ID" "$CHROME_UPDATE_URL"
 reg "Microsoft Edge" "Microsoft Edge.app" "$EDGE_ADDONS_ID" "$EDGE_UPDATE_URL"
+# Firefox: fixed add-on ID, manifest keyed by allowed_extensions.
+if [ -d "$AS/Firefox" ] || [ -d "/Applications/Firefox.app" ] || [ -d "$HOME/Applications/Firefox.app" ]; then
+  mkdir -p "$AS/Mozilla/NativeMessagingHosts"
+  printf '{\n  "name": "%s",\n  "description": "Cascade download manager native host",\n  "path": "%s/cascade-host",\n  "type": "stdio",\n  "allowed_extensions": ["cascade@d3xt3r.dev"]\n}\n' "$HOST_NAME" "$BIN" > "$AS/Mozilla/NativeMessagingHosts/${HOST_NAME}.json"
+  echo "host registered: Firefox"
+fi
 if [ -z "$CHROME_WEBSTORE_ID" ]; then
   echo "extension folder (Load unpacked): $EXT_DIR"
 fi

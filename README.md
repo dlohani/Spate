@@ -68,9 +68,17 @@ and into the Windows Add/Remove Programs entry. On install:
   deliberately: `CASCADE_FORCE=1` for the scripts, `--force` for
   `cascade-setup.exe`, or uninstall first.
 
+Browsers: Chrome, Chromium, Brave, Vivaldi and Edge (one MV3 extension),
+Firefox (same code, `manifest.firefox.json`; AMO-signed `.xpi` for permanent
+installs) and Safari (`manifest.safari.json` wrapped by
+`scripts/safari-extension.sh`; Safari has no downloads API, so capture there
+is the right-click "Download with Cascade" and click interception of file
+links). `scripts/package-extension.sh` builds all three; `browser/STORE.md`
+has the details.
+
 Browser extension, automatically: every installer detects the Chromium-family
-browsers on the machine (Chrome, Chromium, Brave, Vivaldi, Edge) and registers
-the native host with each. Once the extension is published in the Chrome Web
+browsers on the machine (Chrome, Chromium, Brave, Vivaldi, Edge) and Firefox
+and registers the native host with each. Once the extension is published in the Chrome Web
 Store (and Edge Add-ons for Edge), the installers also register the extension
 itself, and each browser installs it from the store on its next start: silent
 on Linux, one "Enable extension" click on Windows and macOS (browsers do not
