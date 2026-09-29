@@ -6,7 +6,9 @@
 Unicode true
 !include "MUI2.nsh"
 !include "StrFunc.nsh"
+!include "WordFunc.nsh"
 ${StrRep}
+!insertmacro VersionCompare
 
 !ifndef VERSION
   !define VERSION "0.0.0"
@@ -44,6 +46,25 @@ Function LaunchApp
   Exec '"$AppExe"'
 FunctionEnd
 
+; Already installed? Same version: ask to reinstall. Older installed: upgrade
+; in place. Newer installed: refuse (downgrades are not supported). Silent
+; installs (/S) reinstall or upgrade without asking and still refuse downgrades.
+Function .onInit
+  ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}" "DisplayVersion"
+  StrCmp $0 "" done
+  ${VersionCompare} $0 "${VERSION}" $1   ; 0 equal, 1 installed is newer, 2 installed is older
+  StrCmp $1 1 newer
+  StrCmp $1 0 same
+  Goto done
+newer:
+  MessageBox MB_ICONSTOP|MB_OK "Cascade $0 is already installed, which is newer than ${VERSION}. Downgrades are not supported.$\r$\n$\r$\nUninstall it from Settings > Apps first if you really want the older version." /SD IDOK
+  Abort
+same:
+  MessageBox MB_ICONQUESTION|MB_YESNO "Cascade ${VERSION} is already installed. Reinstall it? (Settings and downloads are kept.)" /SD IDYES IDYES done
+  Abort
+done:
+FunctionEnd
+
 ; Chrome derives an unpacked extension's ID from its folder path; the host
 ; manifest authorizes the dev ID plus any ID passed to register-extension.cmd.
 Function WriteHostManifest
@@ -55,6 +76,10 @@ Function WriteHostManifest
 FunctionEnd
 
 Section "Cascade" SecMain
+  ; Windows will not overwrite a running executable: stop the app first.
+  ExecWait 'taskkill /IM cascade_app.exe /F'
+  ExecWait 'taskkill /IM cascade-gui.exe /F'
+  Sleep 500
   SetOutPath "$INSTDIR\bin"
   File "..\..\dist\windows-amd64\cascade-gui.exe"
   File "..\..\dist\windows-amd64\cascade-host.exe"

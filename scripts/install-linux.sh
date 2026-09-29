@@ -11,15 +11,29 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="${XDG_DATA_HOME:-$HOME/.local/share}/cascade/bin"
+. "$ROOT/scripts/lib/version.sh"
+VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}/cascade"
+BIN="$DATA/bin"
 HOST_NAME="com.cascade.host"
 DEFAULT_EXT_ID="kamlaafhjnegfjdbnfajbanjfkemefga"
 EXT_IDS=("${@:-$DEFAULT_EXT_ID}")
+LDFLAGS="-X cascade/internal/version.Version=$VERSION"
+
+# Re-running is safe: same version reinstalls, newer upgrades, older is
+# refused (CASCADE_FORCE=1 overrides). Settings and downloads are kept.
+check_install_version "$(installed_version_linux)" "$VERSION"
 
 echo "==> building"
 mkdir -p "$BIN"
-(cd "$ROOT" && go build -o "$BIN/cascade-host" ./cmd/cascade-host)
-(cd "$ROOT" && CGO_ENABLED=1 go build -buildmode=c-shared -o "$BIN/libcascade.so" ./export/cshared)
+(cd "$ROOT" && go build -ldflags "$LDFLAGS" -o "$BIN/cascade-host.new" ./cmd/cascade-host)
+(cd "$ROOT" && CGO_ENABLED=1 go build -ldflags "$LDFLAGS" -buildmode=c-shared -o "$BIN/libcascade.so.new" ./export/cshared)
+
+# Stop a running instance before replacing its files.
+pkill -x cascade_app >/dev/null 2>&1 || true   # by process name; a -f pattern could match a shell
+sleep 1
+mv -f "$BIN/cascade-host.new" "$BIN/cascade-host"
+mv -f "$BIN/libcascade.so.new" "$BIN/libcascade.so"
 chmod +x "$BIN/cascade-host"
 echo "    $BIN/cascade-host"
 echo "    $BIN/libcascade.so"
@@ -89,6 +103,7 @@ DESK
   echo "    $AUTO/cascade.desktop"
 fi
 
-echo "==> done. Extension IDs allowed: ${EXT_IDS[*]}"
+printf '%s\n' "$VERSION" > "$DATA/VERSION"   # read by the next install's version check
+echo "==> done. Cascade $VERSION. Extension IDs allowed: ${EXT_IDS[*]}"
 echo "    Load browser/extension in chrome://extensions (Developer mode -> Load unpacked)."
 echo "    Note: a tray icon needs a desktop that supports AppIndicator (KDE, or GNOME with the extension)."

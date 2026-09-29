@@ -1,38 +1,61 @@
 #!/usr/bin/env bash
-# Install Cascade on macOS: the resident app, the browser native-messaging host,
-# and the host manifests that let the extension launch the app on demand.
+# Install Cascade on macOS from this checkout: the app in ~/Applications, the
+# browser native-messaging host and helpers under
+# ~/Library/Application Support/cascade, browser registration, login item.
 #
 #   scripts/install-macos.sh [EXTENSION_ID ...]
 #
-# EXTENSION_ID defaults to the ID Chromium derives for the unpacked extension at
-# browser/extension in this checkout. If you load the extension from another
-# path (or it is packaged), pass its ID as shown on chrome://extensions.
+# Re-running is safe: the same version reinstalls, a newer one upgrades, an
+# older one is refused (CASCADE_FORCE=1 overrides). Settings, the pairing
+# token and downloads are never touched. CASCADE_NO_LOGIN=1 skips the login
+# item. EXTENSION_ID defaults to the ID Chromium derives for the unpacked
+# extension at browser/extension in this checkout.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$HOME/Library/Application Support/cascade/bin"
+. "$ROOT/scripts/lib/version.sh"
+VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+SUPPORT="$HOME/Library/Application Support/cascade"
+BIN="$SUPPORT/bin"
+APP="$HOME/Applications/Cascade.app"
 HOST_NAME="com.cascade.host"
 DEFAULT_EXT_ID="kamlaafhjnegfjdbnfajbanjfkemefga"
 EXT_IDS=("${@:-$DEFAULT_EXT_ID}")
+LDFLAGS="-X cascade/internal/version.Version=$VERSION"
 
 export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 
-echo "==> building"
+check_install_version "$(installed_version_macos)" "$VERSION"
+
+FLUTTER_APP="$(ls -d "$ROOT"/apps/flutter/build/macos/Build/Products/Release/*.app 2>/dev/null | head -1 || true)"
+if [ -z "$FLUTTER_APP" ]; then
+  echo "    Flutter app not built; running scripts/flutter-macos.sh build"
+  "$ROOT/scripts/flutter-macos.sh" build >/dev/null
+  FLUTTER_APP="$(ls -d "$ROOT"/apps/flutter/build/macos/Build/Products/Release/*.app | head -1)"
+fi
+
+echo "==> building helpers"
 mkdir -p "$BIN"
-(cd "$ROOT" && go build -o "$BIN/cascade-host" ./cmd/cascade-host)
-(cd "$ROOT/apps/macapp" && go build -o "$BIN/cascade-mac" . 2> >(grep -v "duplicate librar" >&2 || true))
-chmod +x "$BIN/cascade-host" "$BIN/cascade-mac"
-echo "    $BIN/cascade-mac"
+(cd "$ROOT" && go build -ldflags "$LDFLAGS" -o "$BIN/cascade-host" ./cmd/cascade-host)
+cp "$ROOT/packaging/macos/bin/register-extension" "$ROOT/packaging/macos/bin/uninstall" "$BIN/"
+chmod +x "$BIN/cascade-host" "$BIN/register-extension" "$BIN/uninstall"
 echo "    $BIN/cascade-host"
 
-# Flutter app bundle (preferred by the native host when present). Built by
-# scripts/flutter-macos.sh build; installed here as Cascade.app.
-FLUTTER_APP="$(ls -d "$ROOT"/apps/flutter/build/macos/Build/Products/Release/*.app 2>/dev/null | head -1 || true)"
-if [ -n "$FLUTTER_APP" ]; then
-  rm -rf "$BIN/Cascade.app"
-  cp -R "$FLUTTER_APP" "$BIN/Cascade.app"
-  echo "    $BIN/Cascade.app  (Flutter UI; launched on demand by the native host)"
-fi
+# Stop whatever is running before files are replaced, so nothing (including
+# the browser's native host) keeps an old copy alive across the swap.
+echo "==> stopping running instance"
+launchctl bootout "gui/$(id -u)/dev.d3xt3r.cascade" >/dev/null 2>&1 || true
+pkill -x cascade_app >/dev/null 2>&1 || true   # by process name; a -f pattern could match a shell
+pkill -x cascade-mac >/dev/null 2>&1 || true
+sleep 1
+
+echo "==> installing app"
+mkdir -p "$HOME/Applications"
+rm -rf "$APP"
+cp -R "$FLUTTER_APP" "$APP"
+# One copy only: older installs kept a second bundle and a Fyne binary here.
+rm -rf "$BIN/Cascade.app" "$BIN/cascade-mac"
+echo "    $APP  ($VERSION)"
 
 origins=""
 for id in "${EXT_IDS[@]}"; do
@@ -63,7 +86,7 @@ done
 
 # Start at login (hidden, menu bar only) via a per-user LaunchAgent. Skip with
 # CASCADE_NO_LOGIN=1. Remove with: launchctl bootout gui/$UID/dev.d3xt3r.cascade
-if [ -d "$BIN/Cascade.app" ] && [ "${CASCADE_NO_LOGIN:-0}" != "1" ]; then
+if [ "${CASCADE_NO_LOGIN:-0}" != "1" ]; then
   echo "==> registering login item (LaunchAgent)"
   LA="$HOME/Library/LaunchAgents"; mkdir -p "$LA"
   PLIST="$LA/dev.d3xt3r.cascade.plist"
@@ -73,17 +96,19 @@ if [ -d "$BIN/Cascade.app" ] && [ "${CASCADE_NO_LOGIN:-0}" != "1" ]; then
 <plist version="1.0"><dict>
   <key>Label</key><string>dev.d3xt3r.cascade</string>
   <key>ProgramArguments</key>
-  <array><string>${BIN}/Cascade.app/Contents/MacOS/cascade_app</string><string>--background</string></array>
+  <array><string>${APP}/Contents/MacOS/cascade_app</string><string>--background</string></array>
   <key>EnvironmentVariables</key>
   <dict><key>CASCADE_BACKGROUND</key><string>1</string></dict>
   <key>RunAtLoad</key><true/>
 </dict></plist>
 PL
-  launchctl bootout "gui/$(id -u)/dev.d3xt3r.cascade" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || launchctl load "$PLIST" 2>/dev/null || true
-  echo "    $PLIST (starts Cascade hidden at login)"
+  echo "    $PLIST (starts Cascade hidden at login; started now)"
+else
+  open -a "$APP" --args --background || true
 fi
 
-echo "==> done. Extension IDs allowed: ${EXT_IDS[*]}"
+echo "==> done. Cascade $VERSION. Extension IDs allowed: ${EXT_IDS[*]}"
+echo "    Open it from Spotlight/Launchpad (Cascade) or the menu-bar icon."
 echo "    Load browser/extension in chrome://extensions (Developer mode -> Load unpacked)."
-echo "    Downloads will launch $BIN/cascade-mac automatically when it is not running."
+echo "    Remove with: $BIN/uninstall"

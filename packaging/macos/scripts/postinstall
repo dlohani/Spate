@@ -1,13 +1,18 @@
 #!/bin/bash
 # Cascade .pkg postinstall (per-user domain): register the browser native host,
-# add the login item, start the app. $2 is the install location.
+# add the login item, start the app. $2 is the support install location.
 set -u
-# $2 is the package's install location: the cascade root (…/cascade), which
+# $2 is this component's install location: the cascade support root, which
 # contains bin/ and extension/. Fall back to the conventional path.
 ROOT="${2:-$HOME/Library/Application Support/cascade}"
 [ -d "$ROOT/bin" ] || ROOT="$HOME/Library/Application Support/cascade"
 BIN="$ROOT/bin"
-chmod +x "$BIN/cascade-host" "$BIN/cascade-mac" "$BIN/register-extension" "$BIN/uninstall" 2>/dev/null || true
+APP="$HOME/Applications/Cascade.app"
+chmod +x "$BIN/cascade-host" "$BIN/register-extension" "$BIN/uninstall" 2>/dev/null || true
+
+# One copy of the app only: earlier versions kept a second bundle and a Fyne
+# binary under bin/.
+rm -rf "$BIN/Cascade.app" "$BIN/cascade-mac"
 
 # Browser host registration (also re-runnable later with an explicit ID).
 "$BIN/register-extension" >/dev/null 2>&1 || true
@@ -21,7 +26,7 @@ cat > "$PLIST" <<PL
 <plist version="1.0"><dict>
   <key>Label</key><string>dev.d3xt3r.cascade</string>
   <key>ProgramArguments</key>
-  <array><string>${BIN}/Cascade.app/Contents/MacOS/cascade_app</string><string>--background</string></array>
+  <array><string>${APP}/Contents/MacOS/cascade_app</string><string>--background</string></array>
   <key>EnvironmentVariables</key><dict><key>CASCADE_BACKGROUND</key><string>1</string></dict>
   <key>RunAtLoad</key><true/>
 </dict></plist>
@@ -29,6 +34,7 @@ PL
 launchctl bootout "gui/$(id -u)/dev.d3xt3r.cascade" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || launchctl load "$PLIST" >/dev/null 2>&1 || true
 
-# Start now (single-instance guard in the core prevents duplicates).
-open -a "$BIN/Cascade.app" >/dev/null 2>&1 || true
+# Show the window (the agent started it hidden; a second open just raises it).
+sleep 1
+open -a "$APP" >/dev/null 2>&1 || true
 exit 0

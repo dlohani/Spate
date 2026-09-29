@@ -43,9 +43,30 @@ Requires Go 1.22+. The core has no external dependencies (standard library only)
 
 | Platform | Build | Result |
 |---|---|---|
-| macOS | `scripts/package-macos.sh` | `dist/Cascade-<ver>.pkg`: per-user installer (Welcome → Install → Finish, no admin password). Installs app, host, extension and helpers under `~/Library/Application Support/cascade`; postinstall registers the browser host, adds the login item, starts the app. `bin/uninstall` reverses it. |
-| Windows | `scripts/package-windows.sh` | `dist/Cascade-Setup-<ver>.exe`: NSIS installer (Welcome → Directory → Install → Finish), per-user, registers the host in the registry, autostart, Add/Remove Programs entry, uninstaller. Silent: `/S`. |
+| macOS | `scripts/package-macos.sh` | `dist/Cascade-<ver>.pkg`: per-user installer (Welcome → Install → Finish, no admin password). Installs `~/Applications/Cascade.app` plus the host, extension and helpers under `~/Library/Application Support/cascade`; postinstall registers the browser host, adds the login item, starts the app. `bin/uninstall` reverses it. |
+| Windows | `scripts/package-windows.sh` | `dist/Cascade-Setup-<ver>.exe`: NSIS installer (Welcome → Directory → Install → Finish), per-user, registers the host in the registry, autostart, Add/Remove Programs entry, uninstaller. Silent: `/S`. `cascade-setup.exe` (from `scripts/build-windows.sh`) is the single-file dev equivalent. |
 | Package managers | `packaging/homebrew/cascade.rb`, `packaging/winget/` | Homebrew cask and winget manifest templates; they need the installers published at a URL (GitHub release) first. |
+
+Every installer and script is version-aware. `VERSION` is the single source
+of truth: it is stamped into the Go binaries (`internal/version`, shown by
+`/ping` and in Settings), into the app bundle (`CFBundleShortVersionString`)
+and into the Windows Add/Remove Programs entry. On install:
+
+- not installed: installs;
+- same version installed: reinstalls (macOS Installer warns first, NSIS asks,
+  the scripts say so); settings, the browser pairing and downloads are kept;
+- older version installed: upgrades in place, stopping the running app first
+  so the browser's native host cannot keep an old copy alive;
+- newer version installed: refused with a message (macOS Installer, NSIS,
+  `cascade-setup.exe`, and the install scripts alike). Override only
+  deliberately: `CASCADE_FORCE=1` for the scripts, `--force` for
+  `cascade-setup.exe`, or uninstall first.
+
+There is exactly one copy of the app per machine: `~/Applications/Cascade.app`
+on macOS, `%LOCALAPPDATA%\Cascade\bin` on Windows, `~/.local/share/cascade/bin`
+on Linux. Opening the app while it is already running (Spotlight, Finder,
+Dock, Start menu) raises the running instance's window instead of starting a
+second one.
 
 Both installers are unsigned (Gatekeeper: right-click → Open; SmartScreen:
 "Run anyway"). Signing/notarization is a release step: set
@@ -58,11 +79,13 @@ the installers' final page shows the folder.
     scripts/flutter-macos.sh build   # Flutter UI with the Go core bundled
     scripts/install-macos.sh         # host, app, browser registration, login item
 
-Installs the resident app and the browser native-messaging host into
-`~/Library/Application Support/cascade/bin/`, registers the host with the
-Chromium-family browsers on the machine, and adds a per-user LaunchAgent so
-Cascade starts **hidden at login** (menu-bar icon only; `CASCADE_NO_LOGIN=1`
-skips it, `launchctl bootout gui/$UID/dev.d3xt3r.cascade` removes it). Then load
+Installs the resident app as `~/Applications/Cascade.app` and the browser
+native-messaging host into `~/Library/Application Support/cascade/bin/`,
+registers the host with the Chromium-family browsers on the machine, and adds
+a per-user LaunchAgent so Cascade starts **hidden at login** (menu-bar icon
+only; `CASCADE_NO_LOGIN=1` skips it, `launchctl bootout
+gui/$UID/dev.d3xt3r.cascade` removes it). Re-running it upgrades or
+reinstalls; a downgrade is refused unless `CASCADE_FORCE=1`. Then load
 `browser/extension` in the browser (`chrome://extensions` → Load unpacked). From
 then on a download started in the browser launches Cascade if it isn't running
 and is handed to it, with no copy/paste and no token setup. Closing the window

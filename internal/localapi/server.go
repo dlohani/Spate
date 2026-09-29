@@ -26,6 +26,7 @@ import (
 
 	"cascade/internal/download"
 	"cascade/internal/job"
+	"cascade/internal/version"
 )
 
 // DefaultPort is the loopback port the extension targets first.
@@ -48,9 +49,20 @@ type Server struct {
 	// doesn't specify one (category / per-site rules); else defaultDir.
 	ResolveDir func(rawURL, filename string) string
 
-	mu       sync.Mutex
-	lastExt  time.Time // last contact from a browser extension (heartbeat)
-	pairBusy bool      // a pairing prompt is already showing
+	mu          sync.Mutex
+	lastExt     time.Time // last contact from a browser extension (heartbeat)
+	pairBusy    bool      // a pairing prompt is already showing
+	showPending bool      // a second launch asked this instance to show its window
+}
+
+// ShowPending reports (and clears) a request from another launch of the app
+// to bring this instance's window to the front. A shell polls this.
+func (s *Server) ShowPending() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p := s.showPending
+	s.showPending = false
+	return p
 }
 
 // New builds a Server. token guards /add; defaultDir is where files land when a
@@ -91,6 +103,7 @@ func (s *Server) Start() (string, error) {
 	mux.HandleFunc("/pair", s.handlePair)
 	mux.HandleFunc("/add", s.handleAdd)
 	mux.HandleFunc("/jobs", s.handleJobs)
+	mux.HandleFunc("/show", s.handleShow)
 
 	s.httpSrv = &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = s.httpSrv.Serve(ln) }()
@@ -140,7 +153,25 @@ func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.noteExtension(r)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "app": "cascade"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "app": "cascade", "version": version.Version})
+}
+
+// handleShow is called by a second launch of the app (which then exits): the
+// running instance should show and focus its window. Token-guarded so a web
+// page cannot pop the window; local launches read the token from disk.
+func (s *Server) handleShow(w http.ResponseWriter, r *http.Request) {
+	cors(w)
+	if r.Method == http.MethodOptions {
+		return
+	}
+	if !originOK(r) || r.Header.Get("X-Cascade-Token") != s.token {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	s.mu.Lock()
+	s.showPending = true
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // handlePair lets a browser extension obtain the token after the user approves

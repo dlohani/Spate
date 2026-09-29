@@ -296,3 +296,30 @@ func TestPing(t *testing.T) {
 		t.Fatalf("ping body = %q", b)
 	}
 }
+
+func TestShowRequiresTokenAndIsOneShot(t *testing.T) {
+	s := New(nil, "tok", t.TempDir())
+	// Wrong token: refused, nothing pending.
+	rr := httptest.NewRecorder()
+	s.handleShow(rr, httptest.NewRequest(http.MethodPost, "/show", nil))
+	if rr.Code != http.StatusForbidden || s.ShowPending() {
+		t.Fatalf("no token: code=%d pending=%v", rr.Code, s.ShowPending())
+	}
+	// Web page origin: refused even with the token.
+	rr = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/show", nil)
+	req.Header.Set("X-Cascade-Token", "tok")
+	req.Header.Set("Origin", "https://example.com")
+	s.handleShow(rr, req)
+	if rr.Code != http.StatusForbidden || s.ShowPending() {
+		t.Fatalf("web origin: code=%d", rr.Code)
+	}
+	// Local caller with the token: pending exactly once.
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/show", nil)
+	req.Header.Set("X-Cascade-Token", "tok")
+	s.handleShow(rr, req)
+	if rr.Code != http.StatusOK || !s.ShowPending() || s.ShowPending() {
+		t.Fatalf("show: code=%d; ShowPending must be true once then false", rr.Code)
+	}
+}
