@@ -44,6 +44,10 @@ type Server struct {
 	// a timeout) and return true to release the token. nil disables pairing.
 	PairFunc func() bool
 
+	// ResolveDir, when set, picks the destination folder for a hand-off that
+	// doesn't specify one (category / per-site rules); else defaultDir.
+	ResolveDir func(rawURL, filename string) string
+
 	mu       sync.Mutex
 	lastExt  time.Time // last contact from a browser extension (heartbeat)
 	pairBusy bool      // a pairing prompt is already showing
@@ -248,13 +252,17 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dir := req.Dir
-	if dir == "" {
-		dir = s.defaultDir
-	}
 	name := req.Filename
 	if name == "" {
 		name = filenameFor(req.URL)
+	}
+	dir := req.Dir
+	if dir == "" {
+		if s.ResolveDir != nil {
+			dir = s.ResolveDir(req.URL, name)
+		} else {
+			dir = s.defaultDir
+		}
 	}
 	out := filepath.Join(dir, name)
 

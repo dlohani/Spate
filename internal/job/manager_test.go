@@ -326,6 +326,51 @@ func TestRemoveJob(t *testing.T) {
 	}
 }
 
+func TestStartGateAndStartNow(t *testing.T) {
+	data := blob(128 << 10)
+	srv := httptest.NewServer(rangeServer(data, 0, nil, nil, nil))
+	defer srv.Close()
+	dir := t.TempDir()
+
+	m := New(2)
+	open := false
+	m.SetStartGate(func() bool { return open })
+	id1, _ := m.Add(Spec{URL: srv.URL + "/a", Out: filepath.Join(dir, "a.bin"), Options: download.Options{Conns: 1}})
+	id2, _ := m.Add(Spec{URL: srv.URL + "/b", Out: filepath.Join(dir, "b.bin"), Options: download.Options{Conns: 1},
+		StartAt: time.Now().Add(time.Hour)})
+
+	runErr := make(chan error, 1)
+	go func() { runErr <- m.Run(context.Background()) }()
+
+	// Gate closed: nothing starts.
+	time.Sleep(300 * time.Millisecond)
+	if st, _ := m.Status(id1); st.State != Pending {
+		t.Fatalf("job should wait for the download window, state=%s", st.State)
+	}
+	// Open the gate: job1 runs; job2 is scheduled an hour out.
+	open = true
+	m.SetStartGate(func() bool { return open })
+	waitFor(t, 5*time.Second, func() bool { st, _ := m.Status(id1); return st.State == Done })
+	if st, _ := m.Status(id2); st.State != Pending || st.StartAt.IsZero() {
+		t.Fatalf("job2 should still be scheduled: %+v", st)
+	}
+	// Start now: the schedule is dropped and it completes.
+	if err := m.StartNow(id2); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not finish after StartNow")
+	}
+	if st, _ := m.Status(id2); st.State != Done {
+		t.Fatalf("job2 state = %s", st.State)
+	}
+}
+
 func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)

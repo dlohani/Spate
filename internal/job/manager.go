@@ -103,7 +103,8 @@ type Status struct {
 	Err      error
 	Bytes    int64
 	Total    int64
-	Retries  int // automatic re-queues after transient failures
+	Retries  int       // automatic re-queues after transient failures
+	StartAt  time.Time // scheduled start (zero = as soon as a slot is free)
 }
 
 // Manager runs a set of jobs with bounded concurrency.
@@ -115,7 +116,12 @@ type Manager struct {
 	seqNext int
 	notify  chan struct{}
 	wg      sync.WaitGroup // tracks running job goroutines
+
+	startGate func() bool // optional: may queued jobs start right now?
 }
+
+// gateRecheck is how often the loop re-evaluates a closed start gate.
+const gateRecheck = 30 * time.Second
 
 // New returns a Manager that runs at most maxConcurrent downloads at once.
 func New(maxConcurrent int) *Manager {
@@ -246,6 +252,32 @@ func (m *Manager) CancelAll() {
 	m.signal()
 }
 
+// StartNow clears a pending job's scheduled start so it runs as soon as a slot
+// is free.
+func (m *Manager) StartNow(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[id]
+	if !ok {
+		return fmt.Errorf("no such job %q", id)
+	}
+	if j.state != Pending {
+		return fmt.Errorf("job %q is %s, not pending", id, j.state)
+	}
+	j.StartAt = time.Time{}
+	m.signal()
+	return nil
+}
+
+// SetStartGate installs a policy consulted before any queued job starts (e.g.
+// a "download window"); running jobs are unaffected. nil removes it.
+func (m *Manager) SetStartGate(gate func() bool) {
+	m.mu.Lock()
+	m.startGate = gate
+	m.mu.Unlock()
+	m.signal()
+}
+
 // Resume makes a paused job eligible to run again, continuing from disk.
 func (m *Manager) Resume(id string) error {
 	m.mu.Lock()
@@ -291,7 +323,7 @@ func (m *Manager) Statuses() []Status {
 
 func (m *Manager) statusLocked(j *Job) Status {
 	st := Status{ID: j.ID, URL: j.URL, Out: j.Out, State: j.state, Priority: j.Priority,
-		Err: j.err, Retries: j.autoRetries}
+		Err: j.err, Retries: j.autoRetries, StartAt: j.StartAt}
 	if j.dl != nil {
 		if meter := j.dl.Meter(); meter != nil {
 			st.Bytes = meter.Done()
@@ -321,6 +353,11 @@ func (m *Manager) drive(ctx context.Context, exitOnDrain bool) error {
 		}
 		m.startEligibleLocked(ctx)
 		wake := m.nextScheduledLocked()
+		if m.startGate != nil && !m.startGate() {
+			if w := time.Now().Add(gateRecheck); wake.IsZero() || w.Before(wake) {
+				wake = w
+			}
+		}
 		m.mu.Unlock()
 
 		var timer *time.Timer
@@ -353,6 +390,9 @@ func (m *Manager) drive(ctx context.Context, exitOnDrain bool) error {
 // startEligibleLocked launches as many eligible jobs as capacity allows, highest
 // priority first (ties broken by insertion order). Caller holds m.mu.
 func (m *Manager) startEligibleLocked(ctx context.Context) {
+	if m.startGate != nil && !m.startGate() {
+		return // outside the download window; drive() re-checks periodically
+	}
 	now := time.Now()
 	for m.running < m.max {
 		var pick *Job

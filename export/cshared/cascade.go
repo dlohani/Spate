@@ -19,6 +19,7 @@ import "C"
 import (
 	"encoding/json"
 	"sync"
+	"time"
 	"unsafe"
 
 	"cascade/internal/service"
@@ -119,6 +120,85 @@ func CascadeAdd(handle C.longlong, url, dir, sha256 *C.char, conns C.int) *C.cha
 	return cstr(id)
 }
 
+// CascadeAddJSON enqueues a download described by JSON:
+// {"url","dir","sha256","conns","priority","startAt"} where startAt is a Unix
+// timestamp in seconds (0 = now). Returns the job ID (caller frees) or "".
+//
+//export CascadeAddJSON
+func CascadeAddJSON(handle C.longlong, spec *C.char) *C.char {
+	s := lookup(handle)
+	if s == nil || spec == nil {
+		return cstr("")
+	}
+	var in struct {
+		URL      string `json:"url"`
+		Dir      string `json:"dir"`
+		SHA256   string `json:"sha256"`
+		Conns    int    `json:"conns"`
+		Priority int    `json:"priority"`
+		StartAt  int64  `json:"startAt"`
+	}
+	if err := json.Unmarshal([]byte(C.GoString(spec)), &in); err != nil {
+		return cstr("")
+	}
+	o := service.AddOpts{URL: in.URL, Dir: in.Dir, SHA256: in.SHA256, Conns: in.Conns, Priority: in.Priority}
+	if in.StartAt > 0 {
+		o.StartAt = time.Unix(in.StartAt, 0)
+	}
+	id, err := s.AddWith(o)
+	if err != nil {
+		return cstr("")
+	}
+	return cstr(id)
+}
+
+// CascadeSettingsJSON returns the settings document (caller frees).
+//
+//export CascadeSettingsJSON
+func CascadeSettingsJSON(handle C.longlong) *C.char {
+	s := lookup(handle)
+	if s == nil {
+		return cstr("{}")
+	}
+	b, err := s.SettingsJSON()
+	if err != nil {
+		return cstr("{}")
+	}
+	return cstr(string(b))
+}
+
+// CascadeSettingsApply replaces and persists the settings from JSON. Returns
+// 0 on success, -1 on a validation error.
+//
+//export CascadeSettingsApply
+func CascadeSettingsApply(handle C.longlong, doc *C.char) C.int {
+	s := lookup(handle)
+	if s == nil || doc == nil {
+		return -1
+	}
+	if err := s.ApplySettings([]byte(C.GoString(doc))); err != nil {
+		return -1
+	}
+	return 0
+}
+
+// CascadeStartNow clears a pending job's scheduled start (0 ok, -1 error).
+//
+//export CascadeStartNow
+func CascadeStartNow(handle C.longlong, jobID *C.char) C.int {
+	return act(handle, jobID, func(s *service.Service, id string) error { return s.Mgr.StartNow(id) })
+}
+
+// CascadeCurrentLimit returns the bytes/sec cap in force (0 = unlimited).
+//
+//export CascadeCurrentLimit
+func CascadeCurrentLimit(handle C.longlong) C.longlong {
+	if s := lookup(handle); s != nil {
+		return C.longlong(s.CurrentLimit())
+	}
+	return 0
+}
+
 func act(handle C.longlong, id *C.char, f func(*service.Service, string) error) C.int {
 	s := lookup(handle)
 	if s == nil {
@@ -187,6 +267,7 @@ type statusJSON struct {
 	Bytes    int64  `json:"bytes"`
 	Total    int64  `json:"total"`
 	Retries  int    `json:"retries"`
+	StartAt  int64  `json:"startAt,omitempty"` // Unix seconds; only for scheduled jobs
 	Error    string `json:"error,omitempty"`
 }
 
@@ -203,6 +284,9 @@ func CascadeStatusJSON(handle C.longlong) *C.char {
 	for _, st := range sts {
 		j := statusJSON{ID: st.ID, URL: st.URL, Out: st.Out, State: st.State.String(),
 			Priority: st.Priority, Bytes: st.Bytes, Total: st.Total, Retries: st.Retries}
+		if !st.StartAt.IsZero() {
+			j.StartAt = st.StartAt.Unix()
+		}
 		if st.Err != nil {
 			j.Error = st.Err.Error()
 		}

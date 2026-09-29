@@ -12,10 +12,74 @@ import (
 	"cascade/internal/job"
 )
 
+func TestSettingsRulesAndPersistence(t *testing.T) {
+	t.Setenv("CASCADE_TOKEN", "test-token")
+	t.Setenv("CASCADE_ALLOW_MULTIPLE", "1")
+	dir := t.TempDir()
+	t.Setenv("CASCADE_SETTINGS", filepath.Join(dir, "settings.json"))
+
+	data := make([]byte, 64<<10)
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "clip.mp4", time.Now(), bytes.NewReader(data))
+	}))
+	defer origin.Close()
+
+	s, err := Start(2, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Stop()
+
+	// Turn on category organization + a site rule; must persist and apply.
+	if err := s.ApplySettings([]byte(`{"organizeByCategory":true,"siteRules":[{"host":"127.0.0.1","dir":"Local"}],"limits":{"bytesPerSec":123456}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if s.CurrentLimit() != 123456 {
+		t.Fatalf("limit not applied: %d", s.CurrentLimit())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "settings.json")); err != nil {
+		t.Fatal("settings not persisted")
+	}
+	// Site rule wins over the Video category for this origin (127.0.0.1).
+	id, err := s.AddWith(AddOpts{URL: origin.URL + "/clip.mp4", Conns: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if st, ok := s.Mgr.Status(id); ok && st.State == job.Done {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Local", "clip.mp4")); err != nil {
+		t.Fatalf("expected the site rule folder: %v", err)
+	}
+	// Without a site rule, the category folder applies (Video).
+	if err := s.ApplySettings([]byte(`{"organizeByCategory":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Resolve("https://example.com/movie.mkv", "movie.mkv"); got != filepath.Join(dir, "Video") {
+		t.Fatalf("category resolve = %s", got)
+	}
+	// Scheduled add is pending with StartAt set; StartNow releases it.
+	id2, err := s.AddWith(AddOpts{URL: origin.URL + "/later.bin", Conns: 1, StartAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := s.Mgr.Status(id2); st.State != job.Pending || st.StartAt.IsZero() {
+		t.Fatalf("scheduled job: %+v", st)
+	}
+	if err := s.Mgr.StartNow(id2); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStartAddAndPair(t *testing.T) {
 	t.Setenv("CASCADE_TOKEN", "test-token")
 	t.Setenv("CASCADE_ALLOW_MULTIPLE", "1") // a real Cascade may be running on this machine
 	dir := t.TempDir()
+	t.Setenv("CASCADE_SETTINGS", filepath.Join(dir, "settings.json"))
 
 	data := make([]byte, 512<<10)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
