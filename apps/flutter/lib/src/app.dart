@@ -142,6 +142,9 @@ class CascadeApp extends StatelessWidget {
       useMaterial3: true,
       colorScheme: cs,
       visualDensity: VisualDensity.comfortable,
+      // Compact window: icons one step under Material defaults (24 / 18).
+      iconTheme: const IconThemeData(size: 20),
+      iconButtonTheme: IconButtonThemeData(style: IconButton.styleFrom(iconSize: 18)),
       scaffoldBackgroundColor: b == Brightness.dark ? const Color(0xFF0A0B0D) : const Color(0xFFF6F7F9),
       cardTheme: CardThemeData(
         elevation: 0,
@@ -313,12 +316,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return Row(
       children: [
         Container(
-          width: 34, height: 34,
-          decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(10)),
-          child: const Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 20),
+          width: 28, height: 28,
+          decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(8)),
+          child: const Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 17),
         ),
         const SizedBox(width: 12),
-        Text('Cascade', style: tt.headlineSmall?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3)),
+        Text('Cascade', style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3)),
         const Spacer(),
         if (active > 0) ...[
           _Pill(text: '${humanBytes(speed.round())}/s', color: cs.primary),
@@ -355,7 +358,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   decoration: InputDecoration(
                     hintText: 'Paste a link to download',
                     prefixIcon: const Icon(Icons.link_rounded),
-                    suffixIcon: IconButton(tooltip: 'Paste and download', icon: const Icon(Icons.content_paste_rounded, size: 20), onPressed: _paste),
+                    suffixIcon: IconButton(tooltip: 'Paste and download', icon: const Icon(Icons.content_paste_rounded, size: 18), onPressed: _paste),
                   ),
                 ),
               ),
@@ -423,9 +426,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return Center(
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
-          width: 64, height: 64,
+          width: 56, height: 56,
           decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.08), shape: BoxShape.circle),
-          child: Icon(Icons.download_outlined, size: 30, color: cs.primary),
+          child: Icon(Icons.download_outlined, size: 26, color: cs.primary),
         ),
         const SizedBox(height: 14),
         Text('Nothing downloading', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
@@ -573,7 +576,7 @@ class _DownloadCardState extends State<DownloadCard> {
     final job = widget.job;
     final c = widget.controller;
     IconButton btn(IconData icon, String tip, VoidCallback? onTap) =>
-        IconButton(tooltip: tip, icon: Icon(icon, size: 20), onPressed: onTap, visualDensity: VisualDensity.compact);
+        IconButton(tooltip: tip, icon: Icon(icon, size: 18), onPressed: onTap, visualDensity: VisualDensity.compact);
     final primary = switch (job.state) {
       'pending' when job.isScheduled => btn(Icons.play_arrow_rounded, 'Start now', () => c.startNow(job.id)),
       'running' || 'pending' => btn(Icons.pause_rounded, 'Pause', () => c.pause(job.id)),
@@ -583,7 +586,7 @@ class _DownloadCardState extends State<DownloadCard> {
     };
     final more = PopupMenuButton<String>(
       tooltip: 'More',
-      icon: const Icon(Icons.more_horiz_rounded, size: 20),
+      icon: const Icon(Icons.more_horiz_rounded, size: 18),
       onSelected: (k) {
         switch (k) {
           case 'copy':
