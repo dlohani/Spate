@@ -29,6 +29,11 @@ case "$MODE" in
     mkdir -p "$APP/Contents/Frameworks"
     cp "$DYLIB" "$APP/Contents/Frameworks/libcascade.dylib"
     echo "==> bundled: $APP/Contents/Frameworks/libcascade.dylib"
+    # Adding a file after Flutter signed the bundle breaks its code seal
+    # ("nested code is modified"); re-sign ad hoc so the bundle is consistent.
+    # Replace "-" with a Developer ID identity for distribution/notarization.
+    codesign --force --deep --sign "${CASCADE_SIGN_IDENTITY:--}" "$APP" 2>&1 | grep -v "replacing existing signature" || true
+    codesign --verify --deep --strict "$APP" && echo "==> code seal OK"
     echo "==> app: $APP"
     ;;
   *) echo "usage: $0 [run|build]"; exit 2 ;;

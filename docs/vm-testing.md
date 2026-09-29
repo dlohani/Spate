@@ -16,7 +16,19 @@ pairing, and launch-on-demand silently does nothing).
 2. Open the extension's Options: it shows **Extension ID** with a Copy button.
 3. Pass it to the installer (below). Re-run the installer if you move the folder.
 
-## Windows (VM)
+## Windows (VM), quickest: the installer
+
+Copy `dist/Cascade-Setup-<ver>.exe` (built on the Mac with
+`scripts/package-windows.sh`) to the VM and run it: Welcome → Directory →
+Install → Finish ("Start Cascade"). It registers the browser host, adds a
+hidden autostart and an Add/Remove Programs entry. Then load the extension from
+`%LOCALAPPDATA%\Cascade\extension`. If Options shows a different Extension ID,
+run `%LOCALAPPDATA%\Cascade\bin\register-extension.cmd <ID>`. This installer
+ships the Fyne UI; to include the Flutter UI, build it on Windows (below), copy
+its Release folder to `dist\windows-amd64\cascade_app` on the Mac, and rebuild
+the installer.
+
+## Windows (VM), building the Flutter UI
 
 Prerequisites: Git, Go, Flutter, Visual Studio 2022 with "Desktop development
 with C++" (Flutter's Windows requirement).

@@ -1,0 +1,21 @@
+# winget manifest (singleton) for Cascade. Publish Cascade-Setup-<version>.exe
+# as a GitHub release, fill in InstallerUrl/InstallerSha256, then submit to
+# github.com/microsoft/winget-pkgs (or use a private REST source).
+# Then:  winget install d3xt3r.Cascade
+PackageIdentifier: d3xt3r.Cascade
+PackageVersion: 0.3.0
+PackageName: Cascade
+Publisher: d3xt3r
+License: MIT
+ShortDescription: Download manager with browser capture, parallel connections and resume
+Installers:
+  - Architecture: x64
+    InstallerType: nullsoft
+    Scope: user
+    InstallerUrl: https://github.com/REPLACE_OWNER/cascade/releases/download/v0.3.0/Cascade-Setup-0.3.0.exe
+    InstallerSha256: REPLACE_WITH_SHA256_OF_Cascade-Setup-0.3.0.exe
+    InstallerSwitches:
+      Silent: /S
+      SilentWithProgress: /S
+ManifestType: singleton
+ManifestVersion: 1.6.0

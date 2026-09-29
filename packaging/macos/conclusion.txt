@@ -1,0 +1,12 @@
+Cascade is installed and running in your menu bar.
+
+Last step, in your browser (Chrome, Chromium, Brave, Edge or Vivaldi):
+  1. Open chrome://extensions and turn on "Developer mode".
+  2. Click "Load unpacked" and choose:
+     ~/Library/Application Support/cascade/extension
+  3. Download anything. Cascade asks once how to handle downloads and remembers your answer.
+
+If the extension's Options page shows a different Extension ID than expected, re-run:
+  ~/Library/Application Support/cascade/bin/register-extension <ID>
+
+To uninstall: run ~/Library/Application Support/cascade/bin/uninstall

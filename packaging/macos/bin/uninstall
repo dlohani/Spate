@@ -1,0 +1,16 @@
+#!/bin/bash
+# Remove Cascade for the current user: login item, browser host registrations,
+# the app and helper files. Downloads and the pairing token are left in place.
+set -u
+ROOT="$HOME/Library/Application Support/cascade"
+launchctl bootout "gui/$(id -u)/dev.d3xt3r.cascade" >/dev/null 2>&1 || true
+rm -f "$HOME/Library/LaunchAgents/dev.d3xt3r.cascade.plist"
+pkill -f "cascade/bin/Cascade.app" >/dev/null 2>&1 || true
+pkill -f "cascade/bin/cascade-mac" >/dev/null 2>&1 || true
+AS="$HOME/Library/Application Support"
+for b in Chromium Google/Chrome BraveSoftware/Brave-Browser "Microsoft Edge" Vivaldi; do
+  rm -f "$AS/$b/NativeMessagingHosts/com.cascade.host.json"
+done
+rm -rf "$ROOT/bin" "$ROOT/extension"
+pkgutil --forget dev.d3xt3r.cascade >/dev/null 2>&1 || true
+echo "Cascade removed. (Kept: $ROOT/token and your downloads.)"

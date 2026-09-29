@@ -39,7 +39,21 @@ button for non-DRM streaming media; native `.rar`/`.7z` extraction.
 
 Requires Go 1.22+. The core has no external dependencies (standard library only).
 
-## Install on macOS (app + browser capture)
+## Installers
+
+| Platform | Build | Result |
+|---|---|---|
+| macOS | `scripts/package-macos.sh` | `dist/Cascade-<ver>.pkg`: per-user installer (Welcome → Install → Finish, no admin password). Installs app, host, extension and helpers under `~/Library/Application Support/cascade`; postinstall registers the browser host, adds the login item, starts the app. `bin/uninstall` reverses it. |
+| Windows | `scripts/package-windows.sh` | `dist/Cascade-Setup-<ver>.exe`: NSIS installer (Welcome → Directory → Install → Finish), per-user, registers the host in the registry, autostart, Add/Remove Programs entry, uninstaller. Silent: `/S`. |
+| Package managers | `packaging/homebrew/cascade.rb`, `packaging/winget/` | Homebrew cask and winget manifest templates; they need the installers published at a URL (GitHub release) first. |
+
+Both installers are unsigned (Gatekeeper: right-click → Open; SmartScreen:
+"Run anyway"). Signing/notarization is a release step: set
+`CASCADE_SIGN_IDENTITY` for macOS. One manual step remains everywhere: loading
+the browser extension (Chrome only allows silent installs from the Web Store);
+the installers' final page shows the folder.
+
+## Developer install on macOS (no installer)
 
     scripts/flutter-macos.sh build   # Flutter UI with the Go core bundled
     scripts/install-macos.sh         # host, app, browser registration, login item
