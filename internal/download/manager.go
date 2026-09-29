@@ -29,17 +29,17 @@ import (
 
 // Options configures a download.
 type Options struct {
-	Conns             int    // max parallel connections (default 8)
-	MinSegment        int64  // smallest initial segment size in bytes (default 1 MiB)
-	WindowSize        int64  // per-request window for windowed fetching (default 4 MiB)
-	StealMinRemaining int64  // min tail to justify a work-steal split (default 2*WindowSize)
-	Retries           int    // per-window extra attempts; 0 = keep retrying for RetryFor
+	Conns             int           // max parallel connections (default 8)
+	MinSegment        int64         // smallest initial segment size in bytes (default 1 MiB)
+	WindowSize        int64         // per-request window for windowed fetching (default 4 MiB)
+	StealMinRemaining int64         // min tail to justify a work-steal split (default 2*WindowSize)
+	Retries           int           // per-window extra attempts; 0 = keep retrying for RetryFor
 	RetryFor          time.Duration // how long a window keeps retrying when Retries == 0 (default 15m)
-	RateLimit         int64  // this download's cap in bytes/sec, 0 = unlimited
-	SharedLimiter     *Limiter // if set, a limiter shared across downloads (global cap); overrides RateLimit
-	SHA256            string // optional expected hex digest to verify on completion
-	Resume            bool   // reuse an existing .cascade sidecar if valid
-	ExtractTo         string // if set, extract a downloaded archive into this dir
+	RateLimit         int64         // this download's cap in bytes/sec, 0 = unlimited
+	SharedLimiter     *Limiter      // if set, a limiter shared across downloads (global cap); overrides RateLimit
+	SHA256            string        // optional expected hex digest to verify on completion
+	Resume            bool          // reuse an existing .cascade sidecar if valid
+	ExtractTo         string        // if set, extract a downloaded archive into this dir
 
 	// Request customization.
 	Headers       map[string]string // extra request headers
@@ -455,18 +455,29 @@ func (d *Downloader) Splits() int {
 // streamWhole downloads the entire body over a single connection. Used when the
 // server has no range support or the size is unknown; not resumable.
 func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
-	req, err := d.rc.newRequest(ctx, http.MethodGet, d.currentURL())
-	if err != nil {
-		return err
+	var body io.ReadCloser
+	if isFTP(d.currentURL()) {
+		b, err := ftpOpen(ctx, d.currentURL(), 0, d.opts)
+		if err != nil {
+			return err
+		}
+		body = b
+	} else {
+		req, err := d.rc.newRequest(ctx, http.MethodGet, d.currentURL())
+		if err != nil {
+			return err
+		}
+		resp, err := d.client.Do(req)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return fmt.Errorf("GET %s: unexpected status %s", d.url, resp.Status)
+		}
+		body = resp.Body
 	}
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET %s: unexpected status %s", d.url, resp.Status)
-	}
+	defer body.Close()
 
 	if err := os.MkdirAll(filepath.Dir(d.out), 0o755); err != nil {
 		return err
@@ -480,7 +491,7 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 	d.setMeter(progress.New(size))
 	buf := make([]byte, chunkSize)
 	for {
-		n, rerr := resp.Body.Read(buf)
+		n, rerr := body.Read(buf)
 		if n > 0 {
 			if werr := d.limiter.Wait(ctx, n); werr != nil {
 				return werr

@@ -31,6 +31,9 @@ func (p ProbeResult) Validator() string {
 // GET when HEAD is unhelpful (some servers don't implement HEAD, or omit
 // Accept-Ranges on it).
 func Probe(ctx context.Context, client *http.Client, rc requestConfig, url string) (ProbeResult, error) {
+	if isFTP(url) {
+		return ftpProbe(ctx, url, rc.opts)
+	}
 	res, err := probeHEAD(ctx, client, rc, url)
 	if err == nil && res.Size >= 0 && res.AcceptRanges {
 		return res, nil
