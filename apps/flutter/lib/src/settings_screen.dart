@@ -24,6 +24,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _limit;
   late final TextEditingController _conc;
   bool _dirty = false;
+  // Sections that are set once and list many rows start collapsed.
+  final Set<String> _collapsed = {'Organize by category', 'Per-site folders', 'Recurring downloads'};
 
   @override
   void initState() {
@@ -113,7 +115,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(height: 8),
                 TextField(controller: _conc, onChanged: (_) => _touch(), decoration: const InputDecoration(labelText: 'Downloads at the same time'), keyboardType: TextInputType.number),
               ]),
-              _section(context, 'Organize by category', Icons.category_outlined, [
+              _section(context, 'Organize by category', Icons.category_outlined, collapsible: true,
+                  summary: '${s.organizeByCategory ? 'On' : 'Off'}  ·  ${s.categories.length} categories', [
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Put downloads into category folders'),
@@ -133,7 +136,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 TextButton.icon(onPressed: () => _editCategory(null), icon: const Icon(Icons.add), label: const Text('Add category')),
               ]),
-              _section(context, 'Per-site folders', Icons.language, [
+              _section(context, 'Per-site folders', Icons.language, collapsible: true,
+                  summary: s.siteRules.isEmpty ? 'None' : '${s.siteRules.length} ${s.siteRules.length == 1 ? 'rule' : 'rules'}', [
                 Text('Downloads from a site (and its subdomains) go to a folder of your choice. Site rules win over categories.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                 for (final r in s.siteRules)
@@ -170,7 +174,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 TextButton.icon(onPressed: () => _editWindow(s.queueWindow, title: 'Download window'), icon: const Icon(Icons.edit_outlined), label: const Text('Edit window')),
               ]),
-              _section(context, 'Recurring downloads', Icons.repeat, [
+              _section(context, 'Recurring downloads', Icons.repeat, collapsible: true,
+                  summary: s.recurring.isEmpty ? 'None' : '${s.recurring.where((r) => r.enabled).length} of ${s.recurring.length} active', [
                 Text('Re-download a link on a schedule (a daily report, a nightly build…).',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
                 for (final r in s.recurring)
@@ -192,15 +197,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _section(BuildContext context, String title, IconData icon, List<Widget> children) {
+  /// A settings card. Collapsible sections show [summary] in the header and
+  /// toggle on the header or the arrow; the rest are always open.
+  Widget _section(BuildContext context, String title, IconData icon, List<Widget> children,
+      {bool collapsible = false, String? summary}) {
+    final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
+    final open = !collapsible || !_collapsed.contains(title);
+    final header = Row(children: [
+      Icon(icon, size: 18),
+      const SizedBox(width: 8),
+      Text(title, style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+      if (summary != null && !open) ...[
+        const SizedBox(width: 10),
+        Expanded(child: Text(summary, maxLines: 1, overflow: TextOverflow.ellipsis, style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant))),
+      ] else
+        const Spacer(),
+      if (collapsible) Icon(open ? Icons.expand_less_rounded : Icons.expand_more_rounded, size: 20, color: cs.onSurfaceVariant),
+    ]);
     return Card(
       margin: const EdgeInsets.only(bottom: 14),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [Icon(icon, size: 18), const SizedBox(width: 8), Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600))]),
-          const SizedBox(height: 10),
-          ...children,
+          if (collapsible)
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => setState(() => open ? _collapsed.add(title) : _collapsed.remove(title)),
+              child: Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: header),
+            )
+          else
+            header,
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: open
+                ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const SizedBox(height: 10), ...children])
+                : const SizedBox(width: double.infinity),
+          ),
         ]),
       ),
     );
