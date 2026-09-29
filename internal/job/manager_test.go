@@ -382,3 +382,38 @@ func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 	}
 	t.Fatal("condition not met within timeout")
 }
+
+func TestSetMaxConcurrentAppliesLive(t *testing.T) {
+	data := blob(2 << 20)
+	srv := httptest.NewServer(rangeServer(data, 20*time.Millisecond, nil, nil, nil))
+	defer srv.Close()
+	dir := t.TempDir()
+
+	m := New(1)
+	ids := make([]string, 3)
+	for i := range ids {
+		id, err := m.Add(Spec{URL: srv.URL + "/f", Out: filepath.Join(dir, fmt.Sprintf("f%d.bin", i)), Options: download.Options{
+			Conns: 1, MinSegment: 256 << 10, WindowSize: 256 << 10,
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[i] = id
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = m.Serve(ctx) }()
+
+	running := func() int {
+		n := 0
+		for _, id := range ids {
+			if st, _ := m.Status(id); st.State == Running {
+				n++
+			}
+		}
+		return n
+	}
+	waitFor(t, 3*time.Second, func() bool { return running() == 1 })
+	m.SetMaxConcurrent(3)
+	waitFor(t, 3*time.Second, func() bool { return running() == 3 })
+}

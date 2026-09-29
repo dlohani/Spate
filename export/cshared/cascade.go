@@ -53,6 +53,37 @@ func CascadeServiceStart(maxConcurrent C.int, downloadDir *C.char) C.longlong {
 	if err != nil {
 		return 0
 	}
+	return register(s)
+}
+
+// CascadeServiceStartJSON is CascadeServiceStart with options as JSON:
+// {"maxConcurrent","downloadDir","settingsPath","allowMultiple"}. Omitted
+// fields take the defaults. Returns a handle or 0 on error.
+//
+//export CascadeServiceStartJSON
+func CascadeServiceStartJSON(spec *C.char) C.longlong {
+	var in struct {
+		MaxConcurrent int    `json:"maxConcurrent"`
+		DownloadDir   string `json:"downloadDir"`
+		SettingsPath  string `json:"settingsPath"`
+		AllowMultiple bool   `json:"allowMultiple"`
+	}
+	if spec != nil {
+		if err := json.Unmarshal([]byte(C.GoString(spec)), &in); err != nil {
+			return 0
+		}
+	}
+	s, err := service.StartWith(service.StartOpts{
+		MaxConcurrent: in.MaxConcurrent, DownloadDir: in.DownloadDir,
+		SettingsPath: in.SettingsPath, AllowMultiple: in.AllowMultiple,
+	})
+	if err != nil {
+		return 0
+	}
+	return register(s)
+}
+
+func register(s *service.Service) C.longlong {
 	regMu.Lock()
 	nextID++
 	id := nextID

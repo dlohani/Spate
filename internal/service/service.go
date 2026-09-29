@@ -88,18 +88,39 @@ func AlreadyRunning() bool {
 	return false
 }
 
+// StartOpts configures Start. Zero values select the defaults: settings-file
+// concurrency, platform download folder, per-user settings path, and the
+// single-instance guard.
+type StartOpts struct {
+	MaxConcurrent int
+	DownloadDir   string
+	SettingsPath  string // "" = CASCADE_SETTINGS env, else settings.Path()
+	AllowMultiple bool   // skip the single-instance guard (tests, development)
+}
+
 // Start brings the service up: settings, manager loop, capture endpoint,
 // orphan resume, scheduler. downloadDir "" selects the settings/platform
 // default. It refuses to start a second instance (ErrAlreadyRunning).
 func Start(maxConcurrent int, downloadDir string) (*Service, error) {
+	return StartWith(StartOpts{MaxConcurrent: maxConcurrent, DownloadDir: downloadDir})
+}
+
+// StartWith is Start with every option explicit; front-ends that cannot set
+// environment variables (dart:ffi tests) use it to keep their settings file
+// out of the user's config folder.
+func StartWith(o StartOpts) (*Service, error) {
+	maxConcurrent, downloadDir := o.MaxConcurrent, o.DownloadDir
 	// CASCADE_ALLOW_MULTIPLE=1 disables the guard (tests, development).
-	if os.Getenv("CASCADE_ALLOW_MULTIPLE") != "1" && AlreadyRunning() {
+	if !o.AllowMultiple && os.Getenv("CASCADE_ALLOW_MULTIPLE") != "1" && AlreadyRunning() {
 		return nil, ErrAlreadyRunning
 	}
 	if downloadDir == "" {
 		downloadDir = DefaultDownloadDir()
 	}
-	spath := os.Getenv("CASCADE_SETTINGS")
+	spath := o.SettingsPath
+	if spath == "" {
+		spath = os.Getenv("CASCADE_SETTINGS")
+	}
 	if spath == "" {
 		spath, _ = settings.Path()
 	}
@@ -179,7 +200,9 @@ func (s *Service) ApplySettings(b []byte) error {
 	if err := s.Settings.Save(s.settingsPath); err != nil {
 		return err
 	}
-	s.Dir = s.Settings.Snapshot().DownloadDir
+	snap := s.Settings.Snapshot()
+	s.Dir = snap.DownloadDir
+	s.Mgr.SetMaxConcurrent(snap.MaxConcurrent)
 	s.limiter.SetRate(s.Settings.EffectiveLimit(time.Now()))
 	s.Mgr.SetStartGate(func() bool { return s.Settings.MayStart(time.Now()) }) // re-signals the loop
 	return nil

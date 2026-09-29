@@ -7,8 +7,8 @@ import 'package:ffi/ffi.dart';
 import '../model/job.dart';
 
 // C ABI (see export/cshared/cascade.go and dist/libcascade.h).
-typedef _StartC = LongLong Function(Int32, Pointer<Utf8>);
-typedef _StartD = int Function(int, Pointer<Utf8>);
+typedef _StartC = LongLong Function(Pointer<Utf8>);
+typedef _StartD = int Function(Pointer<Utf8>);
 typedef _HandleVoidC = Void Function(LongLong);
 typedef _HandleVoidD = void Function(int);
 typedef _HandleStrC = Pointer<Utf8> Function(LongLong);
@@ -55,17 +55,31 @@ class Cascade {
 
   Cascade._(this._lib, this._h);
 
-  /// Starts the service. [downloadDir] empty selects the platform default.
-  factory Cascade.start({int maxConcurrent = 3, String downloadDir = '', String? libraryPath}) {
+  /// Starts the service. [downloadDir] empty selects the platform default;
+  /// [maxConcurrent] 0 takes the value from settings. [settingsPath] points
+  /// the core at a settings file other than the per-user one, and
+  /// [allowMultiple] skips the single-instance guard (both for tests).
+  factory Cascade.start({
+    int maxConcurrent = 0,
+    String downloadDir = '',
+    String settingsPath = '',
+    bool allowMultiple = false,
+    String? libraryPath,
+  }) {
     final lib = DynamicLibrary.open(libraryPath ?? locateLibrary());
-    final start = lib.lookupFunction<_StartC, _StartD>('CascadeServiceStart');
-    final dir = downloadDir.toNativeUtf8();
+    final start = lib.lookupFunction<_StartC, _StartD>('CascadeServiceStartJSON');
+    final spec = jsonEncode({
+      'maxConcurrent': maxConcurrent,
+      'downloadDir': downloadDir,
+      'settingsPath': settingsPath,
+      'allowMultiple': allowMultiple,
+    }).toNativeUtf8();
     try {
-      final h = start(maxConcurrent, dir);
-      if (h == 0) throw StateError('CascadeServiceStart failed');
+      final h = start(spec);
+      if (h == 0) throw StateError('CascadeServiceStart failed (is Cascade already running?)');
       return Cascade._(lib, h);
     } finally {
-      malloc.free(dir);
+      malloc.free(spec);
     }
   }
 

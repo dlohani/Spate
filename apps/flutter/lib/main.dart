@@ -21,7 +21,7 @@ Future<void> main(List<String> args) async {
   // host + a manual open) just exits quietly.
   final Cascade core;
   try {
-    core = Cascade.start(maxConcurrent: 3);
+    core = Cascade.start(); // concurrency and folder come from settings
   } on StateError {
     exit(0);
   }
