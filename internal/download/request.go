@@ -12,6 +12,7 @@ type requestConfig struct {
 	header http.Header
 	user   string
 	pass   string
+	opts   Options // FTP reads credentials and Insecure from here
 }
 
 // newRequestConfig builds a requestConfig from Options.
@@ -23,7 +24,7 @@ func newRequestConfig(o Options) requestConfig {
 	if o.Cookie != "" {
 		h.Set("Cookie", o.Cookie)
 	}
-	return requestConfig{header: h, user: o.BasicUser, pass: o.BasicPassword}
+	return requestConfig{header: h, user: o.BasicUser, pass: o.BasicPassword, opts: o}
 }
 
 // newRequest builds a request with the config's headers and auth applied.

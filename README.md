@@ -19,6 +19,12 @@ packet crafting, or tunneling here, by design.
 
 Implemented (headless engine + CLI):
 
+- HTTP, HTTPS, FTP and FTPS (explicit TLS) sources. FTP uses `SIZE`, `MDTM`
+  and `REST`/`RETR` over passive data connections, so segmented multi-connection
+  downloads and resume work as with HTTP ranges; credentials come from the URL
+  (`ftp://user:pass@host/path`), else `-user`, else anonymous. Scheduled and
+  recurring downloads accept any of these. (Browsers dropped FTP years ago, so
+  FTP links are pasted into the app rather than captured from the browser.)
 - Multi-connection segmented downloads with dynamic work-stealing.
 - Resume, broken-download recovery (retry/backoff, `If-Range` revalidation).
 - Speed limiter; SHA-256 verification; automatic filename + file-type detection.

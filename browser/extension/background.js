@@ -300,8 +300,8 @@ chrome.downloads.onCreated.addListener(async (raw) => {
     await note("skipped: capture disabled", item.url);
     return;
   }
-  if (!item.url || !/^https?:/i.test(item.url)) {
-    await note("skipped: non-http url", item.url);
+  if (!item.url || !/^(https?|ftps?):/i.test(item.url)) {
+    await note("skipped: unsupported url scheme", item.url);
     return;
   }
   if (item.url.includes("127.0.0.1")) {

@@ -120,17 +120,10 @@ func (d *Downloader) fetchWindow(ctx context.Context, idx int, start, end int64)
 	return fmt.Errorf("segment %d [%d-%d]: exhausted retries: %w", idx, start, end, lastErr)
 }
 
-// streamRange performs one ranged GET for [from, end] and writes it at offset.
+// streamRange fetches [from, end] (an HTTP Range, or an FTP RETR from a REST
+// offset read up to the window) and writes it at offset.
 func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) error {
 	usedURL := d.currentURL()
-	req, err := d.rc.newRequest(ctx, http.MethodGet, usedURL)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", from, end))
-	if d.validator != "" {
-		req.Header.Set("If-Range", d.validator)
-	}
 
 	// Take a connection slot; the limit shrinks if the host refuses extras.
 	if err := d.conns.acquire(ctx); err != nil {
@@ -143,46 +136,33 @@ func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) 
 		}
 	}()
 
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return &netError{err} // dial/handshake/TLS error: retry on a fresh connection
+	var body io.ReadCloser
+	if isFTP(usedURL) {
+		b, err := ftpOpen(ctx, usedURL, from, d.opts)
+		if err != nil {
+			var fe *ftpError
+			if errors.As(err, &fe) && fe.tooManyConns() {
+				d.conns.refused() // 421: the server caps sessions per client
+				released = true
+			}
+			return err
+		}
+		body = b
+	} else {
+		resp, err := d.openHTTPRange(ctx, idx, usedURL, from, end, &released)
+		if err != nil {
+			return err
+		}
+		body = resp.Body
 	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusPartialContent:
-		// expected
-	case http.StatusOK:
-		return fmt.Errorf("segment %d: got 200 to a ranged request "+
-			"(resource changed mid-download or lost range support)", idx)
-	case http.StatusServiceUnavailable, http.StatusTooManyRequests:
-		// The host allows fewer simultaneous connections than we opened:
-		// shrink to what is streaming and retry later on a free slot.
-		d.conns.refused()
-		released = true
-		return &httpStatusError{code: resp.StatusCode, status: resp.Status}
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusGone:
-		// URL may have expired; try to refresh it and retry.
-		if d.opts.RefreshURL == nil {
-			return fmt.Errorf("segment %d: %s (no RefreshURL configured)", idx, resp.Status)
-		}
-		if err := d.refresh(ctx, usedURL); err != nil {
-			return fmt.Errorf("segment %d: URL refresh after %s failed: %w", idx, resp.Status, err)
-		}
-		return errURLRefreshed
-	default:
-		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
-			return &httpStatusError{code: resp.StatusCode, status: resp.Status}
-		}
-		return fmt.Errorf("segment %d: unexpected status %s", idx, resp.Status)
-	}
+	defer body.Close()
 
 	want := end - from + 1
 	var got int64
 	offset := from
 	buf := make([]byte, chunkSize)
 	for {
-		n, rerr := resp.Body.Read(buf)
+		n, rerr := body.Read(buf)
 		if n > 0 {
 			// Never write past the requested window, even if the server sends more.
 			if got+int64(n) > want {
@@ -213,6 +193,56 @@ func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) 
 		return io.ErrUnexpectedEOF // short read: transient, retry resumes from advanced Done
 	}
 	return nil
+}
+
+// openHTTPRange issues the ranged GET and maps the status to the engine's
+// retry/refresh behaviour. On a connection-refusing status it marks the slot
+// released so the caller does not double-release.
+func (d *Downloader) openHTTPRange(ctx context.Context, idx int, usedURL string, from, end int64, released *bool) (*http.Response, error) {
+	req, err := d.rc.newRequest(ctx, http.MethodGet, usedURL)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", from, end))
+	if d.validator != "" {
+		req.Header.Set("If-Range", d.validator)
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, &netError{err} // dial/handshake/TLS error: retry on a fresh connection
+	}
+
+	switch resp.StatusCode {
+	case http.StatusPartialContent:
+		return resp, nil // expected
+	case http.StatusOK:
+		resp.Body.Close()
+		return nil, fmt.Errorf("segment %d: got 200 to a ranged request "+
+			"(resource changed mid-download or lost range support)", idx)
+	case http.StatusServiceUnavailable, http.StatusTooManyRequests:
+		// The host allows fewer simultaneous connections than we opened:
+		// shrink to what is streaming and retry later on a free slot.
+		resp.Body.Close()
+		d.conns.refused()
+		*released = true
+		return nil, &httpStatusError{code: resp.StatusCode, status: resp.Status}
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusGone:
+		// URL may have expired; try to refresh it and retry.
+		resp.Body.Close()
+		if d.opts.RefreshURL == nil {
+			return nil, fmt.Errorf("segment %d: %s (no RefreshURL configured)", idx, resp.Status)
+		}
+		if err := d.refresh(ctx, usedURL); err != nil {
+			return nil, fmt.Errorf("segment %d: URL refresh after %s failed: %w", idx, resp.Status, err)
+		}
+		return nil, errURLRefreshed
+	default:
+		resp.Body.Close()
+		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+			return nil, &httpStatusError{code: resp.StatusCode, status: resp.Status}
+		}
+		return nil, fmt.Errorf("segment %d: unexpected status %s", idx, resp.Status)
+	}
 }
 
 // errURLRefreshed signals that the download URL was rotated and the request
@@ -251,6 +281,10 @@ func isTransient(err error) bool {
 	}
 	var ne2 *netError
 	if errors.As(err, &ne2) {
+		return true
+	}
+	var fe *ftpError
+	if errors.As(err, &fe) && fe.transient() {
 		return true
 	}
 	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
