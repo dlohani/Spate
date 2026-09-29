@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+  <title>Cascade</title>
+  <welcome file="welcome.txt" mime-type="text/plain"/>
+  <conclusion file="conclusion.txt" mime-type="text/plain"/>
+  <options customize="never" require-scripts="true" hostArchitectures="arm64,x86_64"/>
+  <!-- Per-user install: no administrator password, everything under ~/Library. -->
+  <domains enable_currentUserHome="true" enable_localSystem="false" enable_anywhere="false"/>
+  <choices-outline>
+    <line choice="default">
+      <line choice="cascade"/>
+    </line>
+  </choices-outline>
+  <choice id="default"/>
+  <choice id="cascade" visible="false">
+    <pkg-ref id="dev.d3xt3r.cascade"/>
+  </choice>
+  <pkg-ref id="dev.d3xt3r.cascade" version="@VERSION@" onConclusion="none">cascade.pkg</pkg-ref>
+</installer-gui-script>

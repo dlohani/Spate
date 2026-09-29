@@ -1,0 +1,39 @@
+#!/bin/bash
+# Register the Cascade native-messaging host for the Chromium-family browsers
+# present on this Mac. Authorizes the dev extension ID, the ID Chrome derives
+# for the installed extension folder, and any IDs given as arguments.
+#
+#   register-extension [EXTENSION_ID ...]
+set -u
+BIN="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(dirname "$BIN")"
+HOST_NAME="com.cascade.host"
+EXT_DIR="$ROOT/extension"
+
+# Chrome's unpacked-extension ID: sha256(path) -> first 32 hex digits mapped a-p.
+derive_id() { printf '%s' "$1" | shasum -a 256 | cut -c1-32 | tr '0123456789abcdef' 'abcdefghijklmnop'; }
+IDS=("kamlaafhjnegfjdbnfajbanjfkemefga" "$(derive_id "$EXT_DIR")" "$@")
+
+origins=""
+for id in "${IDS[@]}"; do origins+="${origins:+, }\"chrome-extension://${id}/\""; done
+manifest="{
+  \"name\": \"${HOST_NAME}\",
+  \"description\": \"Cascade download manager native host\",
+  \"path\": \"${BIN}/cascade-host\",
+  \"type\": \"stdio\",
+  \"allowed_origins\": [${origins}]
+}"
+
+AS="$HOME/Library/Application Support"
+for dir in \
+  "$AS/Chromium/NativeMessagingHosts" \
+  "$AS/Google/Chrome/NativeMessagingHosts" \
+  "$AS/BraveSoftware/Brave-Browser/NativeMessagingHosts" \
+  "$AS/Microsoft Edge/NativeMessagingHosts" \
+  "$AS/Vivaldi/NativeMessagingHosts"; do
+  [ -d "$(dirname "$dir")" ] || continue
+  mkdir -p "$dir"
+  printf '%s\n' "$manifest" > "$dir/${HOST_NAME}.json"
+  echo "registered: $dir/${HOST_NAME}.json"
+done
+echo "extension folder: $EXT_DIR"

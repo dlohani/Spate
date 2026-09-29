@@ -1,0 +1,8 @@
+Cascade is a download manager that takes over downloads from your browser: parallel connections, resume, a queue, and a menu-bar app that starts at login.
+
+This installs for the current user only (no administrator password):
+  - the Cascade app and its browser helper under ~/Library/Application Support/cascade
+  - browser integration for Chrome, Chromium, Brave, Edge and Vivaldi
+  - a login item so Cascade is always available (menu-bar icon)
+
+After installing, one manual step remains in the browser: load the Cascade extension (the final screen shows where it is).
