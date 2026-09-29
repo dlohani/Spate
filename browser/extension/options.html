@@ -21,10 +21,14 @@
     </div>
     <label for="mode">When a download starts</label>
     <select id="mode" style="width:100%;padding:6px">
-      <option value="ask">Ask me: Cascade or browser (default)</option>
+      <option value="ask">Ask once, then remember my answer (default)</option>
       <option value="always">Always download with Cascade</option>
       <option value="never">Never (leave downloads to the browser)</option>
     </select>
+    <div style="font-size:12px;color:#555;margin-top:4px">
+      The first download shows a one-time prompt; its answer becomes the default.
+      Set "Ask once" again here to be prompted anew.
+    </div>
     <div class="row">
       <input id="enabled" type="checkbox" checked />
       <label for="enabled" style="margin:0">Extension enabled</label>

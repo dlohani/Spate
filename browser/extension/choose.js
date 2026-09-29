@@ -17,8 +17,10 @@ const id = Number(params.get("d"));
   document.getElementById("hostShort").textContent = item.host;
 
   const decide = async (choice) => {
-    const remember = document.getElementById("remember").checked;
-    await chrome.runtime.sendMessage({ type: "choice", id, choice, remember, item });
+    // scope: "all" makes this the standing default (one-time ask), "site"
+    // remembers it for this host only, "none" applies to this download only.
+    const scope = document.querySelector('input[name="scope"]:checked')?.value ?? "none";
+    await chrome.runtime.sendMessage({ type: "choice", id, choice, scope, item });
     window.close();
   };
   document.getElementById("cascade").addEventListener("click", () => decide("cascade"));
