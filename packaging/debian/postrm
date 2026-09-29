@@ -1,0 +1,15 @@
+#!/bin/sh
+# Cascade .deb postrm: drop the system-wide browser registrations on remove
+# or purge. Per-user settings, tokens and downloads are left alone.
+set -e
+case "${1:-}" in
+  remove|purge)
+    for d in /etc/opt/chrome/native-messaging-hosts \
+             /etc/chromium/native-messaging-hosts \
+             /etc/opt/edge/native-messaging-hosts; do
+      rm -f "$d/com.cascade.host.json"
+    done
+    if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q /usr/share/applications || true; fi
+    ;;
+esac
+exit 0

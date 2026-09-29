@@ -49,6 +49,10 @@ swift /tmp/cascade-icon.swift "$BRAND/icon-fg-1024.png" fg
 echo "==> browser extension icons"
 mkdir -p "$ROOT/browser/extension/icons"
 for s in 16 32 48 128; do sips -z $s $s "$BRAND/icon-1024.png" --out "$ROOT/browser/extension/icons/$s.png" >/dev/null; done
+
+echo "==> Linux hicolor icons (.deb)"
+mkdir -p "$BRAND/linux"
+for s in 64 128 256 512; do sips -z $s $s "$BRAND/icon-1024.png" --out "$BRAND/linux/cascade-$s.png" >/dev/null; done
 /Library/Frameworks/Python.framework/Versions/3.14/bin/python3 - "$ROOT/browser/extension/manifest.json" <<'EOF'
 import json,sys
 p=sys.argv[1]; d=json.load(open(p))

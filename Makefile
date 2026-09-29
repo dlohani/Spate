@@ -58,6 +58,11 @@ ios:
 windows:
 	scripts/build-windows.sh
 
+# Debian/Ubuntu package. On Linux: the full desktop package; elsewhere the
+# CLI-only package (see scripts/package-linux.sh).
+deb:
+	scripts/package-linux.sh
+
 # Cross-compile the (pure Go) native host for Linux from any OS. libcascade.so
 # needs cgo and is built natively on Linux by scripts/install-linux.sh.
 host-linux:

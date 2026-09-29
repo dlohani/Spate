@@ -95,17 +95,35 @@ instance, so login item, native host and manual launches never stack up. See
 
 ## Install on Linux
 
-Run on the Linux machine, after `flutter build linux` in `apps/flutter`:
+Debian/Ubuntu package (run on the Linux machine; needs Go, gcc and Flutter):
+
+    scripts/package-linux.sh          # -> dist/cascade_<ver>_<arch>.deb
+    sudo apt install ./dist/cascade_<ver>_<arch>.deb
+
+The package installs `/usr/bin/cascade` (CLI), the app under
+`/usr/lib/cascade/`, the extension under `/usr/share/cascade/extension`, an
+application-menu entry, autostart at login (hidden, tray only) and icons.
+Its postinst registers the native host system-wide for Chrome, Chromium and
+Edge; `cascade-register [ID]` adds per-user registration for Brave, Vivaldi,
+snap Chromium, or another extension ID. `apt install` of the same version
+reinstalls, a newer version upgrades (running instances are stopped first),
+an older one is refused unless `CASCADE_FORCE=1`; settings and downloads are
+kept. `apt remove cascade` reverses it.
+
+On a non-Linux host (or with `--cli-only`) the same script produces
+`cascade-cli_<ver>_<arch>.deb`: the command-line downloader and native host
+only, pure Go, for servers and containers.
+
+Per-user developer install without a package (after `flutter build linux`):
 
     scripts/install-linux.sh
 
-Builds the Go core (`libcascade.so`) and native host, installs the Flutter
-bundle under `~/.local/share/cascade/bin/`, registers the host with Chromium,
-Chrome, Brave, Edge and Vivaldi, adds an application-menu entry and an XDG
-autostart entry (`--background`, tray only). A tray icon needs a desktop with
+It builds `libcascade.so` and the host, installs the Flutter bundle under
+`~/.local/share/cascade/bin/`, registers the host for the user's browsers and
+adds menu and autostart entries. Either way a tray icon needs a desktop with
 AppIndicator support (KDE, or GNOME with the extension); without one the app
-still works from its window. Prepared and syntax-checked here; not yet
-exercised on a Linux desktop.
+still works from its window. Prepared and syntax-checked here; the desktop
+package still needs a run on a Linux machine.
 
 ## Cross-platform
 
