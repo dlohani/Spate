@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'src/app.dart';
 import 'src/ffi/cascade_ffi.dart';
+import 'src/model/ui_prefs.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +29,9 @@ Future<void> main(List<String> args) async {
     exit(0);
   }
   final controller = CascadeController(core);
+  // Theme mode + accent, kept in ui.json next to the core's settings.json.
+  final configDir = (core.info()['configDir'] as String?) ?? '';
+  final prefs = UiPrefs(configDir.isEmpty ? 'ui.json' : '$configDir/ui.json');
 
   // --background: started at login (or by the native host for a silent hand-off);
   // stay in the tray without showing the window.
@@ -60,7 +64,7 @@ Future<void> main(List<String> args) async {
     await _setupTray(core);
   }
 
-  runApp(CascadeApp(controller: controller));
+  runApp(CascadeApp(controller: controller, prefs: prefs));
 }
 
 class _Resident with WindowListener {
