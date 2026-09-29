@@ -11,6 +11,14 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
+    // The app draws its own header as the title bar (native title hidden,
+    // traffic lights kept; see main.dart). A taller title bar keeps the
+    // traffic lights vertically centred on that 52px header.
+    let spacer = NSTitlebarAccessoryViewController()
+    spacer.view = NSView(frame: NSRect(x: 0, y: 0, width: 0, height: 24))
+    spacer.layoutAttribute = .right
+    self.addTitlebarAccessoryViewController(spacer)
+
     super.awakeFromNib()
   }
 

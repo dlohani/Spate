@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'ffi/cascade_ffi.dart';
 import 'model/job.dart';
@@ -351,60 +352,71 @@ class _HomeScreenState extends State<HomeScreen> {
         animation: widget.controller,
         builder: (context, _) {
           final jobs = [...widget.controller.jobs]..sort((a, b) => a.id.compareTo(b.id));
-          return Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _kMaxWidth),
-              child: CustomScrollView(
-                slivers: [
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(24, 22, 24, 10),
-                    sliver: SliverToBoxAdapter(child: _header(context, jobs)),
-                  ),
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-                    sliver: SliverToBoxAdapter(child: _addCard(context)),
-                  ),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(24, 18, 24, 6),
-                    sliver: SliverToBoxAdapter(child: _sectionBar(context, jobs)),
-                  ),
-                  if (jobs.isEmpty)
-                    SliverFillRemaining(hasScrollBody: false, child: _empty(context))
-                  else
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(24, 2, 24, 28),
-                      sliver: SliverList.separated(
-                        itemCount: jobs.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (context, i) =>
-                            DownloadCard(key: ValueKey(jobs[i].id), job: jobs[i], controller: widget.controller),
-                      ),
+          return Column(
+            children: [
+              _header(context, jobs),
+              Expanded(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: _kMaxWidth),
+                    child: CustomScrollView(
+                      slivers: [
+                        SliverPadding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+                          sliver: SliverToBoxAdapter(child: _addCard(context)),
+                        ),
+                        SliverPadding(
+                          padding: const EdgeInsets.fromLTRB(24, 18, 24, 6),
+                          sliver: SliverToBoxAdapter(child: _sectionBar(context, jobs)),
+                        ),
+                        if (jobs.isEmpty)
+                          SliverFillRemaining(hasScrollBody: false, child: _empty(context))
+                        else
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(24, 2, 24, 28),
+                            sliver: SliverList.separated(
+                              itemCount: jobs.length,
+                              separatorBuilder: (_, _) => const SizedBox(height: 10),
+                              itemBuilder: (context, i) =>
+                                  DownloadCard(key: ValueKey(jobs[i].id), job: jobs[i], controller: widget.controller),
+                            ),
+                          ),
+                      ],
                     ),
-                ],
+                  ),
+                ),
               ),
-            ),
+            ],
           );
         },
       ),
     );
   }
 
+  /// The window's top row. On macOS it *is* the title bar: the native title
+  /// is hidden, the traffic lights stay (78px inset), the row is draggable and
+  /// 52px tall to match the taller title bar. Elsewhere the native bar shows
+  /// the name, so this is a slim toolbar with just status and settings.
   Widget _header(BuildContext context, List<JobStatus> jobs) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final active = jobs.where((j) => j.state == 'running').length;
     final speed = widget.controller.totalSpeed;
     final limit = widget.controller.currentLimit;
-    return Row(
+    final mac = Platform.isMacOS;
+    final row = Row(
       children: [
-        Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(8)),
-          child: const Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 17),
-        ),
-        const SizedBox(width: 12),
-        Text('Cascade', style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.3)),
+        if (mac) ...[
+          const SizedBox(width: 78),
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(7)),
+            child: const Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 15),
+          ),
+          const SizedBox(width: 10),
+          Text('Cascade', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.2)),
+        ],
         const Spacer(),
         if (active > 0) ...[
           _Pill(text: '${humanBytes(speed.round())}/s', color: cs.primary),
@@ -423,6 +435,15 @@ class _HomeScreenState extends State<HomeScreen> {
         IconButton(tooltip: 'Settings', icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
       ],
     );
+    if (mac) {
+      return DragToMoveArea(
+        child: SizedBox(
+          height: 52,
+          child: Padding(padding: const EdgeInsets.only(right: 12), child: row),
+        ),
+      );
+    }
+    return Padding(padding: const EdgeInsets.fromLTRB(24, 8, 12, 0), child: row);
   }
 
   Widget _addCard(BuildContext context) {

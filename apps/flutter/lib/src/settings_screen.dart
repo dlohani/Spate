@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'app.dart' show kMotion, kMotionCurve;
 import 'ffi/cascade_ffi.dart';
@@ -55,22 +58,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Settings'),
-            const SizedBox(width: 10),
-            Text(
-              'Cascade ${widget.core.version}',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(color: cs.onSurfaceVariant),
+      // macOS: this bar doubles as the title bar (traffic-light inset, draggable).
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(Platform.isMacOS ? 52 : kToolbarHeight),
+        child: DragToMoveArea(
+          child: AppBar(
+            toolbarHeight: Platform.isMacOS ? 52 : null,
+            leadingWidth: Platform.isMacOS ? 78 + 48 : null,
+            leading: Platform.isMacOS ? const Padding(padding: EdgeInsets.only(left: 78), child: BackButton()) : null,
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Settings'),
+                const SizedBox(width: 10),
+                Text(
+                  'Cascade ${widget.core.version}',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(color: cs.onSurfaceVariant),
+                ),
+              ],
             ),
-          ],
+            actions: [
+              FilledButton.icon(
+                onPressed: _dirty ? _save : null,
+                icon: const Icon(Icons.check),
+                label: const Text('Save'),
+              ),
+              const SizedBox(width: 12),
+            ],
+          ),
         ),
-        actions: [
-          FilledButton.icon(onPressed: _dirty ? _save : null, icon: const Icon(Icons.check), label: const Text('Save')),
-          const SizedBox(width: 12),
-        ],
       ),
       body: Center(
         child: ConstrainedBox(

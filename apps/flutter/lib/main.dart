@@ -47,6 +47,10 @@ Future<void> main(List<String> args) async {
       minimumSize: kMinWindowSize,
       center: true,
       title: 'Cascade',
+      // macOS: the app's header row is the title bar (one "Cascade", not a
+      // native title above an in-app one); traffic lights stay. Windows and
+      // Linux keep the native bar, which carries their window controls.
+      titleBarStyle: Platform.isMacOS ? TitleBarStyle.hidden : TitleBarStyle.normal,
     );
     windowManager.waitUntilReadyToShow(opts, () async {
       if (background) {
@@ -94,30 +98,31 @@ Future<void> _setupTray(Cascade core) async {
   final tray = TrayManager.instance;
   tray.addListener(_TrayClicks());
   try {
-    await tray.setIcon(
-      Platform.isWindows ? 'assets/tray/icon.ico' : 'assets/tray/icon.png',
-      isTemplate: true,
-    );
+    await tray.setIcon(Platform.isWindows ? 'assets/tray/icon.ico' : 'assets/tray/icon.png', isTemplate: true);
     await tray.setToolTip('Cascade');
-    await tray.setContextMenu(Menu(items: [
-      MenuItem(
-        label: 'Open Cascade',
-        onClick: (_) async {
-          await windowManager.show();
-          await windowManager.focus();
-        },
+    await tray.setContextMenu(
+      Menu(
+        items: [
+          MenuItem(
+            label: 'Open Cascade',
+            onClick: (_) async {
+              await windowManager.show();
+              await windowManager.focus();
+            },
+          ),
+          MenuItem.separator(),
+          MenuItem(
+            label: 'Quit Cascade',
+            onClick: (_) async {
+              core.stop();
+              await tray.destroy();
+              await windowManager.setPreventClose(false);
+              exit(0);
+            },
+          ),
+        ],
       ),
-      MenuItem.separator(),
-      MenuItem(
-        label: 'Quit Cascade',
-        onClick: (_) async {
-          core.stop();
-          await tray.destroy();
-          await windowManager.setPreventClose(false);
-          exit(0);
-        },
-      ),
-    ]));
+    );
   } catch (_) {
     // No tray available (e.g. some Linux sessions); the window still works.
   }
