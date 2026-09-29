@@ -264,7 +264,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg && msg.type === "choice") {
     (async () => {
       const { siteRules } = await getConfig();
-      if (msg.remember && msg.item && msg.item.host) {
+      // One-time ask by default: "all" turns the answer into the standing mode
+      // (always Cascade / never), "site" remembers it for this host only.
+      if (msg.scope === "all" || msg.remember === true && !msg.scope) {
+        await chrome.storage.local.set({ mode: msg.choice === "cascade" ? "always" : "never" });
+        await note(msg.choice === "cascade" ? "default set: always use Cascade" : "default set: leave downloads to the browser");
+      } else if (msg.scope === "site" && msg.item && msg.item.host) {
         siteRules[msg.item.host] = msg.choice;
         await chrome.storage.local.set({ siteRules });
       }

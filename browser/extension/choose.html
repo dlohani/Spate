@@ -16,14 +16,17 @@
     </style>
   </head>
   <body>
-    <h3>Download with Cascade?</h3>
+    <h3>How should downloads be handled?</h3>
     <div class="file" id="file">…</div>
     <div class="host" id="host"></div>
     <div class="buttons">
       <button id="cascade">Download with Cascade</button>
       <button id="browser">Use the browser</button>
     </div>
-    <label class="remember"><input type="checkbox" id="remember" /> Remember my choice for <span id="hostShort"></span></label>
+    <label class="remember"><input type="radio" name="scope" value="all" id="scopeAll" checked /> Remember for all downloads (you won't be asked again)</label>
+    <label class="remember"><input type="radio" name="scope" value="site" id="scopeSite" /> Remember only for <span id="hostShort"></span></label>
+    <label class="remember"><input type="radio" name="scope" value="none" id="scopeNone" /> Just this once</label>
+    <div class="remember" style="margin-top:8px;color:#777">Change this later in the extension's Options.</div>
     <script src="choose.js"></script>
   </body>
 </html>
