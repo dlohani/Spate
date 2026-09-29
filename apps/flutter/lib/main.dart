@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'src/app.dart';
 import 'src/ffi/cascade_ffi.dart';
+import 'src/model/job.dart' show humanBytes;
 import 'src/model/ui_prefs.dart';
 
 Future<void> main(List<String> args) async {
@@ -73,7 +74,7 @@ Future<void> main(List<String> args) async {
       await windowManager.show();
       await windowManager.focus();
     };
-    await _setupTray(core);
+    await _setupTray(core, controller);
   }
 
   runApp(CascadeApp(controller: controller, prefs: prefs));
@@ -95,15 +96,68 @@ class _Resident with WindowListener {
   }
 }
 
-Future<void> _setupTray(Cascade core) async {
+/// Menu-bar / tray icon: the app icon's silhouette (template on macOS so it
+/// follows the menu bar tint; colour on Linux/Windows), plus a live summary
+/// while downloading: "2 · 43%" beside the icon on macOS, the same in the
+/// tooltip and as the first line of the menu everywhere.
+Future<void> _setupTray(Cascade core, CascadeController controller) async {
   final tray = TrayManager.instance;
   tray.addListener(_TrayClicks());
   try {
-    await tray.setIcon(Platform.isWindows ? 'assets/tray/icon.ico' : 'assets/tray/icon.png', isTemplate: true);
-    await tray.setToolTip('Cascade');
+    final icon = Platform.isWindows
+        ? 'assets/tray/icon.ico'
+        : Platform.isLinux
+        ? 'assets/tray/icon-color.png'
+        : 'assets/tray/icon.png';
+    await tray.setIcon(icon, isTemplate: Platform.isMacOS);
+    final status = _TrayStatus(tray, core, controller);
+    await status.apply(force: true);
+    controller.addListener(status.apply);
+  } catch (_) {
+    // No tray available (e.g. some Linux sessions); the window still works.
+  }
+}
+
+class _TrayStatus {
+  final TrayManager tray;
+  final Cascade core;
+  final CascadeController controller;
+  String _last = '';
+  DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
+  _TrayStatus(this.tray, this.core, this.controller);
+
+  /// Recomputes the summary at most once a second and pushes it only when
+  /// the text changed (menu rebuilds are not free).
+  Future<void> apply({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force && now.difference(_lastAt) < const Duration(seconds: 1)) return;
+    final jobs = controller.jobs;
+    final running = jobs.where((j) => j.state == 'running').toList();
+    final queued = jobs.where((j) => j.state == 'pending').length;
+    var title = '';
+    var line = queued > 0 ? '$queued queued' : 'Nothing downloading';
+    if (running.isNotEmpty) {
+      // Aggregate progress over the running downloads with a known size.
+      final known = running.where((j) => j.total > 0);
+      final done = known.fold<int>(0, (a, j) => a + j.bytes);
+      final total = known.fold<int>(0, (a, j) => a + j.total);
+      final pct = total > 0 ? (done * 100 / total).round() : null;
+      final n = running.length;
+      final speed = '${humanBytes(controller.totalSpeed.round())}/s';
+      title = pct == null ? '$n' : '$n · $pct%';
+      line = '$n downloading${pct == null ? '' : ' · $pct%'} · $speed${queued > 0 ? ' · $queued queued' : ''}';
+    }
+    final key = '$title|$line';
+    if (!force && key == _last) return;
+    _last = key;
+    _lastAt = now;
+    if (Platform.isMacOS) await tray.setTitle(title.isEmpty ? '' : ' $title');
+    await tray.setToolTip(title.isEmpty ? 'Cascade' : 'Cascade: $line');
     await tray.setContextMenu(
       Menu(
         items: [
+          MenuItem(label: line, disabled: true),
+          MenuItem.separator(),
           MenuItem(
             label: 'Open Cascade',
             onClick: (_) async {
@@ -124,8 +178,6 @@ Future<void> _setupTray(Cascade core) async {
         ],
       ),
     );
-  } catch (_) {
-    // No tray available (e.g. some Linux sessions); the window still works.
   }
 }
 

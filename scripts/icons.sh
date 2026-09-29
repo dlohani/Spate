@@ -50,6 +50,11 @@ echo "==> browser extension icons"
 mkdir -p "$ROOT/browser/extension/icons"
 for s in 16 32 48 128; do sips -z $s $s "$BRAND/icon-1024.png" --out "$ROOT/browser/extension/icons/$s.png" >/dev/null; done
 
+echo "==> tray / menu-bar icons (macOS template, Linux colour, Windows .ico)"
+
+swift "$ROOT/scripts/tray-icon.swift" "$BRAND/icon-1024.png" "$ROOT/apps/flutter/assets/tray" 2>/dev/null
+cp "$BRAND/cascade.ico" "$ROOT/apps/flutter/assets/tray/icon.ico"
+
 echo "==> Linux hicolor icons (.deb)"
 mkdir -p "$BRAND/linux"
 for s in 64 128 256 512; do sips -z $s $s "$BRAND/icon-1024.png" --out "$BRAND/linux/cascade-$s.png" >/dev/null; done
