@@ -34,7 +34,14 @@ void main() {
       req.response.close();
     });
 
-    final core = Cascade.start(maxConcurrent: 2, downloadDir: dir.path);
+    // Own settings file + no single-instance guard: the test must never touch
+    // the user's config or fail because the desktop app is running.
+    final core = Cascade.start(
+      maxConcurrent: 2,
+      downloadDir: dir.path,
+      settingsPath: '${dir.path}/settings.json',
+      allowMultiple: true,
+    );
     addTearDown(() {
       core.stop();
       server.close(force: true);

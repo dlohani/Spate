@@ -278,6 +278,18 @@ func (m *Manager) SetStartGate(gate func() bool) {
 	m.signal()
 }
 
+// SetMaxConcurrent changes how many downloads run at once. Raising it starts
+// eligible pending jobs; lowering it lets running jobs finish (no preemption).
+func (m *Manager) SetMaxConcurrent(n int) {
+	if n < 1 {
+		n = 1
+	}
+	m.mu.Lock()
+	m.max = n
+	m.mu.Unlock()
+	m.signal()
+}
+
 // Resume makes a paused job eligible to run again, continuing from disk.
 func (m *Manager) Resume(id string) error {
 	m.mu.Lock()
