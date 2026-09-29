@@ -16,6 +16,25 @@ ${StrRep}
 !define APPNAME "Cascade"
 !define HOSTNAME "com.cascade.host"
 !define DEVEXTID "kamlaafhjnegfjdbnfajbanjfkemefga"
+; Store IDs (from browser/extension/store-ids.env via package-windows.sh).
+; When set, browsers install the extension from the store by themselves.
+!ifndef CHROME_WEBSTORE_ID
+  !define CHROME_WEBSTORE_ID ""
+!endif
+!ifndef EDGE_ADDONS_ID
+  !define EDGE_ADDONS_ID ""
+!endif
+!define ORIGINS_DEV '"chrome-extension://${DEVEXTID}/"'
+!if "${CHROME_WEBSTORE_ID}" != ""
+  !define ORIGINS_CHROME '${ORIGINS_DEV}, "chrome-extension://${CHROME_WEBSTORE_ID}/"'
+!else
+  !define ORIGINS_CHROME '${ORIGINS_DEV}'
+!endif
+!if "${EDGE_ADDONS_ID}" != ""
+  !define ORIGINS_ALL '${ORIGINS_CHROME}, "chrome-extension://${EDGE_ADDONS_ID}/"'
+!else
+  !define ORIGINS_ALL '${ORIGINS_CHROME}'
+!endif
 
 Name "${APPNAME}"
 OutFile "..\..\dist\Cascade-Setup-${VERSION}.exe"
@@ -31,7 +50,11 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_TITLE "Cascade is installed"
+!if "${CHROME_WEBSTORE_ID}" != ""
+!define MUI_FINISHPAGE_TEXT "Last step: restart your browser. It installs the Cascade extension from the store by itself; click Enable when it asks.$\r$\n$\r$\nThen download anything. Cascade asks once how to handle downloads."
+!else
 !define MUI_FINISHPAGE_TEXT "Last step, in your browser:$\r$\n  1. Open chrome://extensions and turn on Developer mode.$\r$\n  2. Click Load unpacked and choose:$\r$\n     $INSTDIR\extension$\r$\n  3. Download anything. Cascade asks once how to handle downloads.$\r$\n$\r$\nIf the extension's Options page shows a different Extension ID, run:$\r$\n  $INSTDIR\bin\register-extension.cmd <ID>"
+!endif
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Start Cascade"
 !define MUI_FINISHPAGE_RUN_FUNCTION "LaunchApp"
@@ -71,7 +94,7 @@ Function WriteHostManifest
   ; JSON needs backslashes escaped
   ${StrRep} $0 "$INSTDIR\bin\cascade-host.exe" "\" "\\"
   FileOpen $1 "$INSTDIR\bin\${HOSTNAME}.json" w
-  FileWrite $1 '{$\r$\n  "name": "${HOSTNAME}",$\r$\n  "description": "Cascade download manager native host",$\r$\n  "path": "$0",$\r$\n  "type": "stdio",$\r$\n  "allowed_origins": ["chrome-extension://${DEVEXTID}/"]$\r$\n}$\r$\n'
+  FileWrite $1 '{$\r$\n  "name": "${HOSTNAME}",$\r$\n  "description": "Cascade download manager native host",$\r$\n  "path": "$0",$\r$\n  "type": "stdio",$\r$\n  "allowed_origins": [${ORIGINS_ALL}]$\r$\n}$\r$\n'
   FileClose $1
 FunctionEnd
 
@@ -86,6 +109,7 @@ Section "Cascade" SecMain
   File "..\..\dist\windows-amd64\cascade.exe"
   File "..\..\dist\windows-amd64\cascade.dll"
   File "register-extension.cmd"
+  File "..\..\browser\extension\store-ids.env"
   ; Flutter UI, when it was built and placed in dist\windows-amd64\cascade_app
   SetOutPath "$INSTDIR\bin\cascade_app"
   File /nonfatal /r "..\..\dist\windows-amd64\cascade_app\*.*"
@@ -101,6 +125,17 @@ Section "Cascade" SecMain
   WriteRegStr HKCU "Software\Chromium\NativeMessagingHosts\${HOSTNAME}" "" "$INSTDIR\bin\${HOSTNAME}.json"
   WriteRegStr HKCU "Software\Microsoft\Edge\NativeMessagingHosts\${HOSTNAME}" "" "$INSTDIR\bin\${HOSTNAME}.json"
   WriteRegStr HKCU "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\${HOSTNAME}" "" "$INSTDIR\bin\${HOSTNAME}.json"
+
+  ; Published extension: each browser installs it from its store on next start
+  ; (Chrome shows a one-time "Enable extension" prompt).
+!if "${CHROME_WEBSTORE_ID}" != ""
+  WriteRegStr HKCU "Software\Google\Chrome\Extensions\${CHROME_WEBSTORE_ID}" "update_url" "https://clients2.google.com/service/update2/crx"
+  WriteRegStr HKCU "Software\Chromium\Extensions\${CHROME_WEBSTORE_ID}" "update_url" "https://clients2.google.com/service/update2/crx"
+  WriteRegStr HKCU "Software\BraveSoftware\Brave-Browser\Extensions\${CHROME_WEBSTORE_ID}" "update_url" "https://clients2.google.com/service/update2/crx"
+!endif
+!if "${EDGE_ADDONS_ID}" != ""
+  WriteRegStr HKCU "Software\Microsoft\Edge\Extensions\${EDGE_ADDONS_ID}" "update_url" "https://edge.microsoft.com/extensionwebstorebase/v1/crx"
+!endif
 
   ; Start at login, hidden (tray icon only)
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${APPNAME}" '"$AppExe" --background'
@@ -126,6 +161,14 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\Chromium\NativeMessagingHosts\${HOSTNAME}"
   DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\${HOSTNAME}"
   DeleteRegKey HKCU "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\${HOSTNAME}"
+!if "${CHROME_WEBSTORE_ID}" != ""
+  DeleteRegKey HKCU "Software\Google\Chrome\Extensions\${CHROME_WEBSTORE_ID}"
+  DeleteRegKey HKCU "Software\Chromium\Extensions\${CHROME_WEBSTORE_ID}"
+  DeleteRegKey HKCU "Software\BraveSoftware\Brave-Browser\Extensions\${CHROME_WEBSTORE_ID}"
+!endif
+!if "${EDGE_ADDONS_ID}" != ""
+  DeleteRegKey HKCU "Software\Microsoft\Edge\Extensions\${EDGE_ADDONS_ID}"
+!endif
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${APPNAME}"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
   Delete "$SMPROGRAMS\${APPNAME}\*.lnk"

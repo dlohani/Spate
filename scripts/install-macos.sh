@@ -14,6 +14,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/scripts/lib/version.sh"
+. "$ROOT/scripts/lib/extension.sh"
+load_store_ids "$ROOT"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 SUPPORT="$HOME/Library/Application Support/cascade"
 BIN="$SUPPORT/bin"
@@ -57,10 +59,7 @@ cp -R "$FLUTTER_APP" "$APP"
 rm -rf "$BIN/Cascade.app" "$BIN/cascade-mac"
 echo "    $APP  ($VERSION)"
 
-origins=""
-for id in "${EXT_IDS[@]}"; do
-  origins+="${origins:+, }\"chrome-extension://${id}/\""
-done
+origins="$(ext_origins "${EXT_IDS[@]}")"
 manifest="{
   \"name\": \"${HOST_NAME}\",
   \"description\": \"Cascade download manager native host\",
@@ -83,6 +82,8 @@ for dir in \
   printf '%s\n' "$manifest" > "$dir/${HOST_NAME}.json"
   echo "    $dir/${HOST_NAME}.json"
 done
+echo "==> browser extension"
+register_store_extension_macos
 
 # Start at login (hidden, menu bar only) via a per-user LaunchAgent. Skip with
 # CASCADE_NO_LOGIN=1. Remove with: launchctl bootout gui/$UID/dev.d3xt3r.cascade
@@ -110,5 +111,5 @@ fi
 
 echo "==> done. Cascade $VERSION. Extension IDs allowed: ${EXT_IDS[*]}"
 echo "    Open it from Spotlight/Launchpad (Cascade) or the menu-bar icon."
-echo "    Load browser/extension in chrome://extensions (Developer mode -> Load unpacked)."
+extension_next_step "$ROOT/browser/extension"
 echo "    Remove with: $BIN/uninstall"

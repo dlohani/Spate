@@ -1,7 +1,10 @@
 #!/bin/bash
-# Register the Cascade native-messaging host for the Chromium-family browsers
-# present on this Mac. Authorizes the dev extension ID, the ID Chrome derives
-# for the installed extension folder, and any IDs given as arguments.
+# Register the Cascade browser integration for the Chromium-family browsers
+# on this Mac: the native-messaging host manifest (authorizing the dev
+# extension ID, the ID Chrome derives for the installed extension folder, the
+# store IDs when the extension is published, and any IDs given as arguments)
+# and, when published, the External Extensions entry that makes each browser
+# install the extension from the store on its next start.
 #
 #   register-extension [EXTENSION_ID ...]
 set -u
@@ -9,13 +12,21 @@ BIN="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$BIN")"
 HOST_NAME="com.cascade.host"
 EXT_DIR="$ROOT/extension"
+CHROME_UPDATE_URL="https://clients2.google.com/service/update2/crx"
+EDGE_UPDATE_URL="https://edge.microsoft.com/extensionwebstorebase/v1/crx"
+CHROME_WEBSTORE_ID=""; EDGE_ADDONS_ID=""
+# shellcheck disable=SC1091
+[ -f "$EXT_DIR/store-ids.env" ] && . "$EXT_DIR/store-ids.env"
 
 # Chrome's unpacked-extension ID: sha256(path) -> first 32 hex digits mapped a-p.
 derive_id() { printf '%s' "$1" | shasum -a 256 | cut -c1-32 | tr '0123456789abcdef' 'abcdefghijklmnop'; }
-IDS=("kamlaafhjnegfjdbnfajbanjfkemefga" "$(derive_id "$EXT_DIR")" "$@")
-
-origins=""
-for id in "${IDS[@]}"; do origins+="${origins:+, }\"chrome-extension://${id}/\""; done
+IDS="kamlaafhjnegfjdbnfajbanjfkemefga $(derive_id "$EXT_DIR") $CHROME_WEBSTORE_ID $EDGE_ADDONS_ID $*"
+origins=""; seen=" "
+for id in $IDS; do
+  case "$seen" in *" $id "*) continue ;; esac
+  seen="$seen$id "
+  origins+="${origins:+, }\"chrome-extension://${id}/\""
+done
 manifest="{
   \"name\": \"${HOST_NAME}\",
   \"description\": \"Cascade download manager native host\",
@@ -25,15 +36,23 @@ manifest="{
 }"
 
 AS="$HOME/Library/Application Support"
-for dir in \
-  "$AS/Chromium/NativeMessagingHosts" \
-  "$AS/Google/Chrome/NativeMessagingHosts" \
-  "$AS/BraveSoftware/Brave-Browser/NativeMessagingHosts" \
-  "$AS/Microsoft Edge/NativeMessagingHosts" \
-  "$AS/Vivaldi/NativeMessagingHosts"; do
-  [ -d "$(dirname "$dir")" ] || continue
-  mkdir -p "$dir"
-  printf '%s\n' "$manifest" > "$dir/${HOST_NAME}.json"
-  echo "registered: $dir/${HOST_NAME}.json"
-done
-echo "extension folder: $EXT_DIR"
+reg() { # support-dir app-bundle store-id update-url
+  local dir="$AS/$1"
+  { [ -d "$dir" ] || [ -d "/Applications/$2" ] || [ -d "$HOME/Applications/$2" ]; } || return 0
+  mkdir -p "$dir/NativeMessagingHosts"
+  printf '%s\n' "$manifest" > "$dir/NativeMessagingHosts/${HOST_NAME}.json"
+  echo "host registered: ${2%.app}"
+  if [ -n "$3" ]; then
+    mkdir -p "$dir/External Extensions"
+    printf '{ "external_update_url": "%s" }\n' "$4" > "$dir/External Extensions/$3.json"
+    echo "extension registered: ${2%.app} installs it from the store on next start"
+  fi
+}
+reg "Google/Chrome" "Google Chrome.app" "$CHROME_WEBSTORE_ID" "$CHROME_UPDATE_URL"
+reg "Chromium" "Chromium.app" "$CHROME_WEBSTORE_ID" "$CHROME_UPDATE_URL"
+reg "BraveSoftware/Brave-Browser" "Brave Browser.app" "$CHROME_WEBSTORE_ID" "$CHROME_UPDATE_URL"
+reg "Vivaldi" "Vivaldi.app" "$CHROME_WEBSTORE_ID" "$CHROME_UPDATE_URL"
+reg "Microsoft Edge" "Microsoft Edge.app" "$EDGE_ADDONS_ID" "$EDGE_UPDATE_URL"
+if [ -z "$CHROME_WEBSTORE_ID" ]; then
+  echo "extension folder (Load unpacked): $EXT_DIR"
+fi

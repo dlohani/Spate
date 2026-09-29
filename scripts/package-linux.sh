@@ -23,6 +23,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+. "$ROOT/scripts/lib/extension.sh"
+load_store_ids "$ROOT"
 LDFLAGS="-s -w -X cascade/internal/version.Version=$VERSION"
 DEB="$ROOT/packaging/debian"
 
@@ -76,13 +78,15 @@ if [ "$CLI_ONLY" = 0 ]; then
   cp "$DEB/cascade.desktop" "$STAGE/usr/share/applications/cascade.desktop"
   cp "$DEB/cascade-autostart.desktop" "$STAGE/etc/xdg/autostart/cascade.desktop"
   cp -R "$ROOT/browser/extension" "$STAGE/usr/share/cascade/extension"
-  install -m 0755 "$DEB/cascade-register" "$STAGE/usr/bin/cascade-register"
+  sed -e "s/@CHROME_WEBSTORE_ID@/${CHROME_WEBSTORE_ID:-}/g" -e "s/@EDGE_ADDONS_ID@/${EDGE_ADDONS_ID:-}/g" "$DEB/cascade-register" > "$STAGE/usr/bin/cascade-register"
+  chmod 0755 "$STAGE/usr/bin/cascade-register"
   for s in 64 128 256 512; do
     d="$STAGE/usr/share/icons/hicolor/${s}x${s}/apps"; mkdir -p "$d"
     cp "$ROOT/assets/brand/linux/cascade-$s.png" "$d/cascade.png"
   done
   for f in preinst postinst prerm postrm; do
-    sed "s/@VERSION@/$VERSION/g" "$DEB/$f" > "$STAGE/DEBIAN/$f"; chmod 0755 "$STAGE/DEBIAN/$f"
+    sed -e "s/@VERSION@/$VERSION/g" -e "s/@CHROME_WEBSTORE_ID@/${CHROME_WEBSTORE_ID:-}/g" -e "s/@EDGE_ADDONS_ID@/${EDGE_ADDONS_ID:-}/g" \
+      "$DEB/$f" > "$STAGE/DEBIAN/$f"; chmod 0755 "$STAGE/DEBIAN/$f"
   done
   DEPENDS="libc6, libgtk-3-0, libglib2.0-0"
   RECOMMENDS="libayatana-appindicator3-1, chromium | google-chrome-stable | microsoft-edge-stable"

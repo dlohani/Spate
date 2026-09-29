@@ -6,6 +6,8 @@ HOST=/usr/lib/cascade/cascade-host
 EXT=/usr/share/cascade/extension
 NAME=com.cascade.host
 DEVID=kamlaafhjnegfjdbnfajbanjfkemefga
+CHROME_WEBSTORE_ID="@CHROME_WEBSTORE_ID@"
+EDGE_ADDONS_ID="@EDGE_ADDONS_ID@"
 # Chrome derives an unpacked extension's ID from its folder path:
 # sha256(path), first 32 hex digits mapped a-p.
 ID="$(printf '%s' "$EXT" | sha256sum | cut -c1-32 | tr '0123456789abcdef' 'abcdefghijklmnop')"
@@ -14,7 +16,7 @@ manifest="{
   \"description\": \"Cascade download manager native host\",
   \"path\": \"$HOST\",
   \"type\": \"stdio\",
-  \"allowed_origins\": [\"chrome-extension://$ID/\", \"chrome-extension://$DEVID/\"]
+  \"allowed_origins\": [\"chrome-extension://$ID/\", \"chrome-extension://$DEVID/\"${CHROME_WEBSTORE_ID:+, \"chrome-extension://$CHROME_WEBSTORE_ID/\"}${EDGE_ADDONS_ID:+, \"chrome-extension://$EDGE_ADDONS_ID/\"}]
 }"
 for d in /etc/opt/chrome/native-messaging-hosts \
          /etc/chromium/native-messaging-hosts \
@@ -25,6 +27,18 @@ for d in /etc/opt/chrome/native-messaging-hosts \
 done
 if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q /usr/share/applications || true; fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then gtk-update-icon-cache -q -f /usr/share/icons/hicolor || true; fi
-echo "cascade: load $EXT in chrome://extensions (Developer mode -> Load unpacked)."
-echo "cascade: Brave, Vivaldi or another extension ID: run cascade-register [ID] as your user."
+# Published extension: system-wide registration makes Chrome/Chromium install
+# it for every user on next start (Linux needs no prompt). Brave, Vivaldi and
+# Edge are registered per user by cascade-register.
+if [ -n "$CHROME_WEBSTORE_ID" ]; then
+  for d in /usr/share/google-chrome/extensions /usr/share/chromium/extensions; do
+    mkdir -p "$d"
+    printf '{ "external_update_url": "https://clients2.google.com/service/update2/crx" }\n' > "$d/$CHROME_WEBSTORE_ID.json"
+  done
+  echo "cascade: Chrome/Chromium install the Cascade extension from the store on next start."
+  echo "cascade: Brave, Vivaldi, Edge or another extension ID: run cascade-register [ID] as your user."
+else
+  echo "cascade: load $EXT in chrome://extensions (Developer mode -> Load unpacked)."
+  echo "cascade: Brave, Vivaldi or another extension ID: run cascade-register [ID] as your user."
+fi
 exit 0

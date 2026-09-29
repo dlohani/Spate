@@ -12,6 +12,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ROOT/scripts/lib/version.sh"
+. "$ROOT/scripts/lib/extension.sh"
+load_store_ids "$ROOT"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}/cascade"
 BIN="$DATA/bin"
@@ -49,8 +51,7 @@ else
   echo "    (no Flutter Linux bundle found; run 'flutter build linux' in apps/flutter first)"
 fi
 
-origins=""
-for id in "${EXT_IDS[@]}"; do origins+="${origins:+, }\"chrome-extension://${id}/\""; done
+origins="$(ext_origins "${EXT_IDS[@]}")"
 manifest="{
   \"name\": \"${HOST_NAME}\",
   \"description\": \"Cascade download manager native host\",
@@ -75,6 +76,8 @@ for dir in \
   printf '%s\n' "$manifest" > "$dir/${HOST_NAME}.json"
   echo "    $dir/${HOST_NAME}.json"
 done
+echo "==> browser extension"
+register_store_extension_linux
 
 if [ -n "$BUNDLE" ]; then
   echo "==> application menu entry + autostart (hidden, tray only)"
@@ -105,5 +108,5 @@ fi
 
 printf '%s\n' "$VERSION" > "$DATA/VERSION"   # read by the next install's version check
 echo "==> done. Cascade $VERSION. Extension IDs allowed: ${EXT_IDS[*]}"
-echo "    Load browser/extension in chrome://extensions (Developer mode -> Load unpacked)."
+extension_next_step "$ROOT/browser/extension"
 echo "    Note: a tray icon needs a desktop that supports AppIndicator (KDE, or GNOME with the extension)."
