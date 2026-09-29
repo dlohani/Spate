@@ -1,0 +1,41 @@
+#!/bin/sh
+# Register the Cascade browser native-messaging host for the current user's
+# browsers (Chromium, Chrome, Brave, Edge, Vivaldi, snap Chromium), optionally
+# authorizing extra extension IDs (from the extension's Options page).
+#
+#   cascade-register [EXTENSION_ID ...]
+#
+# The .deb already registers Chrome, Chromium and Edge system-wide; use this
+# for the other browsers or when the extension was loaded from another path.
+set -u
+HOST=/usr/lib/cascade/cascade-host
+EXT=/usr/share/cascade/extension
+NAME=com.cascade.host
+ID="$(printf '%s' "$EXT" | sha256sum | cut -c1-32 | tr '0123456789abcdef' 'abcdefghijklmnop')"
+origins="\"chrome-extension://$ID/\", \"chrome-extension://kamlaafhjnegfjdbnfajbanjfkemefga/\""
+for id in "$@"; do origins="$origins, \"chrome-extension://$id/\""; done
+manifest="{
+  \"name\": \"$NAME\",
+  \"description\": \"Cascade download manager native host\",
+  \"path\": \"$HOST\",
+  \"type\": \"stdio\",
+  \"allowed_origins\": [$origins]
+}"
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
+n=0
+for dir in \
+  "$CFG/chromium/NativeMessagingHosts" \
+  "$CFG/google-chrome/NativeMessagingHosts" \
+  "$CFG/google-chrome-beta/NativeMessagingHosts" \
+  "$CFG/BraveSoftware/Brave-Browser/NativeMessagingHosts" \
+  "$CFG/microsoft-edge/NativeMessagingHosts" \
+  "$CFG/vivaldi/NativeMessagingHosts" \
+  "$HOME/snap/chromium/common/chromium/NativeMessagingHosts"; do
+  [ -d "$(dirname "$dir")" ] || continue
+  mkdir -p "$dir"
+  printf '%s\n' "$manifest" > "$dir/$NAME.json"
+  echo "registered: $dir/$NAME.json"
+  n=$((n + 1))
+done
+[ "$n" -gt 0 ] || echo "no browser profile folders found under $CFG"
+echo "extension folder: $EXT  (chrome://extensions -> Developer mode -> Load unpacked)"

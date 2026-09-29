@@ -1,0 +1,30 @@
+#!/bin/sh
+# Cascade .deb postinst: register the browser native-messaging host
+# system-wide (Chrome, Chromium, Edge) and refresh desktop caches.
+set -e
+HOST=/usr/lib/cascade/cascade-host
+EXT=/usr/share/cascade/extension
+NAME=com.cascade.host
+DEVID=kamlaafhjnegfjdbnfajbanjfkemefga
+# Chrome derives an unpacked extension's ID from its folder path:
+# sha256(path), first 32 hex digits mapped a-p.
+ID="$(printf '%s' "$EXT" | sha256sum | cut -c1-32 | tr '0123456789abcdef' 'abcdefghijklmnop')"
+manifest="{
+  \"name\": \"$NAME\",
+  \"description\": \"Cascade download manager native host\",
+  \"path\": \"$HOST\",
+  \"type\": \"stdio\",
+  \"allowed_origins\": [\"chrome-extension://$ID/\", \"chrome-extension://$DEVID/\"]
+}"
+for d in /etc/opt/chrome/native-messaging-hosts \
+         /etc/chromium/native-messaging-hosts \
+         /etc/opt/edge/native-messaging-hosts; do
+  mkdir -p "$d"
+  printf '%s\n' "$manifest" > "$d/$NAME.json"
+  chmod 0644 "$d/$NAME.json"
+done
+if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q /usr/share/applications || true; fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then gtk-update-icon-cache -q -f /usr/share/icons/hicolor || true; fi
+echo "cascade: load $EXT in chrome://extensions (Developer mode -> Load unpacked)."
+echo "cascade: Brave, Vivaldi or another extension ID: run cascade-register [ID] as your user."
+exit 0

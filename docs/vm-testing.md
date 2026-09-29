@@ -58,16 +58,26 @@ sudo apt install -y git golang clang cmake ninja-build pkg-config libgtk-3-dev \
   liblzma-dev libstdc++-12-dev libayatana-appindicator3-dev
 # Flutter: https://docs.flutter.dev/get-started/install/linux (snap or tarball)
 git clone <repo> cascade && cd cascade
-(cd apps/flutter && flutter config --enable-linux-desktop && flutter pub get && flutter build linux)
-scripts/install-linux.sh <ID>     # ID from the extension's Options page
+(cd apps/flutter && flutter config --enable-linux-desktop && flutter pub get)
+scripts/package-linux.sh                      # builds the UI if needed -> dist/cascade_<ver>_amd64.deb
+sudo apt install ./dist/cascade_*_amd64.deb   # then log out/in, or start "Cascade" from the menu
+cascade-register <ID>                         # only for Brave/Vivaldi or a different extension ID
 ```
 
-`install-linux.sh` builds `libcascade.so` and the host, installs the Flutter
-bundle under `~/.local/share/cascade/bin`, registers the host for Chromium,
-Chrome, Brave, Edge and Vivaldi (`~/.config/<browser>/NativeMessagingHosts`,
-plus the snap Chromium path), and adds an app-menu entry and an XDG autostart
-entry (`--background`). A tray icon needs AppIndicator support (KDE, or GNOME
-with the AppIndicator extension); without it the app is window-only.
+The package puts the CLI in `/usr/bin/cascade`, the app under
+`/usr/lib/cascade/`, the extension under `/usr/share/cascade/extension`
+(load that folder in `chrome://extensions`), registers the native host
+system-wide for Chrome/Chromium/Edge, and adds the menu entry, icons and
+autostart (`--background`). Package checks to run as well: `sudo apt install
+./dist/cascade_*.deb` a second time (prints "already installed; reinstalling"),
+and an older build (`VERSION` lowered, repackaged) must be refused with
+"downgrades are not supported". `sudo apt remove cascade` must stop the app
+and drop the registrations; `~/.config/cascade` stays.
+
+Without a package: `flutter build linux` then `scripts/install-linux.sh <ID>`
+installs per-user under `~/.local/share/cascade/bin` (same registrations,
+menu and autostart entries). A tray icon needs AppIndicator support (KDE, or
+GNOME with the AppIndicator extension); without it the app is window-only.
 
 ## What to check, in order
 

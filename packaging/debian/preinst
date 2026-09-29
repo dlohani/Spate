@@ -1,0 +1,27 @@
+#!/bin/sh
+# Cascade .deb preinst: refuse a downgrade, stop running instances.
+# dpkg calls this with "install" (fresh) or "upgrade <installed-version>"
+# (also for a reinstall of the same version and for a downgrade).
+set -e
+NEW="@VERSION@"
+case "${1:-}" in
+  upgrade)
+    if [ "${2:-}" = "$NEW" ]; then
+      echo "cascade: $NEW is already installed; reinstalling (settings and downloads are kept)"
+    elif dpkg --compare-versions "${2:-0}" gt "$NEW"; then
+      if [ "${CASCADE_FORCE:-0}" = "1" ]; then
+        echo "cascade: downgrading $2 -> $NEW (CASCADE_FORCE=1)"
+      else
+        echo "cascade: version $2 is installed and this package is $NEW; downgrades are not supported." >&2
+        echo "         Remove it first (sudo apt remove cascade) or run with CASCADE_FORCE=1." >&2
+        exit 1
+      fi
+    else
+      echo "cascade: upgrading ${2:-?} -> $NEW"
+    fi
+    ;;
+esac
+# Files of a running app cannot be replaced cleanly; by process name (-x),
+# never a -f pattern that could match a shell.
+pkill -x cascade_app >/dev/null 2>&1 || true
+exit 0
