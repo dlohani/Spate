@@ -52,8 +52,49 @@ nothing changes in the installers.
 - Assets: 128x128 icon (`browser/extension/icons/128.png`), at least one
   1280x800 screenshot of the choice popup, and the 440x280 small tile.
 
-## Firefox and Safari
+## Firefox
 
-Not covered yet: Firefox needs a WebExtension variant (mostly the same code)
-signed by addons.mozilla.org; Safari needs an App Extension built in Xcode.
-Both are follow-ups.
+Same code, `manifest.firefox.json` (MV2 event page, fixed add-on ID
+`cascade@d3xt3r.dev`). `scripts/package-extension.sh` produces
+`dist/cascade-extension-firefox-<version>.zip` and the unpacked
+`dist/firefox-extension/` (about:debugging -> This Firefox -> Load Temporary
+Add-on -> manifest.json; lasts until Firefox restarts).
+
+Permanent installs need the add-on signed by addons.mozilla.org, which is
+free and automated for unlisted (self-distributed) add-ons:
+
+1. https://addons.mozilla.org/developers/ -> Submit a New Add-on -> "On your
+   own" (unlisted) -> upload the zip. Signing usually completes in minutes.
+2. Download the signed `.xpi`. Users install it by opening it in Firefox
+   (about:addons -> gear -> Install Add-on From File). Every installer
+   already registers the native host for Firefox, so launch-on-demand and
+   pairing work the same as in Chrome.
+3. Optional, for hands-off installs: ship the signed `.xpi` in the installers
+   and register it through Firefox's `ExtensionSettings` policy
+   (`install_url` + `installation_mode: force_installed`; Windows HKCU
+   policy key, Linux `/etc/firefox/policies/policies.json`, macOS
+   `org.mozilla.firefox` defaults). Not wired yet: it needs the signed file
+   first.
+
+Later versions: upload a new zip to AMO for a new signed `.xpi`; Firefox
+updates self-distributed add-ons only if the manifest names an
+`update_url`, so either host an updates.json or ship the new `.xpi` with the
+next installer.
+
+## Safari
+
+Safari has no `downloads` API, so a download cannot be intercepted after it
+starts. The Safari build (`manifest.safari.json`) therefore captures
+through the right-click "Download with Cascade" on links and through
+`capture.js`, which intercepts clicks on links that are clearly files
+(download attribute, or archive/installer/media/document extensions) and
+hands them to the app before Safari navigates; if the app is not running or
+refuses, the click proceeds normally.
+
+Safari extensions ship inside a macOS app: `scripts/safari-extension.sh`
+wraps the extension with Xcode's converter, builds "Cascade for Safari.app"
+ad hoc signed and installs it to ~/Applications. Enable it in Safari ->
+Settings -> Extensions; for an ad hoc build Safari also needs Develop ->
+"Allow Unsigned Extensions" (Develop menu: Settings -> Advanced). Shipping
+it to other Macs needs a Developer ID signature and notarization
+(`CASCADE_SIGN_IDENTITY`), or the Mac App Store.

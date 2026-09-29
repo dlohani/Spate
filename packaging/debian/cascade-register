@@ -41,6 +41,12 @@ for dir in \
   echo "registered: $dir/$NAME.json"
   n=$((n + 1))
 done
+if [ -d "$HOME/.mozilla" ]; then
+  mkdir -p "$HOME/.mozilla/native-messaging-hosts"
+  printf '{\n  "name": "%s",\n  "description": "Cascade download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["cascade@d3xt3r.dev"]\n}\n' "$NAME" "$HOST" > "$HOME/.mozilla/native-messaging-hosts/$NAME.json"
+  echo "registered: $HOME/.mozilla/native-messaging-hosts/$NAME.json (Firefox)"
+  n=$((n + 1))
+fi
 [ "$n" -gt 0 ] || echo "no browser profile folders found under $CFG"
 # Published extension: make each browser install it from its store.
 reg_store() { # config-dir store-id update-url

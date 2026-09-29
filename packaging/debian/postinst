@@ -25,6 +25,10 @@ for d in /etc/opt/chrome/native-messaging-hosts \
   printf '%s\n' "$manifest" > "$d/$NAME.json"
   chmod 0644 "$d/$NAME.json"
 done
+# Firefox (system-wide): fixed add-on ID, keyed by allowed_extensions.
+mkdir -p /usr/lib/mozilla/native-messaging-hosts
+printf '{\n  "name": "%s",\n  "description": "Cascade download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["cascade@d3xt3r.dev"]\n}\n' "$NAME" "$HOST" > "/usr/lib/mozilla/native-messaging-hosts/$NAME.json"
+chmod 0644 "/usr/lib/mozilla/native-messaging-hosts/$NAME.json"
 if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q /usr/share/applications || true; fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then gtk-update-icon-cache -q -f /usr/share/icons/hicolor || true; fi
 # Published extension: system-wide registration makes Chrome/Chromium install

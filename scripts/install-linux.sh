@@ -76,6 +76,7 @@ for dir in \
   printf '%s\n' "$manifest" > "$dir/${HOST_NAME}.json"
   echo "    $dir/${HOST_NAME}.json"
 done
+register_firefox_host_linux "$BIN/cascade-host"
 echo "==> browser extension"
 register_store_extension_linux
 

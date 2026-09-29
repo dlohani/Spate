@@ -27,6 +27,17 @@ set "HOSTEXE_JSON=%HOSTEXE:\=\\%"
 for %%K in ("Google\Chrome" "Chromium" "Microsoft\Edge" "BraveSoftware\Brave-Browser") do (
   reg add "HKCU\Software\%%~K\NativeMessagingHosts\com.cascade.host" /ve /t REG_SZ /d "%BIN%\com.cascade.host.json" /f >nul
 )
+rem Firefox: fixed add-on ID, manifest keyed by allowed_extensions.
+(
+  echo {
+  echo   "name": "com.cascade.host",
+  echo   "description": "Cascade download manager native host",
+  echo   "path": "%HOSTEXE_JSON%",
+  echo   "type": "stdio",
+  echo   "allowed_extensions": ["cascade@d3xt3r.dev"]
+  echo }
+) > "%BIN%\com.cascade.host.firefox.json"
+reg add "HKCU\Software\Mozilla\NativeMessagingHosts\com.cascade.host" /ve /t REG_SZ /d "%BIN%\com.cascade.host.firefox.json" /f >nul
 if not "%CHROME_WEBSTORE_ID%"=="" (
   for %%K in ("Google\Chrome" "Chromium" "BraveSoftware\Brave-Browser") do (
     reg add "HKCU\Software\%%~K\Extensions\%CHROME_WEBSTORE_ID%" /v update_url /t REG_SZ /d "https://clients2.google.com/service/update2/crx" /f >nul
