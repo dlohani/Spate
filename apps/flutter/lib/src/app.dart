@@ -394,7 +394,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// The window's top row. On macOS it *is* the title bar: the native title
-  /// is hidden, the traffic lights stay (78px inset), the row is draggable and
+  /// is hidden, the traffic lights stay (96px inset: they end at 80pt in a unified toolbar), the row is draggable and
   /// 52px tall to match the taller title bar. Elsewhere the native bar shows
   /// the name, so this is a slim toolbar with just status and settings.
   Widget _header(BuildContext context, List<JobStatus> jobs) {
@@ -407,7 +407,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final row = Row(
       children: [
         if (mac) ...[
-          const SizedBox(width: 78),
+          const SizedBox(width: 96), // unified-toolbar traffic lights end at 80pt
           Container(
             width: 24,
             height: 24,
