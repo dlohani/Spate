@@ -158,6 +158,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ]),
+              _section(context, 'Behaviour', Icons.tune_outlined, [
+                AnimatedBuilder(
+                  animation: widget.prefs,
+                  builder: (context, _) => SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Minimise to the tray'),
+                    subtitle: Text(
+                      Platform.isMacOS
+                          ? 'Minimising hides the window into the menu bar instead of the Dock. Closing always keeps Cascade running; quit from the menu-bar icon.'
+                          : 'Minimising hides the window into the tray instead of the taskbar. Closing always keeps Cascade running; quit from the tray icon.',
+                    ),
+                    value: widget.prefs.minimizeToTray,
+                    onChanged: widget.prefs.setMinimizeToTray,
+                  ),
+                ),
+              ]),
               _section(context, 'Downloads folder', Icons.folder_outlined, [
                 TextField(
                   controller: _dir,

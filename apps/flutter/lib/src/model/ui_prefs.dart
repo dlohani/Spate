@@ -31,6 +31,17 @@ class UiPrefs extends ChangeNotifier {
   String accent = 'blue';
   Size? windowSize;
 
+  /// Minimising hides the window into the tray/menu bar instead of the Dock
+  /// or taskbar (closing already does), so the app is not quit by accident.
+  bool minimizeToTray = true;
+
+  void setMinimizeToTray(bool v) {
+    if (v == minimizeToTray) return;
+    minimizeToTray = v;
+    _save();
+    notifyListeners();
+  }
+
   /// Saved without notifying: the window itself already has the size.
   void setWindowSize(Size s) {
     if (s.width < kMinWindowSize.width || s.height < kMinWindowSize.height) return;
@@ -70,6 +81,7 @@ class UiPrefs extends ChangeNotifier {
       };
       final a = j['accent'] as String?;
       if (a != null && accentColors.containsKey(a)) accent = a;
+      minimizeToTray = j['minimizeToTray'] as bool? ?? true;
       final w = (j['windowW'] as num?)?.toDouble();
       final h = (j['windowH'] as num?)?.toDouble();
       if (w != null &&
@@ -92,6 +104,7 @@ class UiPrefs extends ChangeNotifier {
         jsonEncode({
           'theme': mode.name,
           'accent': accent,
+          'minimizeToTray': minimizeToTray,
           if (windowSize != null) 'windowW': windowSize!.width,
           if (windowSize != null) 'windowH': windowSize!.height,
         }),
