@@ -9,11 +9,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="/opt/homebrew/bin:$PATH"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 . "$ROOT/scripts/lib/extension.sh"
+. "$ROOT/scripts/lib/bundle.sh"
+. "$ROOT/scripts/lib/sha256.sh"
 load_store_ids "$ROOT"
 command -v makensis >/dev/null || { echo "missing makensis: brew install makensis"; exit 1; }
 [ -f "$ROOT/dist/windows-amd64/cascade-host.exe" ] || "$ROOT/scripts/build-windows.sh"
-[ -f "$ROOT/dist/windows-amd64/cascade_app/cascade_app.exe" ] || { echo "error: the Flutter Windows UI is missing: build it on Windows with scripts/flutter-windows.ps1 and copy the Release folder to dist/windows-amd64/cascade_app" >&2; exit 1; }
+ui_bundle_ok "$ROOT/dist/windows-amd64" || { ui_bundle_missing_message "$ROOT/dist/windows-amd64" >&2; exit 1; }
 (cd "$ROOT/packaging/windows" && makensis -V2 -DVERSION="$VERSION" -DCHROME_WEBSTORE_ID="${CHROME_WEBSTORE_ID:-}" -DEDGE_ADDONS_ID="${EDGE_ADDONS_ID:-}" cascade.nsi)
 OUT="$ROOT/dist/Cascade-Setup-$VERSION.exe"
-shasum -a 256 "$OUT" | tee "$OUT.sha256"
+sha256_file "$OUT" | tee "$OUT.sha256"
 echo "==> $OUT (unsigned: SmartScreen will warn on first run)"

@@ -17,6 +17,11 @@ import (
 	"cascade/internal/job"
 )
 
+// Every test binds the same fixed ports, so a keep-alive connection pooled by
+// one test can point at a server the previous test already closed; a POST on
+// such a connection fails with EOF and is not retried. Do not pool.
+func init() { http.DefaultTransport.(*http.Transport).DisableKeepAlives = true }
+
 func TestAddRequiresTokenAndEnqueues(t *testing.T) {
 	// Origin server with range support.
 	data := make([]byte, 1<<20)
