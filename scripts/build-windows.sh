@@ -27,7 +27,11 @@ echo "==> cascade.exe (CLI)"
 echo "==> cascade-host.exe (native messaging host)"
 (cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LD" -o "$OUT/cascade-host.exe" ./cmd/cascade-host)
 echo "==> cascade.dll (core, C ABI)"
-(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC="$CC" go build -ldflags "$LD" -buildmode=c-shared -o "$OUT/cascade.dll" ./export/cshared)
+# Export only the Cascade* C ABI: mingw ld takes a .def as a linker input.
+DEF="$(mktemp "${TMPDIR:-/tmp}/cascade-exports.XXXXXX")"; mv "$DEF" "$DEF.def"; DEF="$DEF.def"
+trap 'rm -f "$DEF"' EXIT
+"$ROOT/scripts/export-symbols.sh" def > "$DEF"
+(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC="$CC" go build -ldflags "$LD -extldflags=$DEF" -buildmode=c-shared -o "$OUT/cascade.dll" ./export/cshared)
 
 echo "==> cascade-setup.exe (single-file installer embedding the binaries + extension)"
 PAY="$ROOT/cmd/cascade-setup/payload"
