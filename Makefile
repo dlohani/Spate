@@ -42,22 +42,27 @@ race:
 	$(GO) test -race ./...
 
 # c-shared library for the host OS (libcascade.{dylib,so} or cascade.dll).
+# Only the Cascade* C symbols listed in export/cshared/symbols are exported;
+# scripts/export-symbols.sh renders that list per linker.
 lib:
 	@mkdir -p $(DIST)
 	@export PATH="/opt/homebrew/bin:/usr/local/go/bin:$$HOME/go/bin:$$PATH"; \
 	export OBF_ROOT="$(CURDIR)"; \
 	. $(CURDIR)/scripts/lib/obfuscate.sh; \
 	obf_require_garble; \
+	absdist="$$(cd $(DIST) && pwd)"; \
 	case "$$($(GO) env GOOS)" in \
-	  darwin)  out=$(DIST)/libcascade.dylib ;; \
-	  linux)   out=$(DIST)/libcascade.so ;; \
-	  windows) out=$(DIST)/cascade.dll ;; \
-	  *)       out=$(DIST)/libcascade.so ;; \
+	  darwin)  out=$(DIST)/libcascade.dylib; kind=macos; flag="-Wl,-exported_symbols_list,$$absdist/exports.list" ;; \
+	  linux)   out=$(DIST)/libcascade.so;    kind=gnu;   flag="-Wl,--version-script,$$absdist/exports.map" ;; \
+	  windows) out=$(DIST)/cascade.dll;      kind=def;   flag="$$absdist/exports.def" ;; \
+	  *)       out=$(DIST)/libcascade.so;    kind=gnu;   flag="-Wl,--version-script,$$absdist/exports.map" ;; \
 	esac; \
+	case "$$kind" in macos) ef=exports.list ;; gnu) ef=exports.map ;; def) ef=exports.def ;; esac; \
+	$(CURDIR)/scripts/export-symbols.sh $$kind > $(DIST)/$$ef; \
 	echo "building $$out"; \
 	build_cmd="$$(go_build_cmd lib "$(GO)")"; \
-	echo "CGO_ENABLED=1 $$build_cmd -ldflags \"$(LDFLAGS)\" -buildmode=c-shared -o $$out $(PKG_LIB)"; \
-	CGO_ENABLED=1 $$build_cmd -ldflags "$(LDFLAGS)" -buildmode=c-shared -o $$out $(PKG_LIB)
+	echo "CGO_ENABLED=1 $$build_cmd -ldflags \"$(LDFLAGS) -extldflags=$$flag\" -buildmode=c-shared -o $$out $(PKG_LIB)"; \
+	CGO_ENABLED=1 $$build_cmd -ldflags "$(LDFLAGS) -extldflags=$$flag" -buildmode=c-shared -o $$out $(PKG_LIB)
 
 # Android AAR (requires: gomobile + Android SDK/NDK; ANDROID_NDK_HOME set).
 android:
