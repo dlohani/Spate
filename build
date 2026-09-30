@@ -11,6 +11,7 @@
 #   ./build ios                      Cascade.xcframework (gomobile) + unsigned iOS app
 #   ./build extension                Chrome/Firefox zips, Safari source (+ Safari app on macOS)
 #   ./build all                      everything this host can build
+#   ./build release <target...>      same, but refuses unless the tree is clean and HEAD is tagged
 #   ./build version                  print the version and the build label
 #   ./build bump <x.y.z>             set the version everywhere (VERSION, pubspec, manifests, casks)
 #   ./build clean                    remove dist/
@@ -26,6 +27,8 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 export PATH="/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin:$PATH"
 DIST="$ROOT/dist"
+. "$ROOT/scripts/lib/bundle.sh"
+. "$ROOT/scripts/lib/sha256.sh"
 
 VERSION="$(tr -d '[:space:]' < VERSION)"
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
@@ -36,9 +39,24 @@ if [ -z "$TAGGED" ] || [ -n "$DIRTY" ]; then LABEL="$VERSION+$SHA$DIRTY"; fi
 BUILDNUM="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 export CASCADE_BUILD_NUMBER="$BUILDNUM"
 
+# require_release: a release-labelled build needs a clean tree on tag v$VERSION and
+# must carry the UI.
+require_release() {
+  local why=""
+  [ -z "$DIRTY" ] || why="uncommitted changes"
+  [ "$(git describe --tags --exact-match 2>/dev/null)" = "v$VERSION" ] || why="${why:+$why, }HEAD is not on tag v$VERSION"
+  [ -z "${CASCADE_ALLOW_NO_UI:-}" ] || why="${why:+$why, }CASCADE_ALLOW_NO_UI is set"
+  if [ -n "$why" ]; then
+    echo "release: refused ($why). Commit, tag v$VERSION, unset overrides, then retry." >&2
+    exit 2
+  fi
+}
+
 say()  { printf '\033[1m==> %s\033[0m\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
-need() { command -v "$1" >/dev/null 2>&1 || { note "missing: $1 ($2)"; return 1; }; }
+# need CMD HINT: 1 when CMD is missing (the caller skips that piece); under
+# release a missing toolchain is fatal instead.
+need() { command -v "$1" >/dev/null 2>&1 || { note "missing: $1 ($2)"; [ "$RELEASE" = 1 ] && { echo "release: cannot continue without $1" >&2; exit 2; }; return 1; }; }
 artifacts=()
 # label SRC PLATFORM: moves a finished artifact into dist/<platform>/ under its
 # labelled name (version -> label) and records it. Intermediates (dist/
@@ -53,21 +71,29 @@ label() {
   rm -rf "$dst"
   mv -f "$src" "$dst"
   rm -f "$src.sha256"
-  [ -f "$dst" ] && shasum -a 256 "$dst" | sed "s|$DIST/||" > "$dst.sha256"
+  [ -f "$dst" ] && sha256_file "$dst" | sed "s|$DIST/||" > "$dst.sha256"
   artifacts+=("$dst")
 }
 
-TEST=1; INSTALL=0; CLI_ONLY=0; TARGETS=()
+TEST=1; INSTALL=0; CLI_ONLY=0; RELEASE=0; TARGETS=()
 for a in "$@"; do
   case "$a" in
     --no-test) TEST=0 ;;
     --install) INSTALL=1 ;;
     --cli-only) CLI_ONLY=1 ;;
-    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) TARGETS+=("$a") ;;
   esac
 done
-[ ${#TARGETS[@]} -gt 0 ] || { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[ ${#TARGETS[@]} -gt 0 ] || { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+if [ "${TARGETS[0]}" = release ]; then
+  require_release
+  RELEASE=1
+  # (check the count before slicing: an empty array trips bash 3.2 + set -u)
+  [ ${#TARGETS[@]} -gt 1 ] || { echo "release: name at least one target (e.g. ./build release all)" >&2; exit 2; }
+  TARGETS=("${TARGETS[@]:1}")
+  TEST=1   # a release always runs go vet + tests: --no-test is ignored
+fi
 
 run_tests() {
   [ "$TEST" = 1 ] || return 0
@@ -91,14 +117,30 @@ do_mac() {
 
 do_windows() {
   say "Windows $LABEL"
-  need x86_64-w64-mingw32-gcc "brew install mingw-w64" || return 0
-  scripts/build-windows.sh | grep -E "^==>" || true
-  if [ -f "$DIST/cascade-windows-amd64.zip" ]; then
-    mv -f "$DIST/cascade-windows-amd64.zip" "$DIST/cascade-windows-amd64-$VERSION.zip"; label "$DIST/cascade-windows-amd64-$VERSION.zip" windows
+  need "${CC:-x86_64-w64-mingw32-gcc}" "brew install mingw-w64" || return 0
+  # Filter the script's stdout down to its progress lines; stderr (compiler,
+  # cp and zip errors, the bundle-missing message) reaches the terminal
+  # untouched. The grep is wrapped so "no match" cannot fail the pipeline,
+  # and with pipefail the pipeline's status is then the script's own.
+  local status=0
+  scripts/build-windows.sh | { grep -E "^==>" || true; } || status=$?
+  if [ "$status" != 0 ]; then
+    echo "==> Windows build failed (see above)" >&2
+    exit 1
   fi
+  for z in cascade-windows-amd64.zip cascade-windows-amd64-cli-only.zip; do
+    if [ -f "$DIST/$z" ]; then
+      mv -f "$DIST/$z" "$DIST/${z%.zip}-$VERSION.zip"; label "$DIST/${z%.zip}-$VERSION.zip" windows
+    fi
+  done
   if command -v makensis >/dev/null; then
-    if [ -d "$DIST/windows-amd64/cascade_app" ]; then
-      scripts/package-windows.sh 2>&1 | grep -E "^==>|error" || true
+    if ui_bundle_ok "$DIST/windows-amd64"; then
+      local pstatus=0
+      scripts/package-windows.sh | { grep -E "^==>" || true; } || pstatus=$?
+      if [ "$pstatus" != 0 ]; then
+        echo "==> Windows installer packaging failed (see above)" >&2
+        exit 1
+      fi
       label "$DIST/Cascade-Setup-$VERSION.exe" windows
     else
       note "NSIS installer skipped: the Flutter Windows UI is built on Windows (scripts/flutter-windows.ps1); copy its Release folder to dist/windows-amd64/cascade_app"

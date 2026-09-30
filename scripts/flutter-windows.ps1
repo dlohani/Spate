@@ -33,6 +33,8 @@ Push-Location (Join-Path $Root "apps\flutter")
 # Stamp the exe from the VERSION file (product/file version).
 $Version = (Get-Content (Join-Path $Root "VERSION") -Raw).Trim()
 & flutter build windows --release --build-name=$Version --build-number=1
+# Stop here on a failed build: $ErrorActionPreference does not see native exit codes.
+if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host "error: flutter build windows failed (exit $LASTEXITCODE); nothing copied"; exit 1 }
 $bundle = Join-Path (Get-Location) "build\windows\x64\runner\Release"
 Copy-Item $Dll (Join-Path $bundle "cascade.dll") -Force   # the Dart loader looks next to the exe
 Pop-Location
@@ -46,3 +48,4 @@ if ($CopyTo -ne "") {
 } else {
   Write-Host "    install here: copy that folder next to install-windows.ps1 as 'cascade_app', or"
   Write-Host "    hand it to the Mac for packaging: -CopyTo \\Mac\Home\Projects\cascade"
+}
