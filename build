@@ -152,12 +152,13 @@ do_ios() {
 do_extension() {
   say "browser extension $LABEL"
   scripts/package-extension.sh | grep -E "^==>|unpacked" || true
-  label "$DIST/cascade-extension-$VERSION.zip" extension
-  label "$DIST/cascade-extension-firefox-$VERSION.zip" extension
   if [ "$(uname -s)" = Darwin ] && xcrun --find safari-web-extension-converter >/dev/null 2>&1; then
+    # (re-packages internally, so the zips are labelled afterwards)
     scripts/safari-extension.sh 2>&1 | grep -E "==> installed|error|BUILD" || true
     artifacts+=("$HOME/Applications/Cascade for Safari.app")
   fi
+  label "$DIST/cascade-extension-$VERSION.zip" extension
+  label "$DIST/cascade-extension-firefox-$VERSION.zip" extension
 }
 
 do_bump() {
