@@ -33,6 +33,7 @@ rm -rf "$PAY" && mkdir -p "$PAY/bin" "$PAY/extension"
 cp "$OUT/cascade-host.exe" "$OUT/cascade.exe" "$OUT/cascade.dll" "$ROOT/browser/extension/store-ids.env" "$PAY/bin/"
 ZIP="cascade-windows-amd64.zip"
 if ui_bundle_ok "$OUT"; then
+  cp "$OUT/cascade.dll" "$OUT/cascade_app/cascade.dll"   # the bundle carries the core this build just stamped
   cp -R "$OUT/cascade_app" "$PAY/bin/cascade_app"
 elif allow_no_ui; then
   echo "==> CLI-only build: no Flutter Windows UI (CASCADE_ALLOW_NO_UI=1)"
