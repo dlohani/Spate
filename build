@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Cascade build front door: one command per platform, always from the working
-# tree (uncommitted changes included), version-stamped artifacts in dist/.
+# tree (uncommitted changes included). Finished artifacts land in
+# dist/{macos,windows,linux,extension,android,ios}/ with the version in the
+# name; everything else under dist/ is build intermediates.
 #
 #   ./build mac        [--install]   Flutter app + libcascade -> Cascade-<v>.pkg, Cascade-<v>-macos.zip
 #   ./build windows                  cross-compiled Go pieces + cascade-setup.exe (+ NSIS installer)
@@ -38,16 +40,20 @@ say()  { printf '\033[1m==> %s\033[0m\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
 need() { command -v "$1" >/dev/null 2>&1 || { note "missing: $1 ($2)"; return 1; }; }
 artifacts=()
-# label SRC: renames dist/<name-with-version> to the labelled name when the
-# label differs from the plain version, and records it.
+# label SRC PLATFORM: moves a finished artifact into dist/<platform>/ under its
+# labelled name (version -> label) and records it. Intermediates (dist/
+# windows-amd64, linux-*, libcascade.*, *-extension/ sources) stay in place.
 label() {
-  local src="$1" dst="$1"
+  local src="$1" plat="$2" name dst
   [ -e "$src" ] || return 0
-  if [ "$LABEL" != "$VERSION" ]; then
-    dst="${src/$VERSION/$LABEL}"
-    mv -f "$src" "$dst"
-    [ -f "$src.sha256" ] && { shasum -a 256 "$dst" > "$dst.sha256"; rm -f "$src.sha256"; }
-  fi
+  name="$(basename "$src")"
+  [ "$LABEL" != "$VERSION" ] && name="${name/$VERSION/$LABEL}"
+  mkdir -p "$DIST/$plat"
+  dst="$DIST/$plat/$name"
+  rm -rf "$dst"
+  mv -f "$src" "$dst"
+  rm -f "$src.sha256"
+  [ -f "$dst" ] && shasum -a 256 "$dst" | sed "s|$DIST/||" > "$dst.sha256"
   artifacts+=("$dst")
 }
 
@@ -76,10 +82,10 @@ do_mac() {
   say "macOS $LABEL"
   scripts/flutter-macos.sh build 2>&1 | grep -E "==> app|error:" || true
   scripts/package-macos.sh | grep -E "^==> /|error" || true
-  label "$DIST/Cascade-$VERSION.pkg"
+  label "$DIST/Cascade-$VERSION.pkg" macos
   local app; app="$(ls -d apps/flutter/build/macos/Build/Products/Release/*.app | head -1)"
   local zip="$DIST/Cascade-$VERSION-macos.zip"; rm -f "$zip"
-  ditto -c -k --keepParent "$app" "$zip" && label "$zip"
+  ditto -c -k --keepParent "$app" "$zip" && label "$zip" macos
   if [ "$INSTALL" = 1 ]; then scripts/install-macos.sh | grep -E "^==>" || true; fi
 }
 
@@ -88,12 +94,12 @@ do_windows() {
   need x86_64-w64-mingw32-gcc "brew install mingw-w64" || return 0
   scripts/build-windows.sh | grep -E "^==>" || true
   if [ -f "$DIST/cascade-windows-amd64.zip" ]; then
-    mv -f "$DIST/cascade-windows-amd64.zip" "$DIST/cascade-windows-amd64-$VERSION.zip"; label "$DIST/cascade-windows-amd64-$VERSION.zip"
+    mv -f "$DIST/cascade-windows-amd64.zip" "$DIST/cascade-windows-amd64-$VERSION.zip"; label "$DIST/cascade-windows-amd64-$VERSION.zip" windows
   fi
   if command -v makensis >/dev/null; then
     if [ -d "$DIST/windows-amd64/cascade_app" ]; then
       scripts/package-windows.sh 2>&1 | grep -E "^==>|error" || true
-      label "$DIST/Cascade-Setup-$VERSION.exe"
+      label "$DIST/Cascade-Setup-$VERSION.exe" windows
     else
       note "NSIS installer skipped: the Flutter Windows UI is built on Windows (scripts/flutter-windows.ps1); copy its Release folder to dist/windows-amd64/cascade_app"
     fi
@@ -106,21 +112,21 @@ do_linux() {
   say "Linux $LABEL"
   # (no array: bash 3.2 + set -u trips on an empty "${args[@]}")
   scripts/package-linux.sh ${CLI_ONLY:+--cli-only} | grep -E "^==>|note:" || true
-  for f in "$DIST"/cascade_"$VERSION"_*.deb "$DIST"/cascade-cli_"$VERSION"_*.deb; do [ -e "$f" ] && label "$f"; done
+  for f in "$DIST"/cascade_"$VERSION"_*.deb "$DIST"/cascade-cli_"$VERSION"_*.deb; do [ -e "$f" ] && label "$f" linux; done
   make -s host-linux && note "dist/linux-{amd64,arm64}/cascade-host"
 }
 
 do_android() {
   say "Android $LABEL"
   if need gomobile "make tools" && [ -n "${ANDROID_NDK_HOME:-}${ANDROID_HOME:-}" ]; then
-    make -s android && { mv -f "$DIST/cascade.aar" "$DIST/cascade-$VERSION.aar"; label "$DIST/cascade-$VERSION.aar"; }
+    make -s android && { mv -f "$DIST/cascade.aar" "$DIST/cascade-$VERSION.aar"; label "$DIST/cascade-$VERSION.aar" android; }
   else
     note "libcascade .aar skipped (needs gomobile + ANDROID_HOME/ANDROID_NDK_HOME)"
   fi
   if command -v flutter >/dev/null && [ -n "${ANDROID_HOME:-}${ANDROID_SDK_ROOT:-}" ]; then
     (cd apps/flutter && flutter build apk --release --build-name="$VERSION" --build-number="$BUILDNUM" 2>&1 | grep -E "Built|error" || true)
     local apk="apps/flutter/build/app/outputs/flutter-apk/app-release.apk"
-    [ -f "$apk" ] && { cp "$apk" "$DIST/Cascade-$VERSION.apk"; label "$DIST/Cascade-$VERSION.apk"; }
+    [ -f "$apk" ] && { cp "$apk" "$DIST/Cascade-$VERSION.apk"; label "$DIST/Cascade-$VERSION.apk" android; }
   else
     note "APK skipped (needs Flutter + Android SDK: ANDROID_HOME)"
   fi
@@ -130,14 +136,14 @@ do_ios() {
   [ "$(uname -s)" = Darwin ] || { note "ios: needs a macOS host"; return 0; }
   say "iOS $LABEL"
   if need gomobile "make tools"; then
-    make -s ios && { rm -rf "$DIST/Cascade-$VERSION.xcframework"; mv "$DIST/Cascade.xcframework" "$DIST/Cascade-$VERSION.xcframework"; label "$DIST/Cascade-$VERSION.xcframework"; }
+    make -s ios && { rm -rf "$DIST/Cascade-$VERSION.xcframework"; mv "$DIST/Cascade.xcframework" "$DIST/Cascade-$VERSION.xcframework"; label "$DIST/Cascade-$VERSION.xcframework" ios; }
   fi
   if command -v flutter >/dev/null; then
     (cd apps/flutter && flutter build ios --release --no-codesign --build-name="$VERSION" --build-number="$BUILDNUM" 2>&1 | grep -E "Built|error" || true)
     local app="apps/flutter/build/ios/iphoneos/Runner.app"
     if [ -d "$app" ]; then
       local zip="$DIST/Cascade-$VERSION-ios-unsigned.zip"; rm -f "$zip"
-      ditto -c -k --keepParent "$app" "$zip" && label "$zip"
+      ditto -c -k --keepParent "$app" "$zip" && label "$zip" ios
       note "unsigned: sign with your team in Xcode (or flutter build ipa) for a device"
     fi
   fi
@@ -146,8 +152,8 @@ do_ios() {
 do_extension() {
   say "browser extension $LABEL"
   scripts/package-extension.sh | grep -E "^==>|unpacked" || true
-  label "$DIST/cascade-extension-$VERSION.zip"
-  label "$DIST/cascade-extension-firefox-$VERSION.zip"
+  label "$DIST/cascade-extension-$VERSION.zip" extension
+  label "$DIST/cascade-extension-firefox-$VERSION.zip" extension
   if [ "$(uname -s)" = Darwin ] && xcrun --find safari-web-extension-converter >/dev/null 2>&1; then
     scripts/safari-extension.sh 2>&1 | grep -E "==> installed|error|BUILD" || true
     artifacts+=("$HOME/Applications/Cascade for Safari.app")
