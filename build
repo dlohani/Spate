@@ -26,6 +26,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 export PATH="/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin:$PATH"
 DIST="$ROOT/dist"
+. "$ROOT/scripts/lib/bundle.sh"
 
 VERSION="$(tr -d '[:space:]' < VERSION)"
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
@@ -91,13 +92,23 @@ do_mac() {
 
 do_windows() {
   say "Windows $LABEL"
-  need x86_64-w64-mingw32-gcc "brew install mingw-w64" || return 0
-  scripts/build-windows.sh | grep -E "^==>" || true
-  if [ -f "$DIST/cascade-windows-amd64.zip" ]; then
-    mv -f "$DIST/cascade-windows-amd64.zip" "$DIST/cascade-windows-amd64-$VERSION.zip"; label "$DIST/cascade-windows-amd64-$VERSION.zip" windows
+  need "${CC:-x86_64-w64-mingw32-gcc}" "brew install mingw-w64" || return 0
+  # Show the script's progress lines and every error line, and keep its exit
+  # status: the grep is wrapped so "no match" cannot fail the pipeline, and
+  # with pipefail the pipeline's status is then the script's own.
+  local status=0
+  scripts/build-windows.sh 2>&1 | { grep -E "^==>|^error|^  " || true; } || status=$?
+  if [ "$status" != 0 ]; then
+    echo "==> Windows build failed (see above)" >&2
+    exit 1
   fi
+  for z in cascade-windows-amd64.zip cascade-windows-amd64-cli-only.zip; do
+    if [ -f "$DIST/$z" ]; then
+      mv -f "$DIST/$z" "$DIST/${z%.zip}-$VERSION.zip"; label "$DIST/${z%.zip}-$VERSION.zip" windows
+    fi
+  done
   if command -v makensis >/dev/null; then
-    if [ -d "$DIST/windows-amd64/cascade_app" ]; then
+    if ui_bundle_ok "$DIST/windows-amd64"; then
       scripts/package-windows.sh 2>&1 | grep -E "^==>|error" || true
       label "$DIST/Cascade-Setup-$VERSION.exe" windows
     else
