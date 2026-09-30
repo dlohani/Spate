@@ -53,7 +53,9 @@ require_release() {
 
 say()  { printf '\033[1m==> %s\033[0m\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
-need() { command -v "$1" >/dev/null 2>&1 || { note "missing: $1 ($2)"; return 1; }; }
+# need CMD HINT: 1 when CMD is missing (the caller skips that piece); under
+# release a missing toolchain is fatal instead.
+need() { command -v "$1" >/dev/null 2>&1 || { note "missing: $1 ($2)"; [ "$RELEASE" = 1 ] && { echo "release: cannot continue without $1" >&2; exit 2; }; return 1; }; }
 artifacts=()
 # label SRC PLATFORM: moves a finished artifact into dist/<platform>/ under its
 # labelled name (version -> label) and records it. Intermediates (dist/
@@ -72,7 +74,7 @@ label() {
   artifacts+=("$dst")
 }
 
-TEST=1; INSTALL=0; CLI_ONLY=0; TARGETS=()
+TEST=1; INSTALL=0; CLI_ONLY=0; RELEASE=0; TARGETS=()
 for a in "$@"; do
   case "$a" in
     --no-test) TEST=0 ;;
@@ -85,6 +87,7 @@ done
 [ ${#TARGETS[@]} -gt 0 ] || { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 if [ "${TARGETS[0]}" = release ]; then
   require_release
+  RELEASE=1
   # (check the count before slicing: an empty array trips bash 3.2 + set -u)
   [ ${#TARGETS[@]} -gt 1 ] || { echo "release: name at least one target (e.g. ./build release all)" >&2; exit 2; }
   TARGETS=("${TARGETS[@]:1}")
