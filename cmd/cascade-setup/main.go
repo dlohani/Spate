@@ -143,7 +143,7 @@ func main() {
 	app := filepath.Join(bin, "cascade_app", "cascade_app.exe")
 	if _, err := os.Stat(app); err != nil {
 		fmt.Println("  ! no Flutter UI installed (--no-ui): the app will not start until bin\\cascade_app is built and copied in")
-	} else if *noUI {
+	} else if *noUI && !bundle.HasWindowsUI(payload, "payload") {
 		fmt.Println("  ! --no-ui: keeping the previously installed UI at", app, "(not from this setup)")
 	}
 	if !*noAuto {
