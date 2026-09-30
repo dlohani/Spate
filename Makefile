@@ -9,6 +9,7 @@
 # c-shared and gomobile require CGO and a platform toolchain; targets build for
 # the HOST OS. Cross-building the shared libs needs a cross C compiler (set CC).
 
+SHELL   := /bin/bash
 GO      ?= go
 DIST    ?= dist
 PKG_CLI  = ./cmd/cascade
@@ -23,8 +24,16 @@ LDFLAGS  = -X cascade/internal/version.Version=$(VERSION)
 
 all: cli lib
 
+# CASCADE_OBFUSCATE=1 routes cli/lib through garble instead of `go build`
+# (scripts/lib/obfuscate.sh); off by default, so both behave exactly as
+# before unless a caller opts in.
 cli:
-	$(GO) build -ldflags "$(LDFLAGS)" -o $(DIST)/cascade $(PKG_CLI)
+	@export PATH="/opt/homebrew/bin:/usr/local/go/bin:$$HOME/go/bin:$$PATH"; \
+	. $(CURDIR)/scripts/lib/obfuscate.sh; \
+	obf_require_garble; \
+	build_cmd="$$(go_build_cmd cli)"; \
+	echo "$$build_cmd -ldflags \"$(LDFLAGS)\" -o $(DIST)/cascade $(PKG_CLI)"; \
+	$$build_cmd -ldflags "$(LDFLAGS)" -o $(DIST)/cascade $(PKG_CLI)
 
 test:
 	$(GO) test ./...
@@ -35,14 +44,19 @@ race:
 # c-shared library for the host OS (libcascade.{dylib,so} or cascade.dll).
 lib:
 	@mkdir -p $(DIST)
-	@case "$$($(GO) env GOOS)" in \
+	@export PATH="/opt/homebrew/bin:/usr/local/go/bin:$$HOME/go/bin:$$PATH"; \
+	. $(CURDIR)/scripts/lib/obfuscate.sh; \
+	obf_require_garble; \
+	case "$$($(GO) env GOOS)" in \
 	  darwin)  out=$(DIST)/libcascade.dylib ;; \
 	  linux)   out=$(DIST)/libcascade.so ;; \
 	  windows) out=$(DIST)/cascade.dll ;; \
 	  *)       out=$(DIST)/libcascade.so ;; \
 	esac; \
 	echo "building $$out"; \
-	CGO_ENABLED=1 $(GO) build -ldflags "$(LDFLAGS)" -buildmode=c-shared -o $$out $(PKG_LIB)
+	build_cmd="$$(go_build_cmd lib)"; \
+	echo "CGO_ENABLED=1 $$build_cmd -ldflags \"$(LDFLAGS)\" -buildmode=c-shared -o $$out $(PKG_LIB)"; \
+	CGO_ENABLED=1 $$build_cmd -ldflags "$(LDFLAGS)" -buildmode=c-shared -o $$out $(PKG_LIB)
 
 # Android AAR (requires: gomobile + Android SDK/NDK; ANDROID_NDK_HOME set).
 android:
