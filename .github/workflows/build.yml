@@ -86,6 +86,8 @@ jobs:
       - name: Flutter Windows UI (builds cascade.dll natively when absent)
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File scripts\flutter-windows.ps1 -CopyTo (Get-Location).Path
+      - name: what the Flutter build changed in the tree (a dirty tree taints the label)
+        run: git status --porcelain && git diff --stat
       - name: package
         env: { CC: gcc }
         run: ./build windows --no-test

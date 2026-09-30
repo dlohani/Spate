@@ -28,6 +28,7 @@ cd "$ROOT"
 export PATH="/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin:$PATH"
 DIST="$ROOT/dist"
 . "$ROOT/scripts/lib/bundle.sh"
+. "$ROOT/scripts/lib/sha256.sh"
 
 VERSION="$(tr -d '[:space:]' < VERSION)"
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
@@ -70,7 +71,7 @@ label() {
   rm -rf "$dst"
   mv -f "$src" "$dst"
   rm -f "$src.sha256"
-  [ -f "$dst" ] && shasum -a 256 "$dst" | sed "s|$DIST/||" > "$dst.sha256"
+  [ -f "$dst" ] && sha256_file "$dst" | sed "s|$DIST/||" > "$dst.sha256"
   artifacts+=("$dst")
 }
 
