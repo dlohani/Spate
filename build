@@ -38,12 +38,12 @@ if [ -z "$TAGGED" ] || [ -n "$DIRTY" ]; then LABEL="$VERSION+$SHA$DIRTY"; fi
 BUILDNUM="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 export CASCADE_BUILD_NUMBER="$BUILDNUM"
 
-# require_release: a release-labelled build needs a clean tree on a tag and
+# require_release: a release-labelled build needs a clean tree on tag v$VERSION and
 # must carry the UI.
 require_release() {
   local why=""
   [ -z "$DIRTY" ] || why="uncommitted changes"
-  [ -n "$TAGGED" ] || why="${why:+$why, }HEAD is not on a tag"
+  [ "$(git describe --tags --exact-match 2>/dev/null)" = "v$VERSION" ] || why="${why:+$why, }HEAD is not on tag v$VERSION"
   [ -z "${CASCADE_ALLOW_NO_UI:-}" ] || why="${why:+$why, }CASCADE_ALLOW_NO_UI is set"
   if [ -n "$why" ]; then
     echo "release: refused ($why). Commit, tag v$VERSION, unset overrides, then retry." >&2
