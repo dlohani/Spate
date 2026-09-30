@@ -1,0 +1,90 @@
+name: build
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+env:
+  GO_VERSION: "1.27.x"
+  FLUTTER_VERSION: "3.47.5"
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "${{ env.GO_VERSION }}" }
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: scripts/test/run.sh
+      - name: core stays standard-library only
+        run: |
+          if grep -q '^require' go.mod; then echo "go.mod has a require block; the core must stay standard-library only" >&2; exit 1; fi
+
+  macos:
+    needs: test
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version: "${{ env.GO_VERSION }}" }
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
+      - run: ./build mac extension --no-test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: |
+            dist/macos/*
+            dist/extension/*
+
+  linux:
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version: "${{ env.GO_VERSION }}" }
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libayatana-appindicator3-dev
+      - run: ./build linux --no-test
+      - uses: actions/upload-artifact@v4
+        with: { name: linux, path: "dist/linux/*" }
+
+  windows:
+    needs: test
+    runs-on: windows-2022
+    defaults:
+      run: { shell: bash }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with: { go-version: "${{ env.GO_VERSION }}" }
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
+      - name: toolchain (MinGW for the DLL, NSIS for the installer)
+        run: choco install mingw nsis -y --no-progress
+      - name: toolchain check
+        # A step's PATH is fixed at job start; if either command is missing
+        # after the install above, append the install folder to $GITHUB_PATH
+        # in the previous step (choco prints where it installed) and re-run.
+        run: |
+          gcc --version | head -1
+          makensis -VERSION
+          7z | head -2
+      - name: Flutter Windows UI (builds cascade.dll natively when absent)
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts\flutter-windows.ps1 -CopyTo (Get-Location).Path
+      - name: package
+        env: { CC: gcc }
+        run: ./build windows --no-test
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: "dist/windows/*" }
