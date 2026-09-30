@@ -29,7 +29,9 @@ check_install_version "$(installed_version_linux)" "$VERSION"
 echo "==> building"
 mkdir -p "$BIN"
 (cd "$ROOT" && go build -ldflags "$LDFLAGS" -o "$BIN/cascade-host.new" ./cmd/cascade-host)
-(cd "$ROOT" && CGO_ENABLED=1 go build -ldflags "$LDFLAGS" -buildmode=c-shared -o "$BIN/libcascade.so.new" ./export/cshared)
+MAP="$(mktemp "${TMPDIR:-/tmp}/cascade-exports.XXXXXX")"; trap 'rm -f "$MAP"' EXIT
+"$ROOT/scripts/export-symbols.sh" gnu > "$MAP"   # export only the Cascade* C ABI
+(cd "$ROOT" && CGO_ENABLED=1 go build -ldflags "$LDFLAGS -extldflags=-Wl,--version-script,$MAP" -buildmode=c-shared -o "$BIN/libcascade.so.new" ./export/cshared)
 
 # Stop a running instance before replacing its files.
 pkill -x cascade_app >/dev/null 2>&1 || true   # by process name; a -f pattern could match a shell

@@ -68,6 +68,12 @@ setup refuses to install unless run with `--no-ui`. And `./build release
 release-labelled artifact always comes from a known commit. Script tests:
 `scripts/test/run.sh`.
 
+Release builds are obfuscated (Go core via garble, Dart names, minimal C
+exports): `./build release` turns on `CASCADE_OBFUSCATE=1` and needs
+`garble`; set the variable yourself to try it on a dev build. See
+[Release obfuscation](docs/delivery.md#release-obfuscation) for what it does,
+the size cost, and the symbol maps to keep.
+
 Just the CLI: `go build -o cascade ./cmd/cascade` (Go 1.22+, standard library
 only).
 

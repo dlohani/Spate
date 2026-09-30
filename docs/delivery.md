@@ -137,6 +137,45 @@ iOS (background URLSession policy).
 - Tests are the definition of done: schema contract tests, client interface
   tests per platform, and the installer smoke test per OS.
 
+### Release obfuscation
+
+`./build release <targets>` and tag-push CI (`refs/tags/v*`) build with
+`CASCADE_OBFUSCATE=1`. Dev builds and PR/branch CI do not, for speed. Set the
+variable yourself to try it on a dev build; a release without `garble` on PATH
+(`go install mvdan.cc/garble@v0.18.0`) fails loudly instead of shipping plain
+binaries. The garble seed derives from VERSION plus the git SHA (override with
+`CASCADE_OBF_SEED`), so a release rebuilds identically given the pinned
+toolchains CI uses (Go 1.27.x and garble v0.18.0).
+
+Three layers:
+
+- Go core: garble strips and randomizes package, function and type names on the
+  macOS, Windows and Linux release builds (macOS via `make lib` / `cli`, Windows
+  via `build-windows.sh`, Linux via `package-linux.sh`, all through the same
+  `scripts/lib/obfuscate.sh` helper); the shared library also gets `-literals`
+  (string and constant obfuscation) and `-tiny`; the CLI gets `-tiny` only.
+- C ABI: the shared library exports only the 26 `Cascade*` symbols, on macOS,
+  Windows and Linux (always-on hardening, independent of the switch).
+- Dart UI: `flutter build --obfuscate --split-debug-info` randomizes Dart
+  identifiers on the macOS, Windows and Linux desktop builds.
+
+Cost: `-literals` roughly doubles the size of the core library, and garble
+builds are slower.
+
+Symbol maps: `--split-debug-info` writes maps to
+`dist/debug-symbols/<platform>-<version>/`. They are required to symbolize
+crash traces from a release and must be kept per release. CI uploads them as a
+separate `<platform>-debug-symbols` artifact (only present on obfuscated tag
+builds); never ship them inside the installers.
+
+What this does and does not buy: it raises decompilation cost sharply and
+defeats casual copying, grep and off-the-shelf decompilers. It does not stop a
+determined, skilled reverse engineer with time; the standard library, syscall
+patterns and control flow remain. Anti-debugging, packers and control-flow
+flattening are deliberately out of scope (fragile, antivirus-triggering, low
+marginal value). Obfuscation is not secret storage: keep secrets out of the
+binary (the capture token is already generated at runtime).
+
 ## Order of work
 
 Phase 1 first: it removes the class of failure where a build ships without a
