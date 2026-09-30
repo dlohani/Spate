@@ -1,7 +1,14 @@
 # Shared by the Makefile lib/cli targets: is release obfuscation on, is
 # garble available, and what build command to run. Off by default; every
-# build behaves exactly as today unless CASCADE_OBFUSCATE=1 is set. Source it;
-# bash 3.2 compatible.
+# build behaves exactly as today unless CASCADE_OBFUSCATE=1 is set. Source
+# it; POSIX sh (dash, bash 3.2, etc.) compatible -- no bash-only arrays,
+# ${var:offset:len} or C-style for loops, so make's default /bin/sh runs it
+# on every platform without a SHELL override.
+#
+# obf_seed needs the repo root to find VERSION and .git; callers set
+# OBF_ROOT before sourcing (the Makefile passes $(CURDIR)). It defaults to
+# the current directory, which is right when a script sources this from the
+# repo root itself.
 
 # obf_on: 0 only when CASCADE_OBFUSCATE is exactly "1".
 obf_on() {
@@ -30,29 +37,35 @@ obf_seed() {
     printf '%s' "$CASCADE_OBF_SEED"
     return 0
   fi
-  local root version sha hex fmt i
-  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  local root version sha hex fmt i pair
+  root="${OBF_ROOT:-.}"
   . "$root/scripts/lib/sha256.sh"
   version="$(tr -d '[:space:]' < "$root/VERSION" 2>/dev/null || true)"
   sha="$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo nogit)"
-  hex="$(printf '%s-%s' "$version" "$sha" | sha256_file | awk '{print $1}')"
-  hex="${hex:0:16}"   # 8 bytes: all garble -seed uses anyway
+  hex="$(printf '%s-%s' "$version" "$sha" | sha256_file | awk '{print $1}' | cut -c1-16)"
+  # 8 bytes: all garble -seed uses anyway. Build an octal-escaped byte
+  # string (POSIX printf has \NNN, not the GNU-only \xHH) and base64 it.
   fmt=""
-  for ((i = 0; i < ${#hex}; i += 2)); do
-    fmt="$fmt\\x${hex:i:2}"
+  i=1
+  while [ "$i" -le 15 ]; do
+    pair="$(printf '%s' "$hex" | cut -c"$i-$((i + 1))")"
+    fmt="$fmt$(printf '\\%03o' "$((0x$pair))")"
+    i=$((i + 2))
   done
   printf "$fmt" | base64
 }
 
-# go_build_cmd PROFILE: the build command to run, printed to stdout. PROFILE
-# is "lib" (garble -literals -tiny) or anything else, e.g. "cli" (garble
-# -tiny, no -literals, to keep the CLI small). Plain "go build" when
-# obfuscation is off. Callers append the same -ldflags/-buildmode/output/
-# package args either way, and still honour CGO_ENABLED and CC.
+# go_build_cmd PROFILE [GOBIN]: the build command to run, printed to stdout.
+# Off: "GOBIN build" -- GOBIN defaults to "go" but callers pass the
+# Makefile's $(GO) so an override (e.g. `make GO=/path/to/go lib`) still
+# takes effect, exactly like the plain build. On: garble; PROFILE "lib"
+# adds -literals, anything else (e.g. "cli") gets only -tiny, to keep the
+# CLI small. Callers append the same -ldflags/-buildmode/output/package
+# args either way, and still honour CGO_ENABLED and CC.
 go_build_cmd() {
-  local profile="$1"
+  local profile="$1" gobin="${2:-go}"
   if ! obf_on; then
-    printf 'go build'
+    printf '%s build' "$gobin"
     return 0
   fi
   if [ "$profile" = "lib" ]; then

@@ -9,7 +9,6 @@
 # c-shared and gomobile require CGO and a platform toolchain; targets build for
 # the HOST OS. Cross-building the shared libs needs a cross C compiler (set CC).
 
-SHELL   := /bin/bash
 GO      ?= go
 DIST    ?= dist
 PKG_CLI  = ./cmd/cascade
@@ -29,9 +28,10 @@ all: cli lib
 # before unless a caller opts in.
 cli:
 	@export PATH="/opt/homebrew/bin:/usr/local/go/bin:$$HOME/go/bin:$$PATH"; \
+	export OBF_ROOT="$(CURDIR)"; \
 	. $(CURDIR)/scripts/lib/obfuscate.sh; \
 	obf_require_garble; \
-	build_cmd="$$(go_build_cmd cli)"; \
+	build_cmd="$$(go_build_cmd cli "$(GO)")"; \
 	echo "$$build_cmd -ldflags \"$(LDFLAGS)\" -o $(DIST)/cascade $(PKG_CLI)"; \
 	$$build_cmd -ldflags "$(LDFLAGS)" -o $(DIST)/cascade $(PKG_CLI)
 
@@ -45,6 +45,7 @@ race:
 lib:
 	@mkdir -p $(DIST)
 	@export PATH="/opt/homebrew/bin:/usr/local/go/bin:$$HOME/go/bin:$$PATH"; \
+	export OBF_ROOT="$(CURDIR)"; \
 	. $(CURDIR)/scripts/lib/obfuscate.sh; \
 	obf_require_garble; \
 	case "$$($(GO) env GOOS)" in \
@@ -54,7 +55,7 @@ lib:
 	  *)       out=$(DIST)/libcascade.so ;; \
 	esac; \
 	echo "building $$out"; \
-	build_cmd="$$(go_build_cmd lib)"; \
+	build_cmd="$$(go_build_cmd lib "$(GO)")"; \
 	echo "CGO_ENABLED=1 $$build_cmd -ldflags \"$(LDFLAGS)\" -buildmode=c-shared -o $$out $(PKG_LIB)"; \
 	CGO_ENABLED=1 $$build_cmd -ldflags "$(LDFLAGS)" -buildmode=c-shared -o $$out $(PKG_LIB)
 
