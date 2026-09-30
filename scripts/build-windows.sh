@@ -14,7 +14,7 @@ export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 OUT="$ROOT/dist/windows-amd64"
 . "$ROOT/scripts/lib/bundle.sh"
 CC="${CC:-x86_64-w64-mingw32-gcc}"
-command -v "$CC" >/dev/null || { echo "missing $CC: brew install mingw-w64 (or set CC)"; exit 1; }
+command -v "$CC" >/dev/null || { echo "missing $CC: brew install mingw-w64 (or set CC)" >&2; exit 1; }
 mkdir -p "$OUT"
 find "$OUT" -maxdepth 1 -type f -delete   # keep dist/windows-amd64/cascade_app (built on Windows)
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
