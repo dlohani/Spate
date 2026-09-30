@@ -14,7 +14,7 @@ unset CASCADE_ALLOW_NO_UI
 
 mkdir -p "$TMP/scripts/lib"
 cp "$ROOT/build" "$ROOT/VERSION" "$TMP/"
-cp "$ROOT/scripts/lib/bundle.sh" "$TMP/scripts/lib/"
+cp "$ROOT"/scripts/lib/*.sh "$TMP/scripts/lib/"   # every library build sources
 cd "$TMP"
 git init -q
 git config user.email t@t
