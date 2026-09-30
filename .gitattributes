@@ -1,0 +1,4 @@
+# Text files are LF everywhere, including Windows checkouts: the bash scripts
+# need it, and Flutter regenerates its plugin registrants with LF, which
+# otherwise shows as a modified tree (and a ".dirty" label) on Windows runners.
+* text=auto eol=lf
