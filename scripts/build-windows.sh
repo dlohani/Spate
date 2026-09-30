@@ -4,7 +4,9 @@
 #   cascade-host.exe   browser native-messaging host (pure Go)
 #   cascade.dll/.h     the core as a C shared library (needs mingw-w64)
 # The Flutter Windows UI must be built on Windows (scripts/flutter-windows.ps1)
-# and copied to dist/windows-amd64/cascade_app; it is bundled when present.
+# and copied to dist/windows-amd64/cascade_app; the build refuses without it.
+# CASCADE_ALLOW_NO_UI=1 produces a CLI-only artifact instead, whose
+# cascade-setup.exe then needs --no-ui to install.
 #
 #   brew install mingw-w64   (once)
 #   scripts/build-windows.sh
@@ -67,8 +69,9 @@ is refused (--force overrides).
 
 Manual alternative: install-windows.ps1 (same steps via PowerShell).
 cascade.exe is the command-line downloader. cascade.dll is the core for the
-Flutter UI, which you build on Windows with flutter-windows.ps1 (the setup
-bundles cascade_app\ when it was present at packaging time).
+Flutter UI, which you build on Windows with flutter-windows.ps1; the build
+refuses to package without it. A CLI-only build (CASCADE_ALLOW_NO_UI=1)
+has no cascade_app\, and its cascade-setup.exe needs --no-ui to install.
 TXT
 (cd "$ROOT/dist" && rm -f cascade-windows-amd64.zip cascade-windows-amd64-cli-only.zip &&
   if command -v zip >/dev/null; then zip -qr "$ZIP" windows-amd64; else 7z a -tzip -bso0 "$ZIP" windows-amd64; fi)
