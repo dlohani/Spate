@@ -46,3 +46,4 @@ if ($CopyTo -ne "") {
 } else {
   Write-Host "    install here: copy that folder next to install-windows.ps1 as 'cascade_app', or"
   Write-Host "    hand it to the Mac for packaging: -CopyTo \\Mac\Home\Projects\cascade"
+}
