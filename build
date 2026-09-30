@@ -113,11 +113,12 @@ do_mac() {
 do_windows() {
   say "Windows $LABEL"
   need "${CC:-x86_64-w64-mingw32-gcc}" "brew install mingw-w64" || return 0
-  # Show the script's progress lines and every error line, and keep its exit
-  # status: the grep is wrapped so "no match" cannot fail the pipeline, and
-  # with pipefail the pipeline's status is then the script's own.
+  # Filter the script's stdout down to its progress lines; stderr (compiler,
+  # cp and zip errors, the bundle-missing message) reaches the terminal
+  # untouched. The grep is wrapped so "no match" cannot fail the pipeline,
+  # and with pipefail the pipeline's status is then the script's own.
   local status=0
-  scripts/build-windows.sh 2>&1 | { grep -E "^==>|^error|^  " || true; } || status=$?
+  scripts/build-windows.sh | { grep -E "^==>" || true; } || status=$?
   if [ "$status" != 0 ]; then
     echo "==> Windows build failed (see above)" >&2
     exit 1
@@ -129,7 +130,12 @@ do_windows() {
   done
   if command -v makensis >/dev/null; then
     if ui_bundle_ok "$DIST/windows-amd64"; then
-      scripts/package-windows.sh 2>&1 | grep -E "^==>|error" || true
+      local pstatus=0
+      scripts/package-windows.sh | { grep -E "^==>" || true; } || pstatus=$?
+      if [ "$pstatus" != 0 ]; then
+        echo "==> Windows installer packaging failed (see above)" >&2
+        exit 1
+      fi
       label "$DIST/Cascade-Setup-$VERSION.exe" windows
     else
       note "NSIS installer skipped: the Flutter Windows UI is built on Windows (scripts/flutter-windows.ps1); copy its Release folder to dist/windows-amd64/cascade_app"
