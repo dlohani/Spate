@@ -32,7 +32,16 @@ if (-not (Test-Path $Dll)) {
 Push-Location (Join-Path $Root "apps\flutter")
 # Stamp the exe from the VERSION file (product/file version).
 $Version = (Get-Content (Join-Path $Root "VERSION") -Raw).Trim()
-& flutter build windows --release --build-name=$Version --build-number=1
+# CASCADE_OBFUSCATE=1 (exactly "1"): rename Dart identifiers. The symbol map is
+# a build secret and stays outside the bundle, under dist\debug-symbols.
+$obfArgs = @()
+if ($env:CASCADE_OBFUSCATE -eq "1") {
+  $symDir = Join-Path $Root "dist\debug-symbols\windows-$Version"
+  New-Item -ItemType Directory -Force -Path $symDir | Out-Null
+  $obfArgs = @("--obfuscate", "--split-debug-info=$symDir")
+  Write-Host "==> Dart obfuscation on; symbol maps: $symDir"
+}
+& flutter build windows --release --build-name=$Version --build-number=1 @obfArgs
 # Stop here on a failed build: $ErrorActionPreference does not see native exit codes.
 if ($LASTEXITCODE -ne 0) { Pop-Location; Write-Host "error: flutter build windows failed (exit $LASTEXITCODE); nothing copied"; exit 1 }
 $bundle = Join-Path (Get-Location) "build\windows\x64\runner\Release"

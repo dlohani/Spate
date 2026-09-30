@@ -24,6 +24,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 . "$ROOT/scripts/lib/extension.sh"
+. "$ROOT/scripts/lib/obfuscate.sh"
 load_store_ids "$ROOT"
 LDFLAGS="-s -w -X cascade/internal/version.Version=$VERSION"
 DEB="$ROOT/packaging/debian"
@@ -67,7 +68,16 @@ if [ "$CLI_ONLY" = 0 ]; then
   BUNDLE="$(ls -d "$ROOT"/apps/flutter/build/linux/*/release/bundle 2>/dev/null | head -1 || true)"
   if [ -z "$BUNDLE" ]; then
     echo "    Flutter bundle not built; running flutter build linux"
-    (cd "$ROOT/apps/flutter" && flutter build linux --release --build-name="$VERSION" --build-number=1 >/dev/null)
+    # CASCADE_OBFUSCATE=1: obfuscate Dart; symbol map stays outside the bundle.
+    OBF_FLAGS=""
+    if obf_on; then
+      SYMDIR="$ROOT/dist/debug-symbols/linux-$VERSION"
+      mkdir -p "$SYMDIR"
+      OBF_FLAGS="--obfuscate --split-debug-info=$SYMDIR"
+      echo "    Dart obfuscation on; symbol maps: $SYMDIR"
+    fi
+    # shellcheck disable=SC2086
+    (cd "$ROOT/apps/flutter" && flutter build linux --release --build-name="$VERSION" --build-number=1 $OBF_FLAGS >/dev/null)
     BUNDLE="$(ls -d "$ROOT"/apps/flutter/build/linux/*/release/bundle | head -1)"
   fi
   cp -R "$BUNDLE" "$STAGE/usr/lib/cascade/cascade_app"

@@ -11,6 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 MODE="${1:-build}"
+. "$ROOT/scripts/lib/obfuscate.sh"
 
 echo "==> building Go core (libcascade.dylib)"
 (cd "$ROOT" && make lib >/dev/null)
@@ -30,7 +31,17 @@ case "$MODE" in
     VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
     BUILD="$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)"
     mkdir -p build && touch build/.metadata_never_index
-    flutter build macos --release --build-name="$VERSION" --build-number="$BUILD"
+    # CASCADE_OBFUSCATE=1: rename Dart identifiers. The symbol map is a build
+    # secret (needed to symbolize crash traces) and lives OUTSIDE the bundle.
+    OBF_FLAGS=""
+    if obf_on; then
+      SYMDIR="$ROOT/dist/debug-symbols/macos-$VERSION"
+      mkdir -p "$SYMDIR"
+      OBF_FLAGS="--obfuscate --split-debug-info=$SYMDIR"
+      echo "==> Dart obfuscation on; symbol maps: $SYMDIR"
+    fi
+    # shellcheck disable=SC2086
+    flutter build macos --release --build-name="$VERSION" --build-number="$BUILD" $OBF_FLAGS
     APP="$(ls -d build/macos/Build/Products/Release/*.app | head -1)"
     mkdir -p "$APP/Contents/Frameworks"
     cp "$DYLIB" "$APP/Contents/Frameworks/libcascade.dylib"
