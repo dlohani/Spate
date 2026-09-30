@@ -60,6 +60,14 @@ changes, so a dev build is never mistaken for a release while installers keep
 comparing plain `x.y.z`. Missing toolchains (mingw, makensis, Android SDK,
 gomobile) are reported in one line and that piece is skipped.
 
+Two things are never skipped silently. A Windows build without the Flutter
+UI at `dist/windows-amd64/cascade_app` fails; set `CASCADE_ALLOW_NO_UI=1`
+for a CLI-only artifact, which is then named `...-cli-only.zip` and whose
+setup refuses to install unless run with `--no-ui`. And `./build release
+<target...>` refuses unless the tree is clean and HEAD is on a tag, so a
+release-labelled artifact always comes from a known commit. Script tests:
+`scripts/test/run.sh`.
+
 Just the CLI: `go build -o cascade ./cmd/cascade` (Go 1.22+, standard library
 only).
 
