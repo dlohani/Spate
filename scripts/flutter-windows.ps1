@@ -11,10 +11,16 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Dll  = Join-Path $Root "dist\windows-amd64\cascade.dll"
 if (-not (Test-Path $Dll)) {
-  # Prefer a DLL already installed from the cross-compiled zip; else build it.
+  # The core must match this checkout: prefer the DLL the Mac just
+  # cross-compiled (./build windows) in the -CopyTo repo, then an installed
+  # one (may be older!), else build it natively.
+  $fromMac = if ($CopyTo -ne "") { Join-Path $CopyTo "dist\windows-amd64\cascade.dll" } else { "" }
   $installed = Join-Path $env:LOCALAPPDATA "Cascade\bin\cascade.dll"
   New-Item -ItemType Directory -Force -Path (Split-Path $Dll) | Out-Null
-  if (Test-Path $installed) {
+  if ($fromMac -ne "" -and (Test-Path $fromMac)) {
+    Copy-Item $fromMac $Dll -Force
+    Write-Host "using cascade.dll built on the Mac: $fromMac"
+  } elseif (Test-Path $installed) {
     Copy-Item $installed $Dll -Force
     Write-Host "using installed cascade.dll from $installed"
   } else {
