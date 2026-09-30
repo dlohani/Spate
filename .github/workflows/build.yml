@@ -36,13 +36,25 @@ jobs:
         with: { go-version: "${{ env.GO_VERSION }}" }
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
-      - run: ./build mac extension --no-test
+      - name: install garble (release obfuscation)
+        run: |
+          go install mvdan.cc/garble@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: build
+        run: ./build mac extension --no-test
+        env:
+          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       - uses: actions/upload-artifact@v4
         with:
           name: macos
           path: |
             dist/macos/*
             dist/extension/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-debug-symbols
+          path: dist/debug-symbols/**
+          if-no-files-found: ignore
 
   linux:
     needs: test
@@ -54,12 +66,24 @@ jobs:
         with: { go-version: "${{ env.GO_VERSION }}" }
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
+      - name: install garble (release obfuscation)
+        run: |
+          go install mvdan.cc/garble@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libayatana-appindicator3-dev
-      - run: ./build linux --no-test
+      - name: build
+        run: ./build linux --no-test
+        env:
+          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       - uses: actions/upload-artifact@v4
         with: { name: linux, path: "dist/linux/*" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-debug-symbols
+          path: dist/debug-symbols/**
+          if-no-files-found: ignore
 
   windows:
     needs: test
@@ -73,6 +97,10 @@ jobs:
         with: { go-version: "${{ env.GO_VERSION }}" }
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
+      - name: install garble (release obfuscation)
+        run: |
+          go install mvdan.cc/garble@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: toolchain (MinGW for the DLL, NSIS for the installer)
         run: choco install mingw nsis -y --no-progress
       - name: toolchain check
@@ -85,11 +113,20 @@ jobs:
           7z | head -2
       - name: Flutter Windows UI (builds cascade.dll natively when absent)
         shell: pwsh
+        env:
+          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
         run: powershell -ExecutionPolicy Bypass -File scripts\flutter-windows.ps1 -CopyTo (Get-Location).Path
       - name: what the Flutter build changed in the tree (a dirty tree taints the label)
         run: git status --porcelain && git diff --stat
       - name: package
-        env: { CC: gcc }
+        env:
+          CC: gcc
+          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
         run: ./build windows --no-test
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: "dist/windows/*" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-debug-symbols
+          path: dist/debug-symbols/**
+          if-no-files-found: ignore
