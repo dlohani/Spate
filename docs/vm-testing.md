@@ -31,10 +31,25 @@ folder to `dist\windows-amd64\cascade_app` on the Mac, then package.
 
 The Windows UI is the Flutter app and it can only be compiled on Windows, so
 every release needs this once on the VM (a few minutes; incremental after
-the first time):
+the first time).
+
+One-time tooling in the VM (PowerShell as your user):
 
 ```powershell
-git clone <repo> cascade ; cd cascade          # or git pull in an existing clone
+winget install Git.Git
+winget install Microsoft.VisualStudio.2022.Community --override "--add Microsoft.VisualStudio.Workload.NativeDesktop --includeRecommended --passive"
+git clone https://github.com/flutter/flutter.git -b stable C:\src\flutter
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\src\flutter\bin", "User")   # then open a new PowerShell
+flutter doctor                     # Windows toolchain and Visual Studio must show green
+start ms-settings:developers       # turn on Developer Mode (Flutter plugins need symlinks)
+```
+
+Check the Mac share is visible: in Explorer open `\\Mac\Home` (Parallels ->
+VM configuration -> Options -> Sharing -> Share Mac: Home folder). Then:
+
+```powershell
+git clone \\Mac\Home\Projects\cascade C:\src\cascade     # clones straight from the Mac checkout
+cd C:\src\cascade                                          # later releases: git pull
 powershell -ExecutionPolicy Bypass -File scripts\flutter-windows.ps1 -CopyTo \\Mac\Home\Projects\cascade
 ```
 
