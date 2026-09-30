@@ -21,10 +21,11 @@
 # with ar + tar (same result).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
+export PATH="$HOME/go/bin:/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 . "$ROOT/scripts/lib/extension.sh"
 . "$ROOT/scripts/lib/obfuscate.sh"
+export OBF_ROOT="$ROOT"
 load_store_ids "$ROOT"
 LDFLAGS="-s -w -X cascade/internal/version.Version=$VERSION"
 DEB="$ROOT/packaging/debian"
@@ -51,6 +52,7 @@ case "$ARCH" in
   arm64) GOARCH=arm64 ;;
   *) echo "unsupported --arch $ARCH (amd64|arm64)" >&2; exit 2 ;;
 esac
+obf_require_garble   # CASCADE_OBFUSCATE=1 without garble fails loud, never ships plain
 
 PKG=cascade; [ "$CLI_ONLY" = 1 ] && PKG=cascade-cli
 STAGE="$ROOT/dist/deb-stage"
@@ -58,13 +60,22 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/DEBIAN" "$STAGE/usr/bin" "$STAGE/usr/lib/cascade" "$STAGE/usr/share/doc/$PKG"
 
 echo "==> building $PKG $VERSION ($ARCH)"
-(cd "$ROOT" && GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "$STAGE/usr/bin/cascade" ./cmd/cascade)
-(cd "$ROOT" && GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "$STAGE/usr/lib/cascade/cascade-host" ./cmd/cascade-host)
+cmd="$(go_build_cmd cli)"
+# shellcheck disable=SC2086
+(cd "$ROOT" && GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 $cmd -ldflags "$LDFLAGS" -o "$STAGE/usr/bin/cascade" ./cmd/cascade)
+# shellcheck disable=SC2086
+(cd "$ROOT" && GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 $cmd -ldflags "$LDFLAGS" -o "$STAGE/usr/lib/cascade/cascade-host" ./cmd/cascade-host)
 echo "    usr/bin/cascade, usr/lib/cascade/cascade-host"
 
 if [ "$CLI_ONLY" = 0 ]; then
-  # Core as a shared library (cgo, native) and the Flutter bundle.
-  (cd "$ROOT" && GOARCH=$GOARCH CGO_ENABLED=1 go build -ldflags "$LDFLAGS" -buildmode=c-shared -o "$STAGE/usr/lib/cascade/libcascade.so" ./export/cshared)
+  # Core as a shared library (cgo, native) and the Flutter bundle. Always-on
+  # hardening: export only the Cascade* C ABI via a gnu version-script, exactly
+  # like scripts/install-linux.sh (independent of CASCADE_OBFUSCATE).
+  MAP="$(mktemp "${TMPDIR:-/tmp}/cascade-exports.XXXXXX")"; trap 'rm -f "$MAP"' EXIT
+  "$ROOT/scripts/export-symbols.sh" gnu > "$MAP"
+  cmd="$(go_build_cmd lib)"
+  # shellcheck disable=SC2086
+  (cd "$ROOT" && GOARCH=$GOARCH CGO_ENABLED=1 $cmd -ldflags "$LDFLAGS -extldflags=-Wl,--version-script,$MAP" -buildmode=c-shared -o "$STAGE/usr/lib/cascade/libcascade.so" ./export/cshared)
   BUNDLE="$(ls -d "$ROOT"/apps/flutter/build/linux/*/release/bundle 2>/dev/null | head -1 || true)"
   BUNDLE_PREBUILT=""; [ -n "$BUNDLE" ] && BUNDLE_PREBUILT=1
   if [ -z "$BUNDLE" ]; then
