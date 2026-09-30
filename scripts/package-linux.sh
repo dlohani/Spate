@@ -66,6 +66,7 @@ if [ "$CLI_ONLY" = 0 ]; then
   # Core as a shared library (cgo, native) and the Flutter bundle.
   (cd "$ROOT" && GOARCH=$GOARCH CGO_ENABLED=1 go build -ldflags "$LDFLAGS" -buildmode=c-shared -o "$STAGE/usr/lib/cascade/libcascade.so" ./export/cshared)
   BUNDLE="$(ls -d "$ROOT"/apps/flutter/build/linux/*/release/bundle 2>/dev/null | head -1 || true)"
+  BUNDLE_PREBUILT=""; [ -n "$BUNDLE" ] && BUNDLE_PREBUILT=1
   if [ -z "$BUNDLE" ]; then
     echo "    Flutter bundle not built; running flutter build linux"
     # CASCADE_OBFUSCATE=1: obfuscate Dart; symbol map stays outside the bundle.
@@ -79,6 +80,9 @@ if [ "$CLI_ONLY" = 0 ]; then
     # shellcheck disable=SC2086
     (cd "$ROOT/apps/flutter" && flutter build linux --release --build-name="$VERSION" --build-number=1 $OBF_FLAGS >/dev/null)
     BUNDLE="$(ls -d "$ROOT"/apps/flutter/build/linux/*/release/bundle | head -1)"
+  fi
+  if [ -n "$BUNDLE_PREBUILT" ] && obf_on; then
+    echo "warning: CASCADE_OBFUSCATE=1 but a prebuilt Flutter bundle was reused; it may be unobfuscated. Remove apps/flutter/build/linux and rebuild." >&2
   fi
   cp -R "$BUNDLE" "$STAGE/usr/lib/cascade/cascade_app"
   cp "$STAGE/usr/lib/cascade/libcascade.so" "$STAGE/usr/lib/cascade/cascade_app/lib/libcascade.so"  # the Dart loader looks in <exe>/lib

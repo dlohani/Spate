@@ -11,7 +11,8 @@
 #   ./build ios                      Cascade.xcframework (gomobile) + unsigned iOS app
 #   ./build extension                Chrome/Firefox zips, Safari source (+ Safari app on macOS)
 #   ./build all                      everything this host can build
-#   ./build release <target...>      same, but refuses unless the tree is clean and HEAD is tagged
+#   ./build release <target...>      same, but refuses unless the tree is clean and HEAD is tagged;
+#                                    builds obfuscated (needs garble; see docs/delivery.md)
 #   ./build version                  print the version and the build label
 #   ./build bump <x.y.z>             set the version everywhere (VERSION, pubspec, manifests, casks)
 #   ./build clean                    remove dist/
@@ -29,6 +30,7 @@ export PATH="/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin:$PATH"
 DIST="$ROOT/dist"
 . "$ROOT/scripts/lib/bundle.sh"
 . "$ROOT/scripts/lib/sha256.sh"
+. "$ROOT/scripts/lib/obfuscate.sh"
 
 VERSION="$(tr -d '[:space:]' < VERSION)"
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
@@ -81,14 +83,20 @@ for a in "$@"; do
     --no-test) TEST=0 ;;
     --install) INSTALL=1 ;;
     --cli-only) CLI_ONLY=1 ;;
-    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) TARGETS+=("$a") ;;
   esac
 done
-[ ${#TARGETS[@]} -gt 0 ] || { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[ ${#TARGETS[@]} -gt 0 ] || { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 if [ "${TARGETS[0]}" = release ]; then
   require_release
   RELEASE=1
+  # Release artifacts are always obfuscated (Go core via garble, Dart, C ABI).
+  # The seed is reproducible per release (VERSION + SHA, same derivation the
+  # helper uses); a missing garble aborts here, never a plain fallback.
+  export CASCADE_OBFUSCATE=1
+  export CASCADE_OBF_SEED="${CASCADE_OBF_SEED:-$(obf_seed)}"
+  obf_require_garble
   # (check the count before slicing: an empty array trips bash 3.2 + set -u)
   [ ${#TARGETS[@]} -gt 1 ] || { echo "release: name at least one target (e.g. ./build release all)" >&2; exit 2; }
   TARGETS=("${TARGETS[@]:1}")
