@@ -12,8 +12,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 OUT="$ROOT/dist/windows-amd64"
-CC=x86_64-w64-mingw32-gcc
-command -v "$CC" >/dev/null || { echo "missing $CC: brew install mingw-w64"; exit 1; }
+. "$ROOT/scripts/lib/bundle.sh"
+CC="${CC:-x86_64-w64-mingw32-gcc}"
+command -v "$CC" >/dev/null || { echo "missing $CC: brew install mingw-w64 (or set CC)"; exit 1; }
 mkdir -p "$OUT"
 find "$OUT" -maxdepth 1 -type f -delete   # keep dist/windows-amd64/cascade_app (built on Windows)
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
@@ -30,10 +31,15 @@ echo "==> cascade-setup.exe (single-file installer embedding the binaries + exte
 PAY="$ROOT/cmd/cascade-setup/payload"
 rm -rf "$PAY" && mkdir -p "$PAY/bin" "$PAY/extension"
 cp "$OUT/cascade-host.exe" "$OUT/cascade.exe" "$OUT/cascade.dll" "$ROOT/browser/extension/store-ids.env" "$PAY/bin/"
-if [ -d "$OUT/cascade_app" ]; then
+ZIP="cascade-windows-amd64.zip"
+if ui_bundle_ok "$OUT"; then
   cp -R "$OUT/cascade_app" "$PAY/bin/cascade_app"
+elif allow_no_ui; then
+  echo "==> CLI-only build: no Flutter Windows UI (CASCADE_ALLOW_NO_UI=1)"
+  ZIP="cascade-windows-amd64-cli-only.zip"
 else
-  echo "    note: no Flutter Windows bundle at $OUT/cascade_app; build it on Windows (scripts/flutter-windows.ps1) and copy it there for a setup with the UI"
+  ui_bundle_missing_message "$OUT" >&2
+  exit 1
 fi
 cp -R "$ROOT/browser/extension/." "$PAY/extension/"
 (cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LD" -o "$OUT/cascade-setup.exe" ./cmd/cascade-setup)
@@ -63,5 +69,6 @@ cascade.exe is the command-line downloader. cascade.dll is the core for the
 Flutter UI, which you build on Windows with flutter-windows.ps1 (the setup
 bundles cascade_app\ when it was present at packaging time).
 TXT
-(cd "$ROOT/dist" && rm -f cascade-windows-amd64.zip && zip -qr cascade-windows-amd64.zip windows-amd64)
-ls -la "$OUT" "$ROOT/dist/cascade-windows-amd64.zip"
+(cd "$ROOT/dist" && rm -f cascade-windows-amd64.zip cascade-windows-amd64-cli-only.zip &&
+  if command -v zip >/dev/null; then zip -qr "$ZIP" windows-amd64; else 7z a -tzip -bso0 "$ZIP" windows-amd64; fi)
+ls -la "$OUT" "$ROOT/dist/$ZIP"
