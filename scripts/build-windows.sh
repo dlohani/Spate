@@ -12,22 +12,40 @@
 #   scripts/build-windows.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
+export PATH="$HOME/go/bin:/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 OUT="$ROOT/dist/windows-amd64"
 . "$ROOT/scripts/lib/bundle.sh"
+. "$ROOT/scripts/lib/obfuscate.sh"
+export OBF_ROOT="$ROOT"
 CC="${CC:-x86_64-w64-mingw32-gcc}"
 command -v "$CC" >/dev/null || { echo "missing $CC: brew install mingw-w64 (or set CC)" >&2; exit 1; }
 mkdir -p "$OUT"
 find "$OUT" -maxdepth 1 -type f -delete   # keep dist/windows-amd64/cascade_app (built on Windows)
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 LD="-s -w -X cascade/internal/version.Version=$VERSION"
+obf_require_garble   # CASCADE_OBFUSCATE=1 without garble fails loud, never ships plain
 
 echo "==> cascade.exe (CLI)"
-(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LD" -o "$OUT/cascade.exe" ./cmd/cascade)
+cmd="$(go_build_cmd cli)"
+# shellcheck disable=SC2086
+(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $cmd -ldflags "$LD" -o "$OUT/cascade.exe" ./cmd/cascade)
 echo "==> cascade-host.exe (native messaging host)"
-(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LD" -o "$OUT/cascade-host.exe" ./cmd/cascade-host)
+cmd="$(go_build_cmd cli)"
+# shellcheck disable=SC2086
+(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $cmd -ldflags "$LD" -o "$OUT/cascade-host.exe" ./cmd/cascade-host)
 echo "==> cascade.dll (core, C ABI)"
-(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC="$CC" go build -ldflags "$LD" -buildmode=c-shared -o "$OUT/cascade.dll" ./export/cshared)
+# Export only the Cascade* C ABI: mingw ld takes a .def as a linker input.
+DEF="$(mktemp "${TMPDIR:-/tmp}/cascade-exports.XXXXXX")"; mv "$DEF" "$DEF.def"; DEF="$DEF.def"
+trap 'rm -f "$DEF"' EXIT
+"$ROOT/scripts/export-symbols.sh" def > "$DEF"
+cmd="$(go_build_cmd lib)"
+# The .def is handed to the external linker. On native Windows (Git Bash) the
+# linker is a native binary that cannot resolve a POSIX /tmp path, so give it a
+# Windows path; cygpath is absent on the macOS/Linux cross-build, where $DEF is
+# already native.
+DEF_LD="$DEF"; command -v cygpath >/dev/null 2>&1 && DEF_LD="$(cygpath -m "$DEF")"
+# shellcheck disable=SC2086
+(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC="$CC" $cmd -ldflags "$LD -extldflags=$DEF_LD" -buildmode=c-shared -o "$OUT/cascade.dll" ./export/cshared)
 
 echo "==> cascade-setup.exe (single-file installer embedding the binaries + extension)"
 PAY="$ROOT/cmd/cascade-setup/payload"
@@ -45,7 +63,9 @@ else
   exit 1
 fi
 cp -R "$ROOT/browser/extension/." "$PAY/extension/"
-(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LD" -o "$OUT/cascade-setup.exe" ./cmd/cascade-setup)
+cmd="$(go_build_cmd cli)"
+# shellcheck disable=SC2086
+(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $cmd -ldflags "$LD" -o "$OUT/cascade-setup.exe" ./cmd/cascade-setup)
 
 echo "==> packaging"
 cp -R "$ROOT/browser/extension" "$OUT/extension"

@@ -12,6 +12,12 @@ check() { # DESCRIPTION EXPECTED_STATUS ACTUAL_STATUS
 }
 unset CASCADE_ALLOW_NO_UI
 
+# Hermetic garble: the release path requires garble, so every case runs with a
+# stub on PATH. Refusals below are therefore due to the gate alone, never to a
+# missing garble. Never depends on the machine's own garble.
+mkdir -p "$TMP/fakebin" "$TMP/home"
+printf '#!/bin/sh\nexit 0\n' > "$TMP/fakebin/garble"; chmod +x "$TMP/fakebin/garble"
+
 mkdir -p "$TMP/scripts/lib"
 cp "$ROOT/build" "$ROOT/VERSION" "$TMP/"
 cp "$ROOT"/scripts/lib/*.sh "$TMP/scripts/lib/"   # every library build sources
@@ -23,7 +29,9 @@ git config commit.gpgsign false
 git config tag.gpgsign false
 git add -A && git commit -qm init
 VERSION="$(tr -d '[:space:]' < VERSION)"
-gate() { ./build release version >/dev/null 2>&1; }
+gate() { PATH="$TMP/fakebin:$PATH" ./build release version >/dev/null 2>&1; }
+# build prepends $HOME/go/bin, so point HOME at an empty dir to hide a real garble.
+nogarble() { HOME="$TMP/home" PATH="/usr/bin:/bin" ./build release version >/dev/null 2>&1; }
 
 gate; check "untagged HEAD is refused" 2 $?
 git tag v0.3.9
@@ -31,6 +39,7 @@ gate; check "HEAD on the wrong tag is refused" 2 $?
 git tag -d v0.3.9 >/dev/null
 git tag "v$VERSION"
 gate; check "clean HEAD on tag v$VERSION is allowed" 0 $?
+nogarble; check "clean tagged HEAD without garble is refused" 2 $?
 ( export CASCADE_ALLOW_NO_UI=1; gate ); check "CASCADE_ALLOW_NO_UI=1 is refused even when tagged" 2 $?
 : > untracked.txt
 gate; check "an untracked file is refused" 2 $?
