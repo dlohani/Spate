@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# Cascade build front door: one command per platform, always from the working
+# tree (uncommitted changes included), version-stamped artifacts in dist/.
+#
+#   ./build mac        [--install]   Flutter app + libcascade -> Cascade-<v>.pkg, Cascade-<v>-macos.zip
+#   ./build windows                  cross-compiled Go pieces + cascade-setup.exe (+ NSIS installer)
+#   ./build linux      [--cli-only]  Debian package (full on Linux, CLI-only elsewhere)
+#   ./build android                  libcascade .aar (gomobile) + APK when the Android SDK is present
+#   ./build ios                      Cascade.xcframework (gomobile) + unsigned iOS app
+#   ./build extension                Chrome/Firefox zips, Safari source (+ Safari app on macOS)
+#   ./build all                      everything this host can build
+#   ./build version                  print the version and the build label
+#   ./build bump <x.y.z>             set the version everywhere (VERSION, pubspec, manifests, casks)
+#   ./build clean                    remove dist/
+#
+# Options: --no-test skips go vet/test; --install (mac) installs the result.
+#
+# Versioning: VERSION is stamped into binaries, bundles and installers as
+# x.y.z. Artifact file names add "+<sha>" when the tree is ahead of the last
+# tag and ".dirty" when it has uncommitted changes, so a dev build is never
+# mistaken for the release while installers still compare plain x.y.z.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
+export PATH="/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin:$PATH"
+DIST="$ROOT/dist"
+
+VERSION="$(tr -d '[:space:]' < VERSION)"
+SHA="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
+DIRTY=""; [ -n "$(git status --porcelain 2>/dev/null)" ] && DIRTY=".dirty"
+TAGGED=""; git describe --tags --exact-match >/dev/null 2>&1 && TAGGED=1
+LABEL="$VERSION"
+if [ -z "$TAGGED" ] || [ -n "$DIRTY" ]; then LABEL="$VERSION+$SHA$DIRTY"; fi
+BUILDNUM="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
+export CASCADE_BUILD_NUMBER="$BUILDNUM"
+
+say()  { printf '\033[1m==> %s\033[0m\n' "$*"; }
+note() { printf '    %s\n' "$*"; }
+need() { command -v "$1" >/dev/null 2>&1 || { note "missing: $1 ($2)"; return 1; }; }
+artifacts=()
+# label SRC: renames dist/<name-with-version> to the labelled name when the
+# label differs from the plain version, and records it.
+label() {
+  local src="$1" dst="$1"
+  [ -e "$src" ] || return 0
+  if [ "$LABEL" != "$VERSION" ]; then
+    dst="${src/$VERSION/$LABEL}"
+    mv -f "$src" "$dst"
+    [ -f "$src.sha256" ] && { shasum -a 256 "$dst" > "$dst.sha256"; rm -f "$src.sha256"; }
+  fi
+  artifacts+=("$dst")
+}
+
+TEST=1; INSTALL=0; CLI_ONLY=0; TARGETS=()
+for a in "$@"; do
+  case "$a" in
+    --no-test) TEST=0 ;;
+    --install) INSTALL=1 ;;
+    --cli-only) CLI_ONLY=1 ;;
+    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) TARGETS+=("$a") ;;
+  esac
+done
+[ ${#TARGETS[@]} -gt 0 ] || { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+
+run_tests() {
+  [ "$TEST" = 1 ] || return 0
+  say "go vet + tests"
+  go vet ./...
+  go test ./... 2>&1 | grep -v "no test files" | sed 's/^/    /'
+}
+
+do_mac() {
+  [ "$(uname -s)" = Darwin ] || { note "mac: needs a macOS host"; return 0; }
+  need flutter "https://docs.flutter.dev/get-started/install" || return 0
+  say "macOS $LABEL"
+  scripts/flutter-macos.sh build 2>&1 | grep -E "==> app|error:" || true
+  scripts/package-macos.sh | grep -E "^==> /|error" || true
+  label "$DIST/Cascade-$VERSION.pkg"
+  local app; app="$(ls -d apps/flutter/build/macos/Build/Products/Release/*.app | head -1)"
+  local zip="$DIST/Cascade-$VERSION-macos.zip"; rm -f "$zip"
+  ditto -c -k --keepParent "$app" "$zip" && label "$zip"
+  if [ "$INSTALL" = 1 ]; then scripts/install-macos.sh | grep -E "^==>" || true; fi
+}
+
+do_windows() {
+  say "Windows $LABEL"
+  need x86_64-w64-mingw32-gcc "brew install mingw-w64" || return 0
+  scripts/build-windows.sh | grep -E "^==>" || true
+  if [ -f "$DIST/cascade-windows-amd64.zip" ]; then
+    mv -f "$DIST/cascade-windows-amd64.zip" "$DIST/cascade-windows-amd64-$VERSION.zip"; label "$DIST/cascade-windows-amd64-$VERSION.zip"
+  fi
+  if command -v makensis >/dev/null; then
+    [ -d "$DIST/windows-amd64/cascade_app" ] || note "no Flutter Windows bundle in dist/windows-amd64/cascade_app (build it on Windows with scripts/flutter-windows.ps1); installer ships the Fyne UI"
+    scripts/package-windows.sh 2>&1 | grep -E "^==>|error" || true
+    label "$DIST/Cascade-Setup-$VERSION.exe"
+  else
+    note "makensis missing (brew install makensis): no NSIS installer, cascade-setup.exe built"
+  fi
+}
+
+do_linux() {
+  say "Linux $LABEL"
+  # (no array: bash 3.2 + set -u trips on an empty "${args[@]}")
+  scripts/package-linux.sh ${CLI_ONLY:+--cli-only} | grep -E "^==>|note:" || true
+  for f in "$DIST"/cascade_"$VERSION"_*.deb "$DIST"/cascade-cli_"$VERSION"_*.deb; do [ -e "$f" ] && label "$f"; done
+  make -s host-linux && note "dist/linux-{amd64,arm64}/cascade-host"
+}
+
+do_android() {
+  say "Android $LABEL"
+  if need gomobile "make tools" && [ -n "${ANDROID_NDK_HOME:-}${ANDROID_HOME:-}" ]; then
+    make -s android && { mv -f "$DIST/cascade.aar" "$DIST/cascade-$VERSION.aar"; label "$DIST/cascade-$VERSION.aar"; }
+  else
+    note "libcascade .aar skipped (needs gomobile + ANDROID_HOME/ANDROID_NDK_HOME)"
+  fi
+  if command -v flutter >/dev/null && [ -n "${ANDROID_HOME:-}${ANDROID_SDK_ROOT:-}" ]; then
+    (cd apps/flutter && flutter build apk --release --build-name="$VERSION" --build-number="$BUILDNUM" 2>&1 | grep -E "Built|error" || true)
+    local apk="apps/flutter/build/app/outputs/flutter-apk/app-release.apk"
+    [ -f "$apk" ] && { cp "$apk" "$DIST/Cascade-$VERSION.apk"; label "$DIST/Cascade-$VERSION.apk"; }
+  else
+    note "APK skipped (needs Flutter + Android SDK: ANDROID_HOME)"
+  fi
+}
+
+do_ios() {
+  [ "$(uname -s)" = Darwin ] || { note "ios: needs a macOS host"; return 0; }
+  say "iOS $LABEL"
+  if need gomobile "make tools"; then
+    make -s ios && { rm -rf "$DIST/Cascade-$VERSION.xcframework"; mv "$DIST/Cascade.xcframework" "$DIST/Cascade-$VERSION.xcframework"; label "$DIST/Cascade-$VERSION.xcframework"; }
+  fi
+  if command -v flutter >/dev/null; then
+    (cd apps/flutter && flutter build ios --release --no-codesign --build-name="$VERSION" --build-number="$BUILDNUM" 2>&1 | grep -E "Built|error" || true)
+    local app="apps/flutter/build/ios/iphoneos/Runner.app"
+    if [ -d "$app" ]; then
+      local zip="$DIST/Cascade-$VERSION-ios-unsigned.zip"; rm -f "$zip"
+      ditto -c -k --keepParent "$app" "$zip" && label "$zip"
+      note "unsigned: sign with your team in Xcode (or flutter build ipa) for a device"
+    fi
+  fi
+}
+
+do_extension() {
+  say "browser extension $LABEL"
+  scripts/package-extension.sh | grep -E "^==>|unpacked" || true
+  label "$DIST/cascade-extension-$VERSION.zip"
+  label "$DIST/cascade-extension-firefox-$VERSION.zip"
+  if [ "$(uname -s)" = Darwin ] && xcrun --find safari-web-extension-converter >/dev/null 2>&1; then
+    scripts/safari-extension.sh 2>&1 | grep -E "==> installed|error|BUILD" || true
+    artifacts+=("$HOME/Applications/Cascade for Safari.app")
+  fi
+}
+
+do_bump() {
+  local v="$1"
+  [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bump: version must be x.y.z" >&2; exit 2; }
+  local old="$VERSION"
+  printf '%s\n' "$v" > VERSION
+  sed -i.bak "s/^version: .*/version: $v+1/" apps/flutter/pubspec.yaml && rm -f apps/flutter/pubspec.yaml.bak
+  sed -i.bak "s/  version \"$old\"/  version \"$v\"/" packaging/homebrew/cascade.rb && rm -f packaging/homebrew/cascade.rb.bak
+  sed -i.bak "s/$old/$v/g" packaging/winget/d3xt3r.Cascade.yaml && rm -f packaging/winget/d3xt3r.Cascade.yaml.bak
+  scripts/package-extension.sh >/dev/null   # stamps the three manifests
+  say "version $old -> $v"
+  git --no-pager diff --stat | sed 's/^/    /'
+}
+
+for t in "${TARGETS[@]}"; do
+  case "$t" in
+    version) echo "version $VERSION  label $LABEL  build $BUILDNUM  ($SHA${DIRTY:+, uncommitted changes})" ;;
+    clean) rm -rf "$DIST"; say "removed dist/" ;;
+    bump) do_bump "${TARGETS[1]:-}"; exit 0 ;;
+    mac|macos) run_tests; TEST=0; do_mac ;;
+    windows|win) run_tests; TEST=0; do_windows ;;
+    linux|deb) run_tests; TEST=0; do_linux ;;
+    android) run_tests; TEST=0; do_android ;;
+    ios) run_tests; TEST=0; do_ios ;;
+    extension|ext) do_extension ;;
+    all) run_tests; TEST=0; do_mac; do_windows; do_linux; do_extension; do_android; do_ios ;;
+    *) [ "$t" = "${TARGETS[1]:-}" ] && [ "${TARGETS[0]}" = bump ] && continue; echo "unknown target: $t (see ./build --help)" >&2; exit 2 ;;
+  esac
+done
+
+if [ ${#artifacts[@]} -gt 0 ]; then
+  say "artifacts ($LABEL)"
+  for a in "${artifacts[@]}"; do
+    if [ -e "$a" ]; then printf '    %-60s %s\n' "${a#$ROOT/}" "$(du -sh "$a" | cut -f1)"; fi
+  done
+fi

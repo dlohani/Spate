@@ -41,9 +41,27 @@ button for non-DRM streaming media; native `.rar`/`.7z` extraction.
 
 ## Build
 
-    go build -o cascade ./cmd/cascade
+One front door, always from the working tree (uncommitted changes included),
+version-stamped artifacts in `dist/`:
 
-Requires Go 1.22+. The core has no external dependencies (standard library only).
+    ./build mac [--install]     Cascade-<v>.pkg, Cascade-<v>-macos.zip
+    ./build windows             cascade-setup.exe, Cascade-Setup-<v>.exe (NSIS), zip
+    ./build linux [--cli-only]  cascade_<v>_<arch>.deb (full on Linux; CLI-only elsewhere)
+    ./build android             libcascade .aar + Cascade-<v>.apk (needs Android SDK)
+    ./build ios                 Cascade-<v>.xcframework + unsigned iOS app
+    ./build extension           Chrome/Firefox zips, Safari source and app
+    ./build all                 everything this host can build
+    ./build version | bump x.y.z | clean
+
+`go vet` and the tests run first (`--no-test` skips). `VERSION` is stamped
+into binaries, bundles and installers as `x.y.z`; artifact names add
+`+<sha>` when the tree is ahead of the last tag and `.dirty` with uncommitted
+changes, so a dev build is never mistaken for a release while installers keep
+comparing plain `x.y.z`. Missing toolchains (mingw, makensis, Android SDK,
+gomobile) are reported in one line and that piece is skipped.
+
+Just the CLI: `go build -o cascade ./cmd/cascade` (Go 1.22+, standard library
+only).
 
 ## Installers
 
