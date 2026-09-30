@@ -88,6 +88,7 @@ if [ "${TARGETS[0]}" = release ]; then
   # (check the count before slicing: an empty array trips bash 3.2 + set -u)
   [ ${#TARGETS[@]} -gt 1 ] || { echo "release: name at least one target (e.g. ./build release all)" >&2; exit 2; }
   TARGETS=("${TARGETS[@]:1}")
+  TEST=1   # a release always runs go vet + tests: --no-test is ignored
 fi
 
 run_tests() {
