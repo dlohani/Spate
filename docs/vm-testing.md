@@ -29,6 +29,22 @@ folder to `dist\windows-amd64\cascade_app` on the Mac, then package.
 
 ## Windows (VM), building the Flutter UI
 
+The Windows UI is the Flutter app and it can only be compiled on Windows, so
+every release needs this once on the VM (a few minutes; incremental after
+the first time):
+
+```powershell
+git clone <repo> cascade ; cd cascade          # or git pull in an existing clone
+powershell -ExecutionPolicy Bypass -File scripts\flutter-windows.ps1 -CopyTo \\Mac\Home\Projects\cascade
+```
+
+`-CopyTo` drops the bundle into the Mac checkout's `dist\windows-amd64\cascade_app`
+(Parallels shares the Mac home as `\\Mac\Home`; adjust the path otherwise).
+Then on the Mac: `./build windows` -> `dist/Cascade-Setup-<v>.exe` and
+`cascade-setup.exe`, both carrying the UI. Running either on the VM upgrades
+the old install: the pre-0.4.0 `cascade-gui.exe` is stopped and removed so the
+new app owns the port.
+
 Prerequisites: Git, Go, Flutter, Visual Studio 2022 with "Desktop development
 with C++" (Flutter's Windows requirement).
 

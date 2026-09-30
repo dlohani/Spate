@@ -109,7 +109,9 @@ FunctionEnd
 Section "Cascade" SecMain
   ; Windows will not overwrite a running executable: stop the app first.
   ExecWait 'taskkill /IM cascade_app.exe /F'
+  ExecWait 'taskkill /IM cascade-gui.exe /F'   ; UI of installs before 0.4.0
   Sleep 500
+  Delete "$INSTDIR\bin\cascade-gui.exe"
   SetOutPath "$INSTDIR\bin"
   File "..\..\dist\windows-amd64\cascade-host.exe"
   File "..\..\dist\windows-amd64\cascade.exe"
