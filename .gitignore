@@ -10,5 +10,8 @@
 # OS cruft
 .DS_Store
 
+# editor / assistant tool caches
+.serena/
+
 # populated by scripts/build-windows.sh; embedded into cascade-setup.exe
 /cmd/cascade-setup/payload/

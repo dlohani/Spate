@@ -11,6 +11,7 @@
 #   ./build ios                      Cascade.xcframework (gomobile) + unsigned iOS app
 #   ./build extension                Chrome/Firefox zips, Safari source (+ Safari app on macOS)
 #   ./build all                      everything this host can build
+#   ./build release <target...>      same, but refuses unless the tree is clean and HEAD is tagged
 #   ./build version                  print the version and the build label
 #   ./build bump <x.y.z>             set the version everywhere (VERSION, pubspec, manifests, casks)
 #   ./build clean                    remove dist/
@@ -36,6 +37,19 @@ LABEL="$VERSION"
 if [ -z "$TAGGED" ] || [ -n "$DIRTY" ]; then LABEL="$VERSION+$SHA$DIRTY"; fi
 BUILDNUM="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 export CASCADE_BUILD_NUMBER="$BUILDNUM"
+
+# require_release: a release-labelled build needs a clean tree on a tag and
+# must carry the UI.
+require_release() {
+  local why=""
+  [ -z "$DIRTY" ] || why="uncommitted changes"
+  [ -n "$TAGGED" ] || why="${why:+$why, }HEAD is not on a tag"
+  [ -z "${CASCADE_ALLOW_NO_UI:-}" ] || why="${why:+$why, }CASCADE_ALLOW_NO_UI is set"
+  if [ -n "$why" ]; then
+    echo "release: refused ($why). Commit, tag v$VERSION, unset overrides, then retry." >&2
+    exit 2
+  fi
+}
 
 say()  { printf '\033[1m==> %s\033[0m\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
@@ -64,11 +78,17 @@ for a in "$@"; do
     --no-test) TEST=0 ;;
     --install) INSTALL=1 ;;
     --cli-only) CLI_ONLY=1 ;;
-    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) TARGETS+=("$a") ;;
   esac
 done
-[ ${#TARGETS[@]} -gt 0 ] || { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+[ ${#TARGETS[@]} -gt 0 ] || { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+if [ "${TARGETS[0]}" = release ]; then
+  require_release
+  # (check the count before slicing: an empty array trips bash 3.2 + set -u)
+  [ ${#TARGETS[@]} -gt 1 ] || { echo "release: name at least one target (e.g. ./build release all)" >&2; exit 2; }
+  TARGETS=("${TARGETS[@]:1}")
+fi
 
 run_tests() {
   [ "$TEST" = 1 ] || return 0
