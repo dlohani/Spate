@@ -30,8 +30,6 @@ const (
 	appBundle    = "Cascade.app" // macOS: Flutter app bundle installed next to this host (preferred)
 	bundleDir    = "cascade_app" // Linux/Windows: Flutter bundle directory installed next to this host
 	bundleBinary = "cascade_app" // executable inside the bundle directory (+ .exe on Windows)
-	guiBinary    = "cascade-gui" // Fyne fallback GUI binary (+ .exe on Windows)
-	legacyBinary = "cascade-mac" // older name of the Fyne binary on macOS installs
 	launchWait   = 20 * time.Second
 	ports        = "8760,8761,8762"
 )
@@ -136,21 +134,15 @@ func launchApp() error {
 	if runtime.GOOS == "windows" {
 		ext = ".exe"
 	}
-	// Prefer the Flutter app; fall back to the Fyne GUI binary. On macOS the
-	// bundle is launched through LaunchServices so it gets a proper GUI session;
-	// elsewhere the executable is started detached from this host.
+	// The Flutter app: on macOS the bundle is launched through LaunchServices
+	// so it gets a proper GUI session; elsewhere the executable is started
+	// detached from this host.
 	var cmd *exec.Cmd
 	switch {
 	case runtime.GOOS == "darwin" && macAppBundle(dir) != "":
 		cmd = exec.Command("open", "-a", macAppBundle(dir))
 	case fileExists(filepath.Join(dir, bundleDir, bundleBinary+ext)):
 		cmd = exec.Command(filepath.Join(dir, bundleDir, bundleBinary+ext))
-		detach(cmd)
-	case fileExists(filepath.Join(dir, guiBinary+ext)):
-		cmd = exec.Command(filepath.Join(dir, guiBinary+ext))
-		detach(cmd)
-	case fileExists(filepath.Join(dir, legacyBinary)):
-		cmd = exec.Command(filepath.Join(dir, legacyBinary))
 		detach(cmd)
 	default:
 		return fmt.Errorf("no Cascade app found next to %s", exe)

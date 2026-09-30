@@ -3,8 +3,8 @@
 #   cascade.exe        CLI (pure Go)
 #   cascade-host.exe   browser native-messaging host (pure Go)
 #   cascade.dll/.h     the core as a C shared library (needs mingw-w64)
-#   cascade-gui.exe    Fyne desktop UI with the core embedded (needs mingw-w64)
-# The Flutter Windows UI must be built on Windows: see scripts/flutter-windows.ps1.
+# The Flutter Windows UI must be built on Windows (scripts/flutter-windows.ps1)
+# and copied to dist/windows-amd64/cascade_app; it is bundled when present.
 #
 #   brew install mingw-w64   (once)
 #   scripts/build-windows.sh
@@ -14,7 +14,8 @@ export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 OUT="$ROOT/dist/windows-amd64"
 CC=x86_64-w64-mingw32-gcc
 command -v "$CC" >/dev/null || { echo "missing $CC: brew install mingw-w64"; exit 1; }
-rm -rf "$OUT" && mkdir -p "$OUT"
+mkdir -p "$OUT"
+find "$OUT" -maxdepth 1 -type f -delete   # keep dist/windows-amd64/cascade_app (built on Windows)
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 LD="-s -w -X cascade/internal/version.Version=$VERSION"
 
@@ -24,13 +25,16 @@ echo "==> cascade-host.exe (native messaging host)"
 (cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LD" -o "$OUT/cascade-host.exe" ./cmd/cascade-host)
 echo "==> cascade.dll (core, C ABI)"
 (cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC="$CC" go build -ldflags "$LD" -buildmode=c-shared -o "$OUT/cascade.dll" ./export/cshared)
-echo "==> cascade-gui.exe (Fyne UI; first build compiles GLFW, takes a while)"
-(cd "$ROOT/apps/macapp" && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC="$CC" go build -ldflags "$LD -H windowsgui" -o "$OUT/cascade-gui.exe" .)
 
 echo "==> cascade-setup.exe (single-file installer embedding the binaries + extension)"
 PAY="$ROOT/cmd/cascade-setup/payload"
 rm -rf "$PAY" && mkdir -p "$PAY/bin" "$PAY/extension"
-cp "$OUT/cascade-gui.exe" "$OUT/cascade-host.exe" "$OUT/cascade.exe" "$OUT/cascade.dll" "$ROOT/browser/extension/store-ids.env" "$PAY/bin/"
+cp "$OUT/cascade-host.exe" "$OUT/cascade.exe" "$OUT/cascade.dll" "$ROOT/browser/extension/store-ids.env" "$PAY/bin/"
+if [ -d "$OUT/cascade_app" ]; then
+  cp -R "$OUT/cascade_app" "$PAY/bin/cascade_app"
+else
+  echo "    note: no Flutter Windows bundle at $OUT/cascade_app; build it on Windows (scripts/flutter-windows.ps1) and copy it there for a setup with the UI"
+fi
 cp -R "$ROOT/browser/extension/." "$PAY/extension/"
 (cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$LD" -o "$OUT/cascade-setup.exe" ./cmd/cascade-setup)
 
@@ -56,8 +60,8 @@ is refused (--force overrides).
 
 Manual alternative: install-windows.ps1 (same steps via PowerShell).
 cascade.exe is the command-line downloader. cascade.dll is the core for the
-Flutter UI, which you build on Windows with flutter-windows.ps1; the setup
-prefers cascade_app\cascade_app.exe when it is present next to it.
+Flutter UI, which you build on Windows with flutter-windows.ps1 (the setup
+bundles cascade_app\ when it was present at packaging time).
 TXT
 (cd "$ROOT/dist" && rm -f cascade-windows-amd64.zip && zip -qr cascade-windows-amd64.zip windows-amd64)
 ls -la "$OUT" "$ROOT/dist/cascade-windows-amd64.zip"

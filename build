@@ -91,9 +91,12 @@ do_windows() {
     mv -f "$DIST/cascade-windows-amd64.zip" "$DIST/cascade-windows-amd64-$VERSION.zip"; label "$DIST/cascade-windows-amd64-$VERSION.zip"
   fi
   if command -v makensis >/dev/null; then
-    [ -d "$DIST/windows-amd64/cascade_app" ] || note "no Flutter Windows bundle in dist/windows-amd64/cascade_app (build it on Windows with scripts/flutter-windows.ps1); installer ships the Fyne UI"
-    scripts/package-windows.sh 2>&1 | grep -E "^==>|error" || true
-    label "$DIST/Cascade-Setup-$VERSION.exe"
+    if [ -d "$DIST/windows-amd64/cascade_app" ]; then
+      scripts/package-windows.sh 2>&1 | grep -E "^==>|error" || true
+      label "$DIST/Cascade-Setup-$VERSION.exe"
+    else
+      note "NSIS installer skipped: the Flutter Windows UI is built on Windows (scripts/flutter-windows.ps1); copy its Release folder to dist/windows-amd64/cascade_app"
+    fi
   else
     note "makensis missing (brew install makensis): no NSIS installer, cascade-setup.exe built"
   fi

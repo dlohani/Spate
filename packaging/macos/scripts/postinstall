@@ -10,8 +10,8 @@ BIN="$ROOT/bin"
 APP="$HOME/Applications/Cascade.app"
 chmod +x "$BIN/cascade-host" "$BIN/register-extension" "$BIN/uninstall" 2>/dev/null || true
 
-# One copy of the app only: earlier versions kept a second bundle and a Fyne
-# binary under bin/.
+# One copy of the app only: earlier versions kept a second bundle and a
+# helper binary under bin/.
 rm -rf "$BIN/Cascade.app" "$BIN/cascade-mac"
 
 # Browser host registration (also re-runnable later with an explicit ID).

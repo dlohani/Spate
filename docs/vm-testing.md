@@ -23,10 +23,9 @@ Copy `dist/Cascade-Setup-<ver>.exe` (built on the Mac with
 Install → Finish ("Start Cascade"). It registers the browser host, adds a
 hidden autostart and an Add/Remove Programs entry. Then load the extension from
 `%LOCALAPPDATA%\Cascade\extension`. If Options shows a different Extension ID,
-run `%LOCALAPPDATA%\Cascade\bin\register-extension.cmd <ID>`. This installer
-ships the Fyne UI; to include the Flutter UI, build it on Windows (below), copy
-its Release folder to `dist\windows-amd64\cascade_app` on the Mac, and rebuild
-the installer.
+run `%LOCALAPPDATA%\Cascade\bin\register-extension.cmd <ID>`. The installer
+needs the Flutter UI, which is built on Windows (below): copy its Release
+folder to `dist\windows-amd64\cascade_app` on the Mac, then package.
 
 ## Windows (VM), building the Flutter UI
 

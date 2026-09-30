@@ -11,7 +11,7 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Bin  = Join-Path $env:LOCALAPPDATA "Cascade\bin"
 New-Item -ItemType Directory -Force -Path $Bin | Out-Null
 
-foreach ($f in @("cascade-host.exe", "cascade-gui.exe", "cascade.exe", "cascade.dll")) {
+foreach ($f in @("cascade-host.exe", "cascade.exe", "cascade.dll")) {
   $src = Join-Path $Root $f
   if (Test-Path $src) { Copy-Item $src $Bin -Force; Write-Host "    $Bin\$f" }
 }
@@ -47,9 +47,10 @@ foreach ($k in $keys) {
   Write-Host "    $k"
 }
 
-# Autostart (hidden): prefer the Flutter UI, else the Fyne GUI.
+# Autostart (hidden): the Flutter UI.
 if (-not $NoAutostart) {
-  $app = if (Test-Path (Join-Path $Bin "cascade_app\cascade_app.exe")) { Join-Path $Bin "cascade_app\cascade_app.exe" } else { Join-Path $Bin "cascade-gui.exe" }
+  $app = Join-Path $Bin "cascade_app\cascade_app.exe"
+  if (-not (Test-Path $app)) { Write-Host "    ! cascade_app not installed: build it with flutter-windows.ps1 and re-run" }
   Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Cascade" -Value "`"$app`" --background"
   Write-Host "    autostart: $app --background"
 }
