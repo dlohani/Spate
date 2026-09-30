@@ -11,7 +11,6 @@
 #   apps/flutter/{ios,android,macos,windows,linux}  via flutter_launcher_icons
 #   apps/flutter/web/favicon.png + icons
 #   browser/extension/icons/{16,32,48,128}.png (+ manifest "icons")
-#   apps/macapp/icon.png (Fyne app icon) and resource_windows_amd64.syso (exe icon)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="/opt/homebrew/bin:$PATH"
@@ -77,16 +76,6 @@ for s,png in zip(sizes,pngs):
 for png in pngs: out+=png
 open(sys.argv[1],"wb").write(out); print("ico:", len(out), "bytes")
 EOF
-printf '1 ICON "%s"\n' "$BRAND/cascade.ico" > /tmp/cascade-icon.rc
-if command -v x86_64-w64-mingw32-windres >/dev/null; then
-  x86_64-w64-mingw32-windres /tmp/cascade-icon.rc -O coff -o "$ROOT/apps/macapp/resource_windows_amd64.syso" && echo "    apps/macapp/resource_windows_amd64.syso"
-else
-  echo "    (windres not found; Windows exe icon skipped)"
-fi
-
-echo "==> Fyne app icon"
-sips -z 512 512 "$BRAND/icon-1024.png" --out "$ROOT/apps/macapp/icon.png" >/dev/null
-
 echo "==> Flutter launcher icons (iOS, Android, macOS, Windows, Linux, web)"
 cd "$ROOT/apps/flutter"
 grep -q "flutter_launcher_icons" pubspec.yaml || flutter pub add --dev flutter_launcher_icons >/dev/null

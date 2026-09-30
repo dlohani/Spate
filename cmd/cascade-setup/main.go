@@ -128,9 +128,9 @@ func main() {
 	// start (Chrome shows a one-time "Enable extension" prompt).
 	registerStoreExtension(chromeID, edgeID)
 
-	app := filepath.Join(bin, "cascade_app", "cascade_app.exe") // Flutter UI, if bundled
+	app := filepath.Join(bin, "cascade_app", "cascade_app.exe")
 	if _, err := os.Stat(app); err != nil {
-		app = filepath.Join(bin, "cascade-gui.exe")
+		fmt.Println("  ! the Flutter UI (bin\\cascade_app) is not in this setup; build it with scripts\\flutter-windows.ps1")
 	}
 	if !*noAuto {
 		if err := regAdd(`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "Cascade", fmt.Sprintf(`"%s" --background`, app)); err != nil {
@@ -254,9 +254,7 @@ func registerStoreExtension(chromeID, edgeID string) {
 
 // stopApp ends any running Cascade UI so its files can be replaced or removed.
 func stopApp() {
-	for _, exe := range []string{"cascade_app.exe", "cascade-gui.exe"} {
-		_ = exec.Command("taskkill", "/IM", exe, "/F").Run()
-	}
+	_ = exec.Command("taskkill", "/IM", "cascade_app.exe", "/F").Run()
 }
 
 // installedVersion reads DisplayVersion from the Add/Remove Programs entry

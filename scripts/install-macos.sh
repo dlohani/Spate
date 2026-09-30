@@ -55,7 +55,7 @@ echo "==> installing app"
 mkdir -p "$HOME/Applications"
 rm -rf "$APP"
 cp -R "$FLUTTER_APP" "$APP"
-# One copy only: older installs kept a second bundle and a Fyne binary here.
+# One copy only: older installs kept a second bundle and a helper binary here.
 rm -rf "$BIN/Cascade.app" "$BIN/cascade-mac"
 echo "    $APP  ($VERSION)"
 

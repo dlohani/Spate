@@ -193,7 +193,7 @@ design (layers, the media-capture analysis for TikTok/IG/YouTube, per-OS gating)
 drives the real `libcascade` (`cd apps/flutter && flutter test`). Building the
 macOS app needs full Xcode and CocoaPods: `scripts/flutter-macos.sh run` (dev)
 or `scripts/flutter-macos.sh build` (bundles `libcascade.dylib` into the app).
-`apps/macapp` (Fyne) remains as the lightweight fallback shell.
+It is the only UI; the Go core has no UI code of its own.
 
 ## Use
 

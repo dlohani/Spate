@@ -50,8 +50,6 @@ Flutter is the one framework that renders a single UI on all five targets. It
 calls the Go core through `dart:ffi` against the C ABI. This keeps both the core
 *and* the UI unified; only the OS-service shims differ per platform.
 
-Alternative: pure-Go UI with Fyne (spans desktop + mobile) if avoiding Dart is
-preferred, at the cost of a smaller mobile ecosystem and more manual OS plumbing.
 
 ## Per-platform gating (Wi-Fi-only / battery)
 

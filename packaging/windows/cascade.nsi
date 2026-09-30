@@ -109,24 +109,21 @@ FunctionEnd
 Section "Cascade" SecMain
   ; Windows will not overwrite a running executable: stop the app first.
   ExecWait 'taskkill /IM cascade_app.exe /F'
-  ExecWait 'taskkill /IM cascade-gui.exe /F'
   Sleep 500
   SetOutPath "$INSTDIR\bin"
-  File "..\..\dist\windows-amd64\cascade-gui.exe"
   File "..\..\dist\windows-amd64\cascade-host.exe"
   File "..\..\dist\windows-amd64\cascade.exe"
   File "..\..\dist\windows-amd64\cascade.dll"
   File "register-extension.cmd"
   File "..\..\browser\extension\store-ids.env"
-  ; Flutter UI, when it was built and placed in dist\windows-amd64\cascade_app
+  ; Flutter UI, built on Windows (scripts\flutter-windows.ps1) and placed in
+  ; dist\windows-amd64\cascade_app before packaging.
   SetOutPath "$INSTDIR\bin\cascade_app"
-  File /nonfatal /r "..\..\dist\windows-amd64\cascade_app\*.*"
+  File /r "..\..\dist\windows-amd64\cascade_app\*.*"
   SetOutPath "$INSTDIR\extension"
   File /r "..\..\browser\extension\*.*"
 
-  StrCpy $AppExe "$INSTDIR\bin\cascade-gui.exe"
-  IfFileExists "$INSTDIR\bin\cascade_app\cascade_app.exe" 0 +2
-    StrCpy $AppExe "$INSTDIR\bin\cascade_app\cascade_app.exe"
+  StrCpy $AppExe "$INSTDIR\bin\cascade_app\cascade_app.exe"
 
   Call WriteHostManifest
   Call WriteFirefoxManifest
@@ -165,8 +162,7 @@ Section "Cascade" SecMain
 SectionEnd
 
 Section "Uninstall"
-  ExecWait 'taskkill /IM cascade-gui.exe /F' ; ignore result
-  ExecWait 'taskkill /IM cascade_app.exe /F'
+  ExecWait 'taskkill /IM cascade_app.exe /F' ; ignore result
   DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\${HOSTNAME}"
   DeleteRegKey HKCU "Software\Chromium\NativeMessagingHosts\${HOSTNAME}"
   DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\${HOSTNAME}"

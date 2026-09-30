@@ -11,7 +11,8 @@ VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 . "$ROOT/scripts/lib/extension.sh"
 load_store_ids "$ROOT"
 command -v makensis >/dev/null || { echo "missing makensis: brew install makensis"; exit 1; }
-[ -f "$ROOT/dist/windows-amd64/cascade-gui.exe" ] || "$ROOT/scripts/build-windows.sh"
+[ -f "$ROOT/dist/windows-amd64/cascade-host.exe" ] || "$ROOT/scripts/build-windows.sh"
+[ -f "$ROOT/dist/windows-amd64/cascade_app/cascade_app.exe" ] || { echo "error: the Flutter Windows UI is missing: build it on Windows with scripts/flutter-windows.ps1 and copy the Release folder to dist/windows-amd64/cascade_app" >&2; exit 1; }
 (cd "$ROOT/packaging/windows" && makensis -V2 -DVERSION="$VERSION" -DCHROME_WEBSTORE_ID="${CHROME_WEBSTORE_ID:-}" -DEDGE_ADDONS_ID="${EDGE_ADDONS_ID:-}" cascade.nsi)
 OUT="$ROOT/dist/Cascade-Setup-$VERSION.exe"
 shasum -a 256 "$OUT" | tee "$OUT.sha256"
