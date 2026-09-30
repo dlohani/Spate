@@ -23,9 +23,10 @@ Copy `dist/Cascade-Setup-<ver>.exe` (built on the Mac with
 Install → Finish ("Start Cascade"). It registers the browser host, adds a
 hidden autostart and an Add/Remove Programs entry. Then load the extension from
 `%LOCALAPPDATA%\Cascade\extension`. If Options shows a different Extension ID,
-run `%LOCALAPPDATA%\Cascade\bin\register-extension.cmd <ID>`. The installer
-needs the Flutter UI, which is built on Windows (below): copy its Release
-folder to `dist\windows-amd64\cascade_app` on the Mac, then package.
+run `%LOCALAPPDATA%\Cascade\bin\register-extension.cmd <ID>`. The installer needs the Flutter UI, which is built on Windows (below).
+`./build windows` refuses to package without it, and a setup built with
+`CASCADE_ALLOW_NO_UI=1` refuses to install without `--no-ui`, so a build
+missing the UI cannot be mistaken for a complete one.
 
 ## Windows (VM), building the Flutter UI
 
