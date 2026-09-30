@@ -11,6 +11,9 @@ $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Bin  = Join-Path $env:LOCALAPPDATA "Cascade\bin"
 New-Item -ItemType Directory -Force -Path $Bin | Out-Null
 
+# Stop and retire the pre-0.4.0 UI so the new app owns the port.
+foreach ($p in @("cascade_app", "cascade-gui")) { Get-Process $p -ErrorAction SilentlyContinue | Stop-Process -Force }
+Remove-Item (Join-Path $Bin "cascade-gui.exe") -ErrorAction SilentlyContinue
 foreach ($f in @("cascade-host.exe", "cascade.exe", "cascade.dll")) {
   $src = Join-Path $Root $f
   if (Test-Path $src) { Copy-Item $src $Bin -Force; Write-Host "    $Bin\$f" }

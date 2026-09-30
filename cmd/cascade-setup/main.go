@@ -92,6 +92,7 @@ func main() {
 	stopApp()
 
 	fmt.Println("  installing to", root)
+	_ = os.Remove(filepath.Join(bin, "cascade-gui.exe")) // pre-0.4.0 UI
 	must(extractDir("payload/bin", bin))
 	must(extractDir("payload/extension", ext))
 
@@ -252,9 +253,12 @@ func registerStoreExtension(chromeID, edgeID string) {
 	}
 }
 
-// stopApp ends any running Cascade UI so its files can be replaced or removed.
+// stopApp ends any running Cascade UI so its files can be replaced or removed
+// (cascade-gui.exe was the UI of installs before 0.4.0).
 func stopApp() {
-	_ = exec.Command("taskkill", "/IM", "cascade_app.exe", "/F").Run()
+	for _, exe := range []string{"cascade_app.exe", "cascade-gui.exe"} {
+		_ = exec.Command("taskkill", "/IM", exe, "/F").Run()
+	}
 }
 
 // installedVersion reads DisplayVersion from the Add/Remove Programs entry

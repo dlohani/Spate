@@ -1,7 +1,12 @@
 # Build the Flutter Windows UI with the Go core (cascade.dll) next to it.
 # Run ON Windows with Flutter + Visual Studio (Desktop development with C++).
 #
-#   powershell -ExecutionPolicy Bypass -File scripts\flutter-windows.ps1
+#   powershell -ExecutionPolicy Bypass -File scripts\flutter-windows.ps1 [-CopyTo <repo on the Mac>]
+#
+# -CopyTo copies the built bundle to <repo>\dist\windows-amd64\cascade_app so
+# `./build windows` on the Mac can package the installer, e.g. through the
+# Parallels shared folder: -CopyTo \\Mac\Home\Projects\cascade
+param([string]$CopyTo = "")
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Dll  = Join-Path $Root "dist\windows-amd64\cascade.dll"
@@ -26,4 +31,12 @@ $bundle = Join-Path (Get-Location) "build\windows\x64\runner\Release"
 Copy-Item $Dll (Join-Path $bundle "cascade.dll") -Force   # the Dart loader looks next to the exe
 Pop-Location
 Write-Host "==> app: $bundle\cascade_app.exe"
-Write-Host "    copy that folder next to install-windows.ps1 as 'cascade_app' to install it."
+if ($CopyTo -ne "") {
+  $dest = Join-Path $CopyTo "dist\windows-amd64\cascade_app"
+  if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
+  New-Item -ItemType Directory -Force -Path $dest | Out-Null
+  Copy-Item (Join-Path $bundle "*") $dest -Recurse -Force
+  Write-Host "==> copied to $dest  (now: ./build windows on the Mac)"
+} else {
+  Write-Host "    install here: copy that folder next to install-windows.ps1 as 'cascade_app', or"
+  Write-Host "    hand it to the Mac for packaging: -CopyTo \\Mac\Home\Projects\cascade"
