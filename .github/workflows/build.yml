@@ -38,7 +38,7 @@ jobs:
         with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
       - name: install garble (release obfuscation)
         run: |
-          go install mvdan.cc/garble@latest
+          go install mvdan.cc/garble@v0.18.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: build
         run: ./build mac extension --no-test
@@ -68,7 +68,7 @@ jobs:
         with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
       - name: install garble (release obfuscation)
         run: |
-          go install mvdan.cc/garble@latest
+          go install mvdan.cc/garble@v0.18.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: |
           sudo apt-get update
@@ -99,7 +99,7 @@ jobs:
         with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
       - name: install garble (release obfuscation)
         run: |
-          go install mvdan.cc/garble@latest
+          go install mvdan.cc/garble@v0.18.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: toolchain (MinGW for the DLL, NSIS for the installer)
         run: choco install mingw nsis -y --no-progress
