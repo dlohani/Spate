@@ -22,7 +22,11 @@ out="$(CASCADE_OBFUSCATE=1 PATH=/nonexistent obf_require_garble 2>&1)"; st=$?
 check "require_garble exits 2 when on and garble is missing" 2 $st
 case "$out" in *"go install mvdan.cc/garble"*) ;; *) echo "  not ok: install hint mentions go install mvdan.cc/garble"; rc=1 ;; esac
 
-( CASCADE_OBFUSCATE=1 obf_require_garble >/dev/null 2>&1 ); check "require_garble passes when on and garble is on PATH" 0 $?
+# Hermetic "present" case: a stub garble on a temp PATH, found via command -v
+# exactly like the real one; never the machine's own garble.
+FAKE="$(mktemp -d)"; trap 'rm -rf "$FAKE"' EXIT
+printf '#!/bin/sh\nexit 0\n' > "$FAKE/garble"; chmod +x "$FAKE/garble"
+( CASCADE_OBFUSCATE=1 PATH="$FAKE:$PATH" obf_require_garble >/dev/null 2>&1 ); check "require_garble passes when on and garble is on PATH" 0 $?
 ( unset CASCADE_OBFUSCATE; PATH=/nonexistent obf_require_garble >/dev/null 2>&1 ); check "require_garble is a no-op when off, even without garble" 0 $?
 
 # go_build_cmd PROFILE [GOBIN]: prints the plain command when off, garble
