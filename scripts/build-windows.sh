@@ -39,8 +39,13 @@ DEF="$(mktemp "${TMPDIR:-/tmp}/cascade-exports.XXXXXX")"; mv "$DEF" "$DEF.def"; 
 trap 'rm -f "$DEF"' EXIT
 "$ROOT/scripts/export-symbols.sh" def > "$DEF"
 cmd="$(go_build_cmd lib)"
+# The .def is handed to the external linker. On native Windows (Git Bash) the
+# linker is a native binary that cannot resolve a POSIX /tmp path, so give it a
+# Windows path; cygpath is absent on the macOS/Linux cross-build, where $DEF is
+# already native.
+DEF_LD="$DEF"; command -v cygpath >/dev/null 2>&1 && DEF_LD="$(cygpath -m "$DEF")"
 # shellcheck disable=SC2086
-(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC="$CC" $cmd -ldflags "$LD -extldflags=$DEF" -buildmode=c-shared -o "$OUT/cascade.dll" ./export/cshared)
+(cd "$ROOT" && GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC="$CC" $cmd -ldflags "$LD -extldflags=$DEF_LD" -buildmode=c-shared -o "$OUT/cascade.dll" ./export/cshared)
 
 echo "==> cascade-setup.exe (single-file installer embedding the binaries + extension)"
 PAY="$ROOT/cmd/cascade-setup/payload"
