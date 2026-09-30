@@ -10,6 +10,7 @@
 //	cascade-setup.exe --extension-id ID    also authorize this extension ID
 //	cascade-setup.exe --no-autostart       skip the Run-key entry
 //	cascade-setup.exe --force              allow installing an older version
+//	cascade-setup.exe --no-ui              install without the Flutter UI (development only)
 //	cascade-setup.exe --uninstall          remove registry keys and files
 //
 // Running it again reinstalls the same version or upgrades an older one; an
@@ -30,6 +31,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"cascade/internal/bundle"
 	"cascade/internal/version"
 )
 
@@ -60,6 +62,7 @@ func main() {
 	uninstall := flag.Bool("uninstall", false, "remove Cascade")
 	noLaunch := flag.Bool("no-launch", false, "do not start the app after installing")
 	force := flag.Bool("force", false, "install even if a newer version is installed")
+	noUI := flag.Bool("no-ui", false, "install the command-line pieces even though this setup carries no Flutter UI (development only)")
 	flag.Parse()
 
 	root := filepath.Join(os.Getenv("LOCALAPPDATA"), "Cascade")
@@ -73,6 +76,14 @@ func main() {
 	}
 
 	fmt.Println("Cascade setup", version.Version)
+	if !bundle.HasWindowsUI(payload, "payload") && !*noUI {
+		fmt.Println("  This setup was packaged without the Flutter UI (bin\\cascade_app), so it")
+		fmt.Println("  would install a Cascade you cannot open. Build the UI on Windows with")
+		fmt.Println("  scripts\\flutter-windows.ps1 -CopyTo <checkout>, then ./build windows on the Mac.")
+		fmt.Println("  To install only the command-line pieces anyway, run with --no-ui.")
+		pause()
+		os.Exit(1)
+	}
 	if have := installedVersion(); have != "" {
 		switch c := version.Compare(have, version.Version); {
 		case c > 0 && !*force:
@@ -131,7 +142,9 @@ func main() {
 
 	app := filepath.Join(bin, "cascade_app", "cascade_app.exe")
 	if _, err := os.Stat(app); err != nil {
-		fmt.Println("  ! the Flutter UI (bin\\cascade_app) is not in this setup; build it with scripts\\flutter-windows.ps1")
+		fmt.Println("  ! no Flutter UI installed (--no-ui): the app will not start until bin\\cascade_app is built and copied in")
+	} else if *noUI {
+		fmt.Println("  ! --no-ui: keeping the previously installed UI at", app, "(not from this setup)")
 	}
 	if !*noAuto {
 		if err := regAdd(`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "Cascade", fmt.Sprintf(`"%s" --background`, app)); err != nil {
