@@ -187,6 +187,16 @@ Three layers:
 Cost: `-literals` roughly doubles the size of the core library, and garble
 builds are slower.
 
+Verified, not assumed: `scripts/verify-obfuscation.sh` runs inside every
+packager when `CASCADE_OBFUSCATE=1` and fails the build if a shipped Go
+artifact still names a `cascade/...` package in its symbols or strings, or if
+the shared library exports anything but the listed `Cascade*` symbols. The
+macOS and Linux native hosts are built through the same helper as the core.
+Measured on the 0.4.0 tree: the library goes from 11,715 symbols and 283
+package-path symbols to 149 and none, with no telltale strings left; the CLI
+from 9,759 symbols to 114. Size: library 7.6 MB to 16.8 MB (`-literals`), CLI
+9.8 MB to 6.3 MB (`-tiny`).
+
 Symbol maps: `--split-debug-info` writes maps to
 `dist/debug-symbols/<platform>-<version>/`. They are required to symbolize
 crash traces from a release and must be kept per release. CI uploads them as a
