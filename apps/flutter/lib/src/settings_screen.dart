@@ -356,6 +356,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               value: widget.prefs.minimizeToTray && widget.prefs.hasTray,
               onChanged: widget.prefs.hasTray ? widget.prefs.setMinimizeToTray : null,
             ),
+            if (mac) ...[
+              Padding(padding: const EdgeInsets.only(top: 10, bottom: 6), child: Text('Menu bar icon', style: tt.titleSmall)),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'color', label: Text('Colour')),
+                  ButtonSegment(value: 'mono', label: Text('Monochrome, like the system items')),
+                ],
+                selected: {widget.prefs.trayIconStyle},
+                onSelectionChanged: widget.prefs.hasTray ? (sel) => widget.prefs.setTrayIconStyle(sel.first) : null,
+                showSelectedIcon: false,
+              ),
+              const SizedBox(height: 4),
+            ],
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: Text('Pulse the $bar icon while downloading'),
