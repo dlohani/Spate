@@ -8,7 +8,7 @@ bad() { echo "  not ok: $1"; rc=1; }
 
 want="$(grep -h '^//export ' "$ROOT"/export/cshared/*.go | awk '{print $2}' | sort)"
 wantn="$(printf '%s\n' "$want" | wc -l | tr -d ' ')"
-[ "$wantn" = "26" ] || bad "expected 26 //export directives, found $wantn"
+[ "$wantn" = "28" ] || bad "expected 28 //export directives, found $wantn"
 
 mac="$("$GEN" macos 2>&1)" || bad "generator macos failed: $mac"
 gotn="$(printf '%s\n' "$mac" | grep -c '^_Cascade')"

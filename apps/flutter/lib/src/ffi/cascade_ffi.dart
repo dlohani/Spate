@@ -27,6 +27,35 @@ typedef _StrActC = Pointer<Utf8> Function(LongLong, Pointer<Utf8>);
 typedef _StrActD = Pointer<Utf8> Function(int, Pointer<Utf8>);
 typedef _HandleLongC = LongLong Function(LongLong);
 typedef _HandleLongD = int Function(int);
+typedef _HandleULongC = UnsignedLongLong Function(LongLong);
+typedef _HandleULongD = int Function(int);
+typedef _StrC = Pointer<Utf8> Function();
+typedef _StrD = Pointer<Utf8> Function();
+
+/// A failure reported by the core, with the reason it gave.
+class CascadeException implements Exception {
+  final String message;
+  const CascadeException(this.message);
+
+  /// True when the core refused to start because another instance answers
+  /// on the capture ports (the shell should hand over to it and exit).
+  bool get alreadyRunning => message.contains('already running');
+
+  @override
+  String toString() => 'CascadeException: $message';
+}
+
+/// Reads and frees CascadeLastError from an opened library.
+String _lastErrorOf(DynamicLibrary lib) {
+  final f = lib.lookupFunction<_StrC, _StrD>('CascadeLastError');
+  final free = lib.lookupFunction<_FreeC, _FreeD>('CascadeFreeString');
+  final p = f();
+  try {
+    return p.toDartString();
+  } finally {
+    free(p);
+  }
+}
 
 /// Thin, synchronous binding to libcascade. One instance == one running
 /// service (engine + queue + browser-capture endpoint).
@@ -54,6 +83,7 @@ class Cascade {
   late final _IdActD _startNow = _lib.lookupFunction<_IdActC, _IdActD>('CascadeStartNow');
   late final _HandleLongD _currentLimit = _lib.lookupFunction<_HandleLongC, _HandleLongD>('CascadeCurrentLimit');
   late final _HandleIntD _showPending = _lib.lookupFunction<_HandleIntC, _HandleIntD>('CascadeShowPending');
+  late final _HandleULongD _queueVersion = _lib.lookupFunction<_HandleULongC, _HandleULongD>('CascadeQueueVersion');
   late final Pointer<Utf8> Function() _version =
       _lib.lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>('CascadeVersion');
 
@@ -83,12 +113,27 @@ class Cascade {
     }).toNativeUtf8();
     try {
       final h = start(spec);
-      if (h == 0) throw StateError('CascadeServiceStart failed (is Cascade already running?)');
+      if (h == 0) {
+        final why = _lastErrorOf(lib);
+        throw CascadeException(why.isEmpty ? 'CascadeServiceStart failed' : why);
+      }
       return Cascade._(lib, h);
     } finally {
       malloc.free(spec);
     }
   }
+
+  /// The reason the most recent failed call gave, or null when the last call
+  /// succeeded. Read it right after an operation returned null or false.
+  String? get lastError {
+    final s = _lastErrorOf(_lib);
+    return s.isEmpty ? null : s;
+  }
+
+  /// Advances whenever the queue changes (jobs added, removed or changing
+  /// state). Equal to the last value seen means [statuses] would return the
+  /// same list, except for progress bytes of running jobs.
+  int get queueVersion => _queueVersion(_h);
 
   /// Asks an already running instance to show its window (a second launch
   /// calls this after [Cascade.start] fails, then exits). True if one answered.
