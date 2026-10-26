@@ -78,6 +78,7 @@ func startJSON(spec string) int64 {
 		DownloadDir   string `json:"downloadDir"`
 		SettingsPath  string `json:"settingsPath"`
 		AllowMultiple bool   `json:"allowMultiple"`
+		Token         string `json:"token"`
 	}
 	if spec != "" {
 		if err := json.Unmarshal([]byte(spec), &in); err != nil {
@@ -87,7 +88,7 @@ func startJSON(spec string) int64 {
 	}
 	s, err := service.StartWith(service.StartOpts{
 		MaxConcurrent: in.MaxConcurrent, DownloadDir: in.DownloadDir,
-		SettingsPath: in.SettingsPath, AllowMultiple: in.AllowMultiple,
+		SettingsPath: in.SettingsPath, AllowMultiple: in.AllowMultiple, Token: in.Token,
 	})
 	if err != nil {
 		setErr(err)
@@ -138,7 +139,7 @@ func SpateServiceStart(maxConcurrent C.int, downloadDir *C.char) C.longlong {
 }
 
 // SpateServiceStartJSON is SpateServiceStart with options as JSON:
-// {"maxConcurrent","downloadDir","settingsPath","allowMultiple"}. Omitted
+// {"maxConcurrent","downloadDir","settingsPath","allowMultiple","token"}. Omitted
 // fields take the defaults. Returns a handle or 0 on error.
 //
 //export SpateServiceStartJSON
