@@ -1,11 +1,11 @@
 # winget manifest (singleton) for Spate. Publish Spate-Setup-<version>.exe
 # as a GitHub release, fill in InstallerUrl/InstallerSha256, then submit to
 # github.com/microsoft/winget-pkgs (or use a private REST source).
-# Then:  winget install AMLabs.Spate
-PackageIdentifier: AMLabs.Spate
+# Then:  winget install DeepakLohani.Spate
+PackageIdentifier: DeepakLohani.Spate
 PackageVersion: 0.4.0
 PackageName: Spate
-Publisher: AMLabs
+Publisher: Deepak Lohani
 License: MIT
 ShortDescription: Download manager with browser capture, parallel connections and resume
 Installers:

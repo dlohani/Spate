@@ -166,7 +166,7 @@ func main() {
 	for name, val := range map[string]string{
 		"DisplayName":     "Spate",
 		"DisplayVersion":  version.Version,
-		"Publisher":       "AMLabs",
+		"Publisher":       "Deepak Lohani",
 		"InstallLocation": root,
 		"UninstallString": fmt.Sprintf(`"%s" --uninstall`, setupCopy),
 	} {
