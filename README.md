@@ -370,4 +370,4 @@ Spate is free and open source. If it saves you time, you can
 
 ## License
 
-MIT. Copyright (c) 2026 AMLabs. See `LICENSE`.
+MIT. Copyright (c) 2026 Deepak Lohani. See `LICENSE`.

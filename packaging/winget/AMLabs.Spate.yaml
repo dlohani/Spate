@@ -5,7 +5,7 @@
 PackageIdentifier: AMLabs.Spate
 PackageVersion: 0.4.0
 PackageName: Spate
-Publisher: d3xt3r
+Publisher: AMLabs
 License: MIT
 ShortDescription: Download manager with browser capture, parallel connections and resume
 Installers:
