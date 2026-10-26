@@ -18,6 +18,7 @@ class CascadeController extends ChangeNotifier {
   bool pairShown = false; // a pairing dialog is currently on screen
   Timer? _timer;
   String? lastError;
+  int _lastVersion = -1; // core queue version at the last full refresh
 
   /// Called when another launch of the app asked this instance to show its
   /// window (the desktop shell hooks window_manager here).
@@ -30,6 +31,17 @@ class CascadeController extends ChangeNotifier {
 
   void _tick() {
     final now = DateTime.now();
+    // Idle and unchanged: no status round trip and no redraw. The queue
+    // version advances on any add, remove or state change; progress bytes do
+    // not, so a running job keeps the full refresh going for its speed and
+    // bar. A pairing request is not part of the version and is checked here.
+    final version = core.queueVersion;
+    final running = jobs.any((j) => j.state == 'running');
+    if (version == _lastVersion && !running && !core.pairPending) {
+      if (core.showPending) onShowRequested?.call();
+      return;
+    }
+    _lastVersion = version;
     final next = core.statuses();
     for (final j in next) {
       _rates.putIfAbsent(j.id, () => _Rate()).observe(j.bytes, now);
