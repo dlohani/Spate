@@ -8,6 +8,8 @@
 
 **Tech Stack:** Go 1.22+ standard library only (CI-enforced), Flutter 3.47 / Dart 3.13, bash, GitHub Actions.
 
+**Status:** Executed 26 October 2026 on branch `review-hardening` (all tasks). Deviations are noted inline.
+
 **Spec:** The review findings in this conversation (26 October 2026); background in `docs/delivery.md` ("Where the design holds and where it leaks"). The daemon split (finding 3) is out of scope and gets its own plan.
 
 ## Global Constraints
@@ -40,7 +42,7 @@
 - Produces: `func (m *Manager) Records() []Record` returning non-terminal jobs (Pending, Running, Paused) in insertion order. Running jobs are recorded with `Paused: false`.
 - Produces: `func (m *Manager) AddRecord(r Record, base download.Options) (string, error)` which builds a `Spec` from the record, copies Headers/Cookie/Basic*/Conns/SHA256 onto `base`, sets `Resume: true`, and when `r.Paused` adds the job in `Paused` state (new helper path inside `Add`, not a second map insert).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestVersionAdvancesOnChange(t *testing.T) {
@@ -73,21 +75,21 @@ func TestRecordsRoundTrip(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `go test ./internal/job -run 'TestVersionAdvancesOnChange|TestRecordsRoundTrip' -v`
 Expected: FAIL, `m.Version undefined`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add `version uint64` to `Manager`; bump it inside every method that mutates a job under `m.mu` and in the goroutine epilogue in `launchLocked`. Implement `Records`, `Record`, `AddRecord`. `AddRecord` with `Paused` sets `state: Paused` on the new job before `m.signal()`.
 
-- [ ] **Step 4: Run the package tests**
+- [x] **Step 4: Run the package tests**
 
 Run: `go test -race ./internal/job`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/job
@@ -108,7 +110,7 @@ git commit -m "job: version counter and serialisable records for queue persisten
 - Produces: `func RemovePartial(out string) error` now removes `out`, `PartPath(out)` and the sidecar.
 - Behaviour: data is written to `PartPath(out)`; on success (after SHA check) the engine renames it to `out`. If `out` already exists, the rename target becomes the first free `name (N).ext` and `Downloader.Output()` reports it. `streamWhole` follows the same rule. Resume opens `PartPath(out)`; if it is missing but a sidecar and a legacy `out` exist, `out` is renamed to the part path first; if neither exists, the sidecar is discarded and the download starts fresh.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestWritesPartThenRenames(t *testing.T) // during download only out+".part" exists; after Run, out exists and part does not
@@ -119,21 +121,21 @@ func TestLegacyPartialIsAdopted(t *testing.T) // sidecar + data at out (old layo
 
 Use `manualServer` from the existing tests. Hold the download mid-way with the server's delay to observe the `.part` file.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `go test ./internal/download -run 'Part|Fresh|Overwrite|Legacy' -v`
 Expected: FAIL (`PartPath` undefined, or `out` exists during download).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `prepare` and `streamWhole` open `PartPath(d.out)`. Add `func (d *Downloader) finalize() error` called after verification in both paths: picks a free name with `uniquePath(out)` (`name (1).ext`, `name (2).ext` ...), renames, updates `d.out` under `d.mu`. `verifySHA256` runs on the part path. Update `ResumeOrphans` in Task 3 to stat the part path.
 
-- [ ] **Step 4: Run the package and dependants**
+- [x] **Step 4: Run the package and dependants**
 
 Run: `go test -race ./internal/download ./internal/job ./internal/localapi ./internal/service`
 Expected: PASS (fix any test that asserted on `out` mid-download).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/download
@@ -156,7 +158,7 @@ git commit -m "download: write to <out>.part and rename on completion"
 - Produces: `func loadQueue(path string) ([]job.Record, error)`; a missing file returns `nil, nil`; garbage or `Version > 1` returns an error.
 - Behaviour: `StartWith` loads `<configDir>/queue.json`, calls `AddRecord` for each with `SharedLimiter: s.limiter`, then runs `ResumeOrphans` skipping any `out` already queued. A goroutine saves when `Mgr.Version()` changed, checked every second; `Stop` saves once more synchronously.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestQueueSurvivesRestart(t *testing.T) // start, add a paused job with Cookie "s=1" and a scheduled job, Stop; start again with the same settings path: both jobs present, cookie preserved in Records(), states Paused and Pending
@@ -164,19 +166,19 @@ func TestLoadQueueRejectsGarbage(t *testing.T) // write "{" to queue.json; Start
 func TestOrphanScanSkipsQueuedOutputs(t *testing.T) // a queued record and a sidecar for the same out: exactly one job after start
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `go test ./internal/service -run 'Queue|Orphan' -v`
 Expected: FAIL, `saveQueue` undefined.
 
-- [ ] **Step 3: Implement** `queue.go` and wire it into `StartWith`/`Stop`. The queue path is `filepath.Join(filepath.Dir(spath), "queue.json")`.
+- [x] **Step 3: Implement** `queue.go` and wire it into `StartWith`/`Stop`. The queue path is `filepath.Join(filepath.Dir(spath), "queue.json")`.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `go test -race ./internal/service`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/service
@@ -202,7 +204,7 @@ git commit -m "service: persist the queue to queue.json and restore it at start"
 - Produces (Dart): `CascadeController.add` sets `lastError` from `core.lastError` when the core returns null.
 - Behaviour: `main.dart` on `CascadeException` whose message contains `already running` calls `requestShow` and exits; on any other message runs `runApp(_FatalApp(message))`, a minimal MaterialApp showing the message and the settings path.
 
-- [ ] **Step 1: Write the failing Go test**
+- [x] **Step 1: Write the failing Go test**
 
 ```go
 func TestLastErrorAfterFailedStart(t *testing.T) {
@@ -215,25 +217,25 @@ func TestLastErrorAfterFailedStart(t *testing.T) {
 }
 ```
 
-Note: cgo tests run with `go test ./export/cshared` as an ordinary package (the `main` func is empty).
+Note: Go test files cannot import "C", so the exports wrap plain Go helpers (`startJSON`, `stopID`, `lookupID`, `lastErrorText`) and the test targets those. `CascadeQueueVersion` (Task 9) was added in this task too so the symbol list changed once (26 to 28).
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `go test ./export/cshared -run TestLastErrorAfterFailedStart -v`
 Expected: FAIL, `CascadeLastError` undefined.
 
-- [ ] **Step 3: Implement** `setErr(err error)` and `CascadeLastError`; call `setErr` on every export's failure path (`CascadeServiceStart*`, `CascadeAdd*`, `CascadeSettingsApply`, `act`). Add `CascadeLastError` to `export/cshared/symbols`.
+- [x] **Step 3: Implement** `setErr(err error)` and `CascadeLastError`; call `setErr` on every export's failure path (`CascadeServiceStart*`, `CascadeAdd*`, `CascadeSettingsApply`, `act`). Add `CascadeLastError` to `export/cshared/symbols`.
 
-- [ ] **Step 4: Dart side**
+- [x] **Step 4: Dart side**
 
 Add the binding and `CascadeException`; update `main.dart` and `CascadeController.add`. Extend `ffi_test.dart`: after `applySettings` with the bad window returns false, `core.lastError` contains `bad time`.
 
-- [ ] **Step 5: Run**
+- [x] **Step 5: Run**
 
 Run: `go test -race ./export/cshared && scripts/test/exports.test.sh && make lib && (cd apps/flutter && flutter analyze && flutter test)`
 Expected: all PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add export/cshared apps/flutter/lib apps/flutter/test
@@ -249,7 +251,7 @@ git commit -m "cshared: CascadeLastError; Flutter shows start failures instead o
 - Modify: `internal/settings/settings.go` (`Save`)
 - Test: `internal/localapi/server_test.go`, `internal/settings/settings_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestAddSanitisesFilename(t *testing.T) // POST /add with filename "../../evil.bin": job Out is filepath.Join(defaultDir, "evil.bin")
@@ -257,18 +259,18 @@ func TestAddEmptyFilenameFallsBack(t *testing.T) // filename "." : Out basename 
 func TestSaveConcurrent(t *testing.T) // 20 goroutines call Save on the same path; no error, file parses as JSON
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `go test ./internal/localapi ./internal/settings -run 'Sanitises|FallsBack|SaveConcurrent' -v`
 Expected: FAIL (Out escapes; or a rename error under race).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `handleAdd`: `name = filepath.Base(filepath.Clean(req.Filename))`; if `name` is `"."`, `"/"`, `""` or starts with `".."`, use `filenameFor(req.URL)`. In `Save`: `os.CreateTemp(filepath.Dir(path), "settings-*.tmp")`, write, close, `os.Chmod(0o600)`, rename.
 
-- [ ] **Step 4: Run** `go test -race ./internal/localapi ./internal/settings` Expected: PASS.
+- [x] **Step 4: Run** `go test -race ./internal/localapi ./internal/settings` Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/localapi internal/settings
@@ -293,19 +295,19 @@ git commit -m "localapi: sanitise hand-off filenames; settings: unique temp file
   - localapi: `handoff refused` (url, reason), `handoff accepted` (id, url), `pair` (allowed bool).
   - download: `resume discarded` (reason: size, validator, missing part), `gate closed` (reason), `connections reduced` (n).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 func TestToFileRotatesWhenLarge(t *testing.T) // write 6 MiB file at path; ToFile(path, 5<<20) leaves path small and path+".1" at 6 MiB
 ```
 
-- [ ] **Step 2: Run** `go test ./internal/logx -v` Expected: FAIL, package missing.
+- [x] **Step 2: Run** `go test ./internal/logx -v` Expected: FAIL, package missing.
 
-- [ ] **Step 3: Implement** `logx` and add the log calls listed above. Add `-v` to `cmd/cascade/main.go`.
+- [x] **Step 3: Implement** `logx` and add the log calls listed above. Add `-v` to `cmd/cascade/main.go`.
 
-- [ ] **Step 4: Run** `go vet ./... && go test -race ./...` Expected: PASS. Then start the service via `go test ./internal/service -run TestSettingsRulesAndPersistence -v` and confirm `cascade.log` appears beside the test's settings file (add that assertion to the test).
+- [x] **Step 4: Run** `go vet ./... && go test -race ./...` Expected: PASS. Then start the service via `go test ./internal/service -run TestSettingsRulesAndPersistence -v` and confirm `cascade.log` appears beside the test's settings file (add that assertion to the test).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal cmd
@@ -327,17 +329,17 @@ git commit -m "core: slog to <config>/cascade.log with rotation; -v for the CLI"
 - Produces: `func parseWifiDevices(nmcliOut string) map[string]bool` from `nmcli -t -f DEVICE,TYPE device` (TYPE `wifi`).
 - Produces: `func readBattery(sysfs string) (percent int, onAC bool, err error)`: `BAT*/capacity`, `AC*/online` or `*/type == Mains` with `online == 1`; no battery directory returns `100, true, nil` (desktop).
 
-- [ ] **Step 1: Write the failing tests** for the three parsers with literal sample outputs, and `readBattery` against a temp sysfs tree (`BAT0/capacity` = `42`, `AC/online` = `0`).
+- [x] **Step 1: Write the failing tests** for the three parsers with literal sample outputs, and `readBattery` against a temp sysfs tree (`BAT0/capacity` = `42`, `AC/online` = `0`).
 
-- [ ] **Step 2: Run** `GOOS=linux go test ./internal/policy -v` Expected: FAIL (`GOOS=linux go vet ./internal/policy` compiles the file on macOS; the parser tests have no build tag so they run anywhere: put parsers in `provider_linux_parse.go` without a tag).
+- [x] **Step 2: Run** `GOOS=linux go test ./internal/policy -v` Expected: FAIL (`GOOS=linux go vet ./internal/policy` compiles the file on macOS; the parser tests have no build tag so they run anywhere: put parsers in `provider_linux_parse.go` without a tag).
 
-- [ ] **Step 3: Implement.** `OnWiFi`: default route dev is in the wifi set. `Battery`: `readBattery`.
+- [x] **Step 3: Implement.** `OnWiFi`: default route dev is in the wifi set. `Battery`: `readBattery`.
 
-- [ ] **Step 4: Run** `go test -race ./internal/policy && GOOS=linux go vet ./internal/policy` Expected: PASS.
+- [x] **Step 4: Run** `go test -race ./internal/policy && GOOS=linux go vet ./internal/policy` Expected: PASS.
 
-- [ ] **Step 5: Update** `docs/delivery.md` parity table (Linux gating: yes) and `README.md` flag help (`-wifi-only`, `-battery-min` say "macOS, Linux").
+- [x] **Step 5: Update** `docs/delivery.md` parity table (Linux gating: yes) and `README.md` flag help (`-wifi-only`, `-battery-min` say "macOS, Linux").
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add internal/policy docs/delivery.md README.md cmd/cascade/main.go
@@ -358,15 +360,15 @@ git commit -m "policy: Linux Wi-Fi and battery provider (ip route, nmcli, sysfs)
 - Produces: `type StatusJSON struct { ID, URL, Out, State string; Priority int; Bytes, Total int64; Retries int; StartAt int64 `json:"startAt,omitempty"`; Error string `json:"error,omitempty"` }` with the same tags the cshared `statusJSON` has today, plus `func (s Status) JSON() StatusJSON` and `func StatusesJSON(sts []Status) []StatusJSON`.
 - Behaviour: the three callers delete their local structs. The mobile facade's output therefore gains `url`, `out`, `retries`, `startAt` (add-only).
 
-- [ ] **Step 1: Write the failing test** `TestStatusJSONFieldSet`: marshal a `StatusJSON` and assert the exact key set `id,url,out,state,priority,bytes,total,retries,startAt,error`.
+- [x] **Step 1: Write the failing test** `TestStatusJSONFieldSet`: marshal a `StatusJSON` and assert the exact key set `id,url,out,state,priority,bytes,total,retries,startAt,error`.
 
-- [ ] **Step 2: Run** `go test ./internal/job -run TestStatusJSONFieldSet -v` Expected: FAIL.
+- [x] **Step 2: Run** `go test ./internal/job -run TestStatusJSONFieldSet -v` Expected: FAIL.
 
-- [ ] **Step 3: Implement** and replace the three local structs.
+- [x] **Step 3: Implement** and replace the three local structs.
 
-- [ ] **Step 4: Run** `go vet ./... && go test -race ./... && make lib && (cd apps/flutter && flutter test)` Expected: PASS (Dart model unchanged).
+- [x] **Step 4: Run** `go vet ./... && go test -race ./... && make lib && (cd apps/flutter && flutter test)` Expected: PASS (Dart model unchanged).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/job export mobile internal/localapi apps/flutter/lib/src/model/job.dart
@@ -386,10 +388,10 @@ git commit -m "job: one StatusJSON shared by the C ABI, gomobile and loopback ex
 - Behaviour: `CascadeController._tick` reads `core.queueVersion`; when unchanged since the last tick and no job is running it skips the status call and `notifyListeners` (speed samples still need ticks while running). Tick stays 500 ms.
 - CI: after the toolchain steps in `macos` and `linux`: `make lib`, then `cd apps/flutter && flutter pub get && flutter analyze && flutter test`. The macOS step runs before `./build mac`. The Linux job already installs GTK dev packages.
 
-- [ ] **Step 1: Add the export and binding**, and the skip in `_tick`.
-- [ ] **Step 2: Run** `scripts/test/exports.test.sh && make lib && (cd apps/flutter && flutter analyze && flutter test)` Expected: PASS.
-- [ ] **Step 3: Edit the workflow** and run `yq '.jobs.macos.steps[].name' .github/workflows/build.yml 2>/dev/null || grep -n "flutter test" .github/workflows/build.yml` to confirm both jobs carry the step.
-- [ ] **Step 4: Commit**
+- [x] **Step 1: Add the export and binding**, and the skip in `_tick`.
+- [x] **Step 2: Run** `scripts/test/exports.test.sh && make lib && (cd apps/flutter && flutter analyze && flutter test)` Expected: PASS.
+- [x] **Step 3: Edit the workflow** and run `yq '.jobs.macos.steps[].name' .github/workflows/build.yml 2>/dev/null || grep -n "flutter test" .github/workflows/build.yml` to confirm both jobs carry the step.
+- [x] **Step 4: Commit**
 
 ```bash
 git add .github export apps/flutter/lib
@@ -405,9 +407,9 @@ git commit -m "ci: flutter analyze and test on macOS and Linux; UI skips idle po
 - Modify: `browser/README.md` (Firefox and Safari sections describe the shipped manifests and `scripts/safari-extension.sh`)
 - Modify: `docs/delivery.md` (strike the leaks this plan closes; note queue.json, `.part`, `CascadeLastError`, logging; leave the daemon split as the next phase)
 
-- [ ] **Step 1: Edit** the three files.
-- [ ] **Step 2: Verify** `grep -n "Not implemented yet" README.md` shows only the `.rar/.7z` and media-button items; `grep -n "follow-up\|Not included yet" browser/README.md` returns nothing.
-- [ ] **Step 3: Commit**
+- [x] **Step 1: Edit** the three files.
+- [x] **Step 2: Verify** `grep -n "Not implemented yet" README.md` shows only the `.rar/.7z` and media-button items; `grep -n "follow-up\|Not included yet" browser/README.md` returns nothing.
+- [x] **Step 3: Commit**
 
 ```bash
 git add README.md browser/README.md docs/delivery.md
