@@ -1,5 +1,5 @@
 #!/bin/sh
-# Cascade .deb postrm: drop the system-wide browser registrations on remove
+# Spate .deb postrm: drop the system-wide browser registrations on remove
 # or purge. Per-user settings, tokens and downloads are left alone.
 set -e
 case "${1:-}" in
@@ -7,9 +7,9 @@ case "${1:-}" in
     for d in /etc/opt/chrome/native-messaging-hosts \
              /etc/chromium/native-messaging-hosts \
              /etc/opt/edge/native-messaging-hosts; do
-      rm -f "$d/com.cascade.host.json"
+      rm -f "$d/com.amlabs.spate.host.json"
     done
-    rm -f /usr/lib/mozilla/native-messaging-hosts/com.cascade.host.json
+    rm -f /usr/lib/mozilla/native-messaging-hosts/com.amlabs.spate.host.json
     rm -f /usr/share/google-chrome/extensions/@CHROME_WEBSTORE_ID@.json /usr/share/chromium/extensions/@CHROME_WEBSTORE_ID@.json
     if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q /usr/share/applications || true; fi
     ;;

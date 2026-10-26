@@ -13,7 +13,7 @@ func TestShowRouteServed(t *testing.T) {
 	}
 	defer s.Close()
 	req, _ := http.NewRequest(http.MethodPost, "http://"+addr+"/show", nil)
-	req.Header.Set("X-Cascade-Token", "tok")
+	req.Header.Set("X-Spate-Token", "tok")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

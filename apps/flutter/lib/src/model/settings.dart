@@ -76,6 +76,7 @@ class AppSettings {
   TimeWindow queueWindow;
   List<Recurring> recurring;
   int maxConcurrent;
+  int defaultConns;
 
   AppSettings({
     required this.downloadDir,
@@ -88,6 +89,7 @@ class AppSettings {
     required this.queueWindow,
     required this.recurring,
     required this.maxConcurrent,
+    this.defaultConns = 8,
   });
 
   factory AppSettings.fromJson(Map<String, dynamic> j) {
@@ -104,6 +106,7 @@ class AppSettings {
       queueWindow: TimeWindow.fromJson(qw),
       recurring: ((j['recurring'] as List?) ?? const []).map((e) => Recurring.fromJson(e as Map<String, dynamic>)).toList(),
       maxConcurrent: (j['maxConcurrent'] as num?)?.toInt() ?? 3,
+      defaultConns: (j['defaultConns'] as num?)?.toInt() ?? 8,
     );
   }
 
@@ -116,5 +119,6 @@ class AppSettings {
         'queueWindow': {'enabled': queueWindowEnabled, ...queueWindow.toJson()},
         'recurring': recurring.map((r) => r.toJson()).toList(),
         'maxConcurrent': maxConcurrent,
+        'defaultConns': defaultConns,
       };
 }

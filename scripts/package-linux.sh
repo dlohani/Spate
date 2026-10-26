@@ -3,21 +3,21 @@
 #
 #   scripts/package-linux.sh [--cli-only] [--arch amd64|arm64]
 #
-# On Debian/Ubuntu it builds the full desktop package, dist/cascade_<ver>_<arch>.deb:
-# the app (Flutter bundle + libcascade.so), the browser native host, the
+# On Debian/Ubuntu it builds the full desktop package, dist/spate_<ver>_<arch>.deb:
+# the app (Flutter bundle + libspate.so), the browser native host, the
 # extension, an application-menu entry, autostart (hidden, tray only) and
 # icons. Needs Go, gcc, and Flutter (the UI is built here if not already
 # built). The postinst registers the native host system-wide for Chrome,
-# Chromium and Edge; `cascade-register` does per-user registration for the
+# Chromium and Edge; `spate-register` does per-user registration for the
 # other browsers and extra extension IDs.
 #
-# Anywhere else (or with --cli-only) it builds dist/cascade-cli_<ver>_<arch>.deb:
+# Anywhere else (or with --cli-only) it builds dist/spate-cli_<ver>_<arch>.deb:
 # the command-line downloader and the native host only, pure Go, no GUI
-# (libcascade.so and the Flutter UI need a Linux build host).
+# (libspate.so and the Flutter UI need a Linux build host).
 #
 # Upgrades: dpkg keeps settings and downloads; the same version reinstalls;
 # an older package than the installed one is refused by the preinst unless
-# CASCADE_FORCE=1. dpkg-deb is used when present, else the .deb is assembled
+# SPATE_FORCE=1. dpkg-deb is used when present, else the .deb is assembled
 # with ar + tar (same result).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,7 +27,7 @@ VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 . "$ROOT/scripts/lib/obfuscate.sh"
 export OBF_ROOT="$ROOT"
 load_store_ids "$ROOT"
-LDFLAGS="-s -w -X cascade/internal/version.Version=$VERSION"
+LDFLAGS="-s -w -X spate/internal/version.Version=$VERSION"
 DEB="$ROOT/packaging/debian"
 
 CLI_ONLY=0; ARCH=""
@@ -52,35 +52,35 @@ case "$ARCH" in
   arm64) GOARCH=arm64 ;;
   *) echo "unsupported --arch $ARCH (amd64|arm64)" >&2; exit 2 ;;
 esac
-obf_require_garble   # CASCADE_OBFUSCATE=1 without garble fails loud, never ships plain
+obf_require_garble   # SPATE_OBFUSCATE=1 without garble fails loud, never ships plain
 
-PKG=cascade; [ "$CLI_ONLY" = 1 ] && PKG=cascade-cli
+PKG=spate; [ "$CLI_ONLY" = 1 ] && PKG=spate-cli
 STAGE="$ROOT/dist/deb-stage"
 rm -rf "$STAGE"
-mkdir -p "$STAGE/DEBIAN" "$STAGE/usr/bin" "$STAGE/usr/lib/cascade" "$STAGE/usr/share/doc/$PKG"
+mkdir -p "$STAGE/DEBIAN" "$STAGE/usr/bin" "$STAGE/usr/lib/spate" "$STAGE/usr/share/doc/$PKG"
 
 echo "==> building $PKG $VERSION ($ARCH)"
 cmd="$(go_build_cmd cli)"
 # shellcheck disable=SC2086
-(cd "$ROOT" && GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 $cmd -ldflags "$LDFLAGS" -o "$STAGE/usr/bin/cascade" ./cmd/cascade)
+(cd "$ROOT" && GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 $cmd -ldflags "$LDFLAGS" -o "$STAGE/usr/bin/spate" ./cmd/spate)
 # shellcheck disable=SC2086
-(cd "$ROOT" && GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 $cmd -ldflags "$LDFLAGS" -o "$STAGE/usr/lib/cascade/cascade-host" ./cmd/cascade-host)
-echo "    usr/bin/cascade, usr/lib/cascade/cascade-host"
+(cd "$ROOT" && GOOS=linux GOARCH=$GOARCH CGO_ENABLED=0 $cmd -ldflags "$LDFLAGS" -o "$STAGE/usr/lib/spate/spate-host" ./cmd/spate-host)
+echo "    usr/bin/spate, usr/lib/spate/spate-host"
 
 if [ "$CLI_ONLY" = 0 ]; then
   # Core as a shared library (cgo, native) and the Flutter bundle. Always-on
-  # hardening: export only the Cascade* C ABI via a gnu version-script, exactly
-  # like scripts/install-linux.sh (independent of CASCADE_OBFUSCATE).
-  MAP="$(mktemp "${TMPDIR:-/tmp}/cascade-exports.XXXXXX")"; trap 'rm -f "$MAP"' EXIT
+  # hardening: export only the Spate* C ABI via a gnu version-script, exactly
+  # like scripts/install-linux.sh (independent of SPATE_OBFUSCATE).
+  MAP="$(mktemp "${TMPDIR:-/tmp}/spate-exports.XXXXXX")"; trap 'rm -f "$MAP"' EXIT
   "$ROOT/scripts/export-symbols.sh" gnu > "$MAP"
   cmd="$(go_build_cmd lib)"
   # shellcheck disable=SC2086
-  (cd "$ROOT" && GOARCH=$GOARCH CGO_ENABLED=1 $cmd -ldflags "$LDFLAGS -extldflags=-Wl,--version-script,$MAP" -buildmode=c-shared -o "$STAGE/usr/lib/cascade/libcascade.so" ./export/cshared)
+  (cd "$ROOT" && GOARCH=$GOARCH CGO_ENABLED=1 $cmd -ldflags "$LDFLAGS -extldflags=-Wl,--version-script,$MAP" -buildmode=c-shared -o "$STAGE/usr/lib/spate/libspate.so" ./export/cshared)
   BUNDLE="$(ls -d "$ROOT"/apps/flutter/build/linux/*/release/bundle 2>/dev/null | head -1 || true)"
   BUNDLE_PREBUILT=""; [ -n "$BUNDLE" ] && BUNDLE_PREBUILT=1
   if [ -z "$BUNDLE" ]; then
     echo "    Flutter bundle not built; running flutter build linux"
-    # CASCADE_OBFUSCATE=1: obfuscate Dart; symbol map stays outside the bundle.
+    # SPATE_OBFUSCATE=1: obfuscate Dart; symbol map stays outside the bundle.
     OBF_FLAGS=""
     if obf_on; then
       SYMDIR="$ROOT/dist/debug-symbols/linux-$VERSION"
@@ -93,21 +93,21 @@ if [ "$CLI_ONLY" = 0 ]; then
     BUNDLE="$(ls -d "$ROOT"/apps/flutter/build/linux/*/release/bundle | head -1)"
   fi
   if [ -n "$BUNDLE_PREBUILT" ] && obf_on; then
-    echo "warning: CASCADE_OBFUSCATE=1 but a prebuilt Flutter bundle was reused; it may be unobfuscated. Remove apps/flutter/build/linux and rebuild." >&2
+    echo "warning: SPATE_OBFUSCATE=1 but a prebuilt Flutter bundle was reused; it may be unobfuscated. Remove apps/flutter/build/linux and rebuild." >&2
   fi
-  cp -R "$BUNDLE" "$STAGE/usr/lib/cascade/cascade_app"
-  cp "$STAGE/usr/lib/cascade/libcascade.so" "$STAGE/usr/lib/cascade/cascade_app/lib/libcascade.so"  # the Dart loader looks in <exe>/lib
-  echo "    usr/lib/cascade/cascade_app (Flutter UI), libcascade.so"
+  cp -R "$BUNDLE" "$STAGE/usr/lib/spate/spate_app"
+  cp "$STAGE/usr/lib/spate/libspate.so" "$STAGE/usr/lib/spate/spate_app/lib/libspate.so"  # the Dart loader looks in <exe>/lib
+  echo "    usr/lib/spate/spate_app (Flutter UI), libspate.so"
 
-  mkdir -p "$STAGE/usr/share/applications" "$STAGE/etc/xdg/autostart" "$STAGE/usr/share/cascade"
-  cp "$DEB/cascade.desktop" "$STAGE/usr/share/applications/cascade.desktop"
-  cp "$DEB/cascade-autostart.desktop" "$STAGE/etc/xdg/autostart/cascade.desktop"
-  cp -R "$ROOT/browser/extension" "$STAGE/usr/share/cascade/extension"
-  sed -e "s/@CHROME_WEBSTORE_ID@/${CHROME_WEBSTORE_ID:-}/g" -e "s/@EDGE_ADDONS_ID@/${EDGE_ADDONS_ID:-}/g" "$DEB/cascade-register" > "$STAGE/usr/bin/cascade-register"
-  chmod 0755 "$STAGE/usr/bin/cascade-register"
+  mkdir -p "$STAGE/usr/share/applications" "$STAGE/etc/xdg/autostart" "$STAGE/usr/share/spate"
+  cp "$DEB/spate.desktop" "$STAGE/usr/share/applications/spate.desktop"
+  cp "$DEB/spate-autostart.desktop" "$STAGE/etc/xdg/autostart/spate.desktop"
+  cp -R "$ROOT/browser/extension" "$STAGE/usr/share/spate/extension"
+  sed -e "s/@CHROME_WEBSTORE_ID@/${CHROME_WEBSTORE_ID:-}/g" -e "s/@EDGE_ADDONS_ID@/${EDGE_ADDONS_ID:-}/g" "$DEB/spate-register" > "$STAGE/usr/bin/spate-register"
+  chmod 0755 "$STAGE/usr/bin/spate-register"
   for s in 64 128 256 512; do
     d="$STAGE/usr/share/icons/hicolor/${s}x${s}/apps"; mkdir -p "$d"
-    cp "$ROOT/assets/brand/linux/cascade-$s.png" "$d/cascade.png"
+    cp "$ROOT/assets/brand/linux/spate-$s.png" "$d/spate.png"
   done
   for f in preinst postinst prerm postrm; do
     sed -e "s/@VERSION@/$VERSION/g" -e "s/@CHROME_WEBSTORE_ID@/${CHROME_WEBSTORE_ID:-}/g" -e "s/@EDGE_ADDONS_ID@/${EDGE_ADDONS_ID:-}/g" \
@@ -115,42 +115,46 @@ if [ "$CLI_ONLY" = 0 ]; then
   done
   DEPENDS="libc6, libgtk-3-0, libglib2.0-0"
   RECOMMENDS="libayatana-appindicator3-1, chromium | google-chrome-stable | microsoft-edge-stable"
-  CONFLICTS="cascade-cli"
+  CONFLICTS="spate-cli, cascade, cascade-cli"   # the old package names: upgrading replaces them
   DESC="Download manager: parallel connections, resume, queue, browser capture
- Cascade takes over downloads from the browser (Chrome, Chromium, Edge,
+ Spate takes over downloads from the browser (Chrome, Chromium, Edge,
  Brave, Vivaldi via its extension), downloads with several connections,
  resumes broken transfers, files downloads by category or site, schedules
  them and limits speed by time of day. Runs hidden in the tray at login.
- This package also installs the cascade command-line downloader."
+ This package also installs the spate command-line downloader."
 else
   DEPENDS="libc6"
   RECOMMENDS=""
-  CONFLICTS="cascade"
+  CONFLICTS="spate, cascade, cascade-cli"
   DESC="Command-line download manager: parallel connections and resume
- The cascade command downloads a file with several connections, resumes
+ The spate command downloads a file with several connections, resumes
  broken transfers, verifies checksums and limits speed. No GUI; the
- desktop application is in the cascade package."
+ desktop application is in the spate package."
 fi
 
 cat > "$STAGE/usr/share/doc/$PKG/README" <<TXT
-Cascade $VERSION ($PKG)
-Command line: cascade <url> [-o out] [-n 8] [-resume] [-limit 2M]
+Spate $VERSION ($PKG)
+Command line: spate <url> [-o out] [-n 8] [-resume] [-limit 2M]
 $( [ "$CLI_ONLY" = 0 ] && cat <<'GUI'
-Desktop: "Cascade" in the application menu; starts hidden at login (tray).
-Browser: load /usr/share/cascade/extension in chrome://extensions (Developer
+Desktop: "Spate" in the application menu; starts hidden at login (tray).
+Browser: load /usr/share/spate/extension in chrome://extensions (Developer
 mode -> Load unpacked). Chrome, Chromium and Edge are registered system-wide;
-for Brave, Vivaldi or another extension ID run: cascade-register [ID]
+for Brave, Vivaldi or another extension ID run: spate-register [ID]
 GUI
 )
-Settings: ~/.config/cascade/settings.json. Remove: apt remove $PKG
+Settings: ~/.config/spate/settings.json. Remove: apt remove $PKG
 TXT
+
+if obf_on; then
+  "$ROOT/scripts/verify-obfuscation.sh" "$STAGE/usr/bin/spate" "$STAGE/usr/lib/spate/spate-host" $( [ "$CLI_ONLY" = 0 ] && echo "$STAGE/usr/lib/spate/libspate.so" )
+fi
 
 SIZE_KB="$(du -sk "$STAGE" | cut -f1)"
 {
   echo "Package: $PKG"
   echo "Version: $VERSION"
   echo "Architecture: $ARCH"
-  echo "Maintainer: d3xt3r"
+  echo "Maintainer: AMLabs"
   echo "Section: net"
   echo "Priority: optional"
   echo "Installed-Size: $SIZE_KB"

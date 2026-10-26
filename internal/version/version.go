@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Version is set by the build: -ldflags "-X cascade/internal/version.Version=1.2.3".
+// Version is set by the build: -ldflags "-X spate/internal/version.Version=1.2.3".
 // A plain `go build` reports a dev build.
 var Version = "0.0.0-dev"
 

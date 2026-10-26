@@ -1,17 +1,15 @@
-# cascade_app
+# Spate desktop app
 
-A new Flutter project.
+The Flutter shell over the Go core (`../../export/cshared`, loaded through
+`dart:ffi` from `lib/src/ffi/spate_ffi.dart`). One UI for macOS, Windows and
+Linux; the core owns every download, queue, settings and capture decision,
+the shell renders and forwards.
 
-## Getting Started
+- Build the core first: `make lib` at the repository root (produces
+  `dist/libspate.*`), then `flutter run` here, or `scripts/flutter-macos.sh
+  run` / `build` for the bundled macOS app.
+- `flutter test` runs `test/ffi_test.dart` against the real library.
+- Icons come from `assets/brand/*.svg` through `scripts/icons.sh`; do not
+  edit the generated platform icon sets by hand.
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+See the repository README and `docs/help.md` for the product itself.

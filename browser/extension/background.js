@@ -1,15 +1,15 @@
-// Cascade download capture (MV3 service worker).
+// Spate download capture (MV3 service worker).
 //
 // When a download starts in the browser, the extension either asks the user
-// ("Download with Cascade?" popup), or acts on a remembered per-site rule or the
+// ("Download with Spate?" popup), or acts on a remembered per-site rule or the
 // global mode. Handing off means: make sure the app is running (launching it
 // through the native-messaging host if needed), POST the download to it (with
 // cookies and referrer so authenticated downloads work), and only then cancel
 // the browser's copy. The browser download keeps running until the user (or a
-// rule) chooses Cascade, so nothing is ever lost.
+// rule) chooses Spate, so nothing is ever lost.
 //
-// Modes: "ask" (default), "always" (Cascade without asking), "never" (off).
-// Site rules: {host: "cascade" | "browser"} remembered from the popup.
+// Modes: "ask" (default), "always" (Spate without asking), "never" (off).
+// Site rules: {host: "spate" | "browser"} remembered from the popup.
 //
 // Browsers: Chrome/Chromium/Brave/Edge/Vivaldi (MV3 service worker, this
 // manifest), Firefox (manifest.firefox.json, MV2 event page: same code) and
@@ -21,8 +21,8 @@ const PORTS = [8760, 8761, 8762];
 const hasDownloads = typeof chrome !== "undefined" && !!chrome.downloads;
 const action = chrome.action || chrome.browserAction; // MV3 vs Firefox MV2
 const menus = chrome.contextMenus || chrome.menus;
-const CLIENT_HEADERS = { "X-Cascade-Client": "extension" };
-const log = (...a) => console.log("[cascade]", ...a);
+const CLIENT_HEADERS = { "X-Spate-Client": "extension" };
+const log = (...a) => console.log("[spate]", ...a);
 
 async function getConfig() {
   return chrome.storage.local.get({ token: "", enabled: true, mode: "ask", siteRules: {} });
@@ -73,19 +73,25 @@ async function pair() {
 // native-messaging host if it is not running. With the host installed the
 // token comes back over the browser-enforced trusted channel (no prompt);
 // without it, falls back to /pair (Allow prompt in the app).
-async function ensureApp() {
+async function ensureApp(forceRepair) {
   let base = await findBase();
   let { token } = await getConfig();
+  if (forceRepair) {
+    // The app rejected our token (it was reinstalled or re-paired): forget
+    // it and take the current one from the native host, or prompt to pair.
+    token = "";
+    await chrome.storage.local.remove("token");
+  }
   if (base && token) return { base, token };
   try {
-    const r = await chrome.runtime.sendNativeMessage("com.cascade.host", { type: "ensure" });
+    const r = await chrome.runtime.sendNativeMessage("com.amlabs.spate.host", { type: "ensure" });
     if (r && r.ok) {
       base = "http://" + r.addr;
       if (r.token) {
         token = r.token;
         await chrome.storage.local.set({ token });
       }
-      if (r.launched) await note("launched Cascade app via native host");
+      if (r.launched) await note("launched Spate app via native host");
     } else {
       log("native host replied:", r && r.error);
     }
@@ -107,15 +113,15 @@ async function heartbeat() {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create("cascade-heartbeat", { periodInMinutes: 0.5 });
+  chrome.alarms.create("spate-heartbeat", { periodInMinutes: 0.5 });
   heartbeat();
 });
 chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create("cascade-heartbeat", { periodInMinutes: 0.5 });
+  chrome.alarms.create("spate-heartbeat", { periodInMinutes: 0.5 });
   heartbeat();
 });
 chrome.alarms.onAlarm.addListener((a) => {
-  if (a.name === "cascade-heartbeat") heartbeat();
+  if (a.name === "spate-heartbeat") heartbeat();
 });
 
 // cookieHeader returns the Cookie header for url from the right cookie store.
@@ -212,18 +218,28 @@ async function handOff(item) {
 
   let handedOff = false;
   try {
-    const resp = await fetch(`${app.base}/add`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Cascade-Token": app.token, ...CLIENT_HEADERS },
-      body: JSON.stringify({
-        url: item.url,
-        filename,
-        cookie,
-        referrer: item.referrer || "",
-        userAgent: navigator.userAgent,
-        headers: browserLikeHeaders(item.url, item.referrer),
-      }),
+    const body = JSON.stringify({
+      url: item.url,
+      filename,
+      cookie,
+      referrer: item.referrer || "",
+      userAgent: navigator.userAgent,
+      headers: browserLikeHeaders(item.url, item.referrer),
     });
+    const post = (a) => fetch(`${a.base}/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Spate-Token": a.token, ...CLIENT_HEADERS },
+      body,
+    });
+    let resp = await post(app);
+    if (resp.status === 401) {
+      // Stale pairing: re-pair once through the native host and retry.
+      const fresh = await ensureApp(true);
+      if (fresh.base && fresh.token) {
+        await note("token was stale; re-paired", item.url);
+        resp = await post(fresh);
+      }
+    }
     handedOff = resp.ok;
     if (handedOff) {
       await note("handed off to app", item.url);
@@ -300,16 +316,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
     (async () => {
       const { siteRules } = await getConfig();
       // One-time ask by default: "all" turns the answer into the standing mode
-      // (always Cascade / never), "site" remembers it for this host only.
+      // (always Spate / never), "site" remembers it for this host only.
       if (msg.scope === "all" || msg.remember === true && !msg.scope) {
-        await chrome.storage.local.set({ mode: msg.choice === "cascade" ? "always" : "never" });
-        await note(msg.choice === "cascade" ? "default set: always use Cascade" : "default set: leave downloads to the browser");
+        await chrome.storage.local.set({ mode: msg.choice === "spate" ? "always" : "never" });
+        await note(msg.choice === "spate" ? "default set: always use Spate" : "default set: leave downloads to the browser");
       } else if (msg.scope === "site" && msg.item && msg.item.host) {
         siteRules[msg.item.host] = msg.choice;
         await chrome.storage.local.set({ siteRules });
       }
       await chrome.storage.session.remove("pending:" + msg.id);
-      if (msg.choice === "cascade") await handOff(msg.item);
+      if (msg.choice === "spate") await handOff(msg.item);
       else await note("user chose browser", msg.item && msg.item.url);
       reply({ ok: true });
     })();
@@ -317,18 +333,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   }
 });
 
-// Right-click a link -> "Download with Cascade" (every browser, including
+// Right-click a link -> "Download with Spate" (every browser, including
 // Safari where this is the main entry point).
 if (menus) {
   const install = () => {
     try {
-      menus.create({ id: "cascade-link", title: "Download with Cascade", contexts: ["link"] }, () => void chrome.runtime.lastError);
+      menus.create({ id: "spate-link", title: "Download with Spate", contexts: ["link"] }, () => void chrome.runtime.lastError);
     } catch (e) {}
   };
   chrome.runtime.onInstalled.addListener(install);
   if (chrome.runtime.onStartup) chrome.runtime.onStartup.addListener(install);
   menus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId !== "cascade-link" || !info.linkUrl) return;
+    if (info.menuItemId !== "spate-link" || !info.linkUrl) return;
     const { enabled } = await getConfig();
     if (!enabled) return;
     await handOff({ url: info.linkUrl, referrer: info.pageUrl || "", host: hostOf(info.linkUrl), incognito: !!(tab && tab.incognito) });
@@ -366,7 +382,7 @@ if (hasDownloads) chrome.downloads.onCreated.addListener(async (raw) => {
     await note("site rule: browser", item.url);
     return;
   }
-  if (mode === "always" || rule === "cascade") {
+  if (mode === "always" || rule === "spate") {
     await handOff(item);
     return;
   }

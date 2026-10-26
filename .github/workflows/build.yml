@@ -40,10 +40,14 @@ jobs:
         run: |
           go install mvdan.cc/garble@v0.18.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Flutter analyze and FFI test against the real core
+        run: |
+          make lib
+          cd apps/flutter && flutter pub get && flutter analyze --no-fatal-infos && flutter test
       - name: build
         run: ./build mac extension --no-test
         env:
-          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+          SPATE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -73,10 +77,14 @@ jobs:
       - run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libayatana-appindicator3-dev
+      - name: Flutter analyze and FFI test against the real core
+        run: |
+          make lib
+          cd apps/flutter && flutter pub get && flutter analyze --no-fatal-infos && flutter test
       - name: build
         run: ./build linux --no-test
         env:
-          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+          SPATE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       - uses: actions/upload-artifact@v4
         with: { name: linux, path: "dist/linux/*" }
       - uses: actions/upload-artifact@v4
@@ -111,17 +119,17 @@ jobs:
           gcc --version | head -1
           makensis -VERSION
           7z | head -2
-      - name: Flutter Windows UI (builds cascade.dll natively when absent)
+      - name: Flutter Windows UI (builds spate.dll natively when absent)
         shell: pwsh
         env:
-          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+          SPATE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
         run: powershell -ExecutionPolicy Bypass -File scripts\flutter-windows.ps1 -CopyTo (Get-Location).Path
       - name: what the Flutter build changed in the tree (a dirty tree taints the label)
         run: git status --porcelain && git diff --stat
       - name: package
         env:
           CC: gcc
-          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+          SPATE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
         run: ./build windows --no-test
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: "dist/windows/*" }
@@ -130,3 +138,40 @@ jobs:
           name: windows-debug-symbols
           path: dist/debug-symbols/**
           if-no-files-found: ignore
+
+  # Version tags publish a draft GitHub Release carrying the macOS, Linux and
+  # Windows installers from the jobs above plus a SHA256SUMS file. Publish it
+  # from the Releases page once the notes read right; the Homebrew cask and
+  # winget manifest point at these assets.
+  release:
+    needs: [macos, linux, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: tag must match VERSION
+        run: |
+          v="$(tr -d '[:space:]' < VERSION)"
+          [ "${GITHUB_REF_NAME}" = "v$v" ] || { echo "tag ${GITHUB_REF_NAME} does not match VERSION $v" >&2; exit 1; }
+      - uses: actions/download-artifact@v4
+        with: { name: macos, path: release }
+      - uses: actions/download-artifact@v4
+        with: { name: linux, path: release }
+      - uses: actions/download-artifact@v4
+        with: { name: windows, path: release }
+      - name: checksums
+        run: |
+          cd release
+          find . -type f ! -name '*.sha256' ! -name 'SHA256SUMS' -exec sha256sum {} \; | sed 's| \./| |' | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+      - name: draft release with the installers attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="$(tr -d '[:space:]' < VERSION)"
+          files="$(find release -type f ! -name '*.sha256' | sort | tr '\n' ' ')"
+          gh release create "${GITHUB_REF_NAME}" $files \
+            --draft --title "Spate $v" --generate-notes \
+            --notes "Installers for macOS (.pkg), Debian/Ubuntu (.deb) and Windows (.exe), plus the browser extension zips. Verify with SHA256SUMS."

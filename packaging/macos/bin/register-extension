@@ -1,5 +1,5 @@
 #!/bin/bash
-# Register the Cascade browser integration for the Chromium-family browsers
+# Register the Spate browser integration for the Chromium-family browsers
 # on this Mac: the native-messaging host manifest (authorizing the dev
 # extension ID, the ID Chrome derives for the installed extension folder, the
 # store IDs when the extension is published, and any IDs given as arguments)
@@ -10,7 +10,7 @@
 set -u
 BIN="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$BIN")"
-HOST_NAME="com.cascade.host"
+HOST_NAME="com.amlabs.spate.host"
 EXT_DIR="$ROOT/extension"
 CHROME_UPDATE_URL="https://clients2.google.com/service/update2/crx"
 EDGE_UPDATE_URL="https://edge.microsoft.com/extensionwebstorebase/v1/crx"
@@ -29,8 +29,8 @@ for id in $IDS; do
 done
 manifest="{
   \"name\": \"${HOST_NAME}\",
-  \"description\": \"Cascade download manager native host\",
-  \"path\": \"${BIN}/cascade-host\",
+  \"description\": \"Spate download manager native host\",
+  \"path\": \"${BIN}/spate-host\",
   \"type\": \"stdio\",
   \"allowed_origins\": [${origins}]
 }"
@@ -56,7 +56,7 @@ reg "Microsoft Edge" "Microsoft Edge.app" "$EDGE_ADDONS_ID" "$EDGE_UPDATE_URL"
 # Firefox: fixed add-on ID, manifest keyed by allowed_extensions.
 if [ -d "$AS/Firefox" ] || [ -d "/Applications/Firefox.app" ] || [ -d "$HOME/Applications/Firefox.app" ]; then
   mkdir -p "$AS/Mozilla/NativeMessagingHosts"
-  printf '{\n  "name": "%s",\n  "description": "Cascade download manager native host",\n  "path": "%s/cascade-host",\n  "type": "stdio",\n  "allowed_extensions": ["cascade@d3xt3r.dev"]\n}\n' "$HOST_NAME" "$BIN" > "$AS/Mozilla/NativeMessagingHosts/${HOST_NAME}.json"
+  printf '{\n  "name": "%s",\n  "description": "Spate download manager native host",\n  "path": "%s/spate-host",\n  "type": "stdio",\n  "allowed_extensions": ["spate@amlabs.dev"]\n}\n' "$HOST_NAME" "$BIN" > "$AS/Mozilla/NativeMessagingHosts/${HOST_NAME}.json"
   echo "host registered: Firefox"
 fi
 if [ -z "$CHROME_WEBSTORE_ID" ]; then

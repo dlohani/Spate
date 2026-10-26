@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Spate
+Comment=Start Spate hidden at login (tray icon; browser downloads are captured)
+Exec=/usr/lib/spate/spate_app/spate_app --background
+Icon=spate
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

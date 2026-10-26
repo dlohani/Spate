@@ -9,12 +9,12 @@ import (
 	"path"
 )
 
-// HasWindowsUI reports whether fsys holds root/bin/cascade_app/cascade_app.exe
-// and root/bin/cascade_app/cascade.dll as regular files. root is slash
+// HasWindowsUI reports whether fsys holds root/bin/spate_app/spate_app.exe
+// and root/bin/spate_app/spate.dll as regular files. root is slash
 // separated, as embed.FS paths are.
 func HasWindowsUI(fsys fs.FS, root string) bool {
-	dir := path.Join(root, "bin", "cascade_app")
-	return isFile(fsys, path.Join(dir, "cascade_app.exe")) && isFile(fsys, path.Join(dir, "cascade.dll"))
+	dir := path.Join(root, "bin", "spate_app")
+	return isFile(fsys, path.Join(dir, "spate_app.exe")) && isFile(fsys, path.Join(dir, "spate.dll"))
 }
 
 func isFile(fsys fs.FS, p string) bool {

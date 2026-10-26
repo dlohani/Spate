@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Spate
+Comment=Download manager: parallel connections, resume, browser capture
+Exec=/usr/lib/spate/spate_app/spate_app
+Icon=spate
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=download;downloader;
+StartupWMClass=spate_app

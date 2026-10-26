@@ -52,7 +52,7 @@ func PlanSegments(total int64, conns int, minSeg int64) []Segment {
 // fetchPiece downloads segment idx in bounded windows, re-reading the segment's
 // end between windows so a concurrent steal (which shrinks End) takes effect at
 // the next window boundary rather than being over-fetched.
-func (d *Downloader) fetchPiece(ctx context.Context, idx int) error {
+func (d *Downloader) fetchPiece(ctx context.Context, idx int, wbuf []byte) error {
 	window := d.opts.WindowSize
 	for {
 		d.ctrl.mu.Lock()
@@ -67,7 +67,7 @@ func (d *Downloader) fetchPiece(ctx context.Context, idx int) error {
 		if end > s.End {
 			end = s.End
 		}
-		if err := d.fetchWindow(ctx, idx, absCur, end); err != nil {
+		if err := d.fetchWindow(ctx, idx, absCur, end, wbuf); err != nil {
 			return err
 		}
 	}
@@ -83,7 +83,7 @@ func IsTransient(err error) bool { return isTransient(err) }
 // transient failures and resuming from the segment's advanced Done offset so no
 // byte is fetched twice. With Retries > 0 it makes that many extra attempts;
 // with Retries == 0 it keeps retrying (backoff capped at 10s) for RetryFor.
-func (d *Downloader) fetchWindow(ctx context.Context, idx int, start, end int64) error {
+func (d *Downloader) fetchWindow(ctx context.Context, idx int, start, end int64, wbuf []byte) error {
 	var lastErr error
 	began := time.Now()
 	for attempt := 0; ; attempt++ {
@@ -105,7 +105,7 @@ func (d *Downloader) fetchWindow(ctx context.Context, idx int, start, end int64)
 		if from > end {
 			return nil // window already satisfied by a prior partial attempt
 		}
-		err := d.streamRange(ctx, idx, from, end)
+		err := d.streamRange(ctx, idx, from, end, wbuf)
 		if err == nil {
 			return nil
 		}
@@ -121,8 +121,14 @@ func (d *Downloader) fetchWindow(ctx context.Context, idx int, start, end int64)
 }
 
 // streamRange fetches [from, end] (an HTTP Range, or an FTP RETR from a REST
-// offset read up to the window) and writes it at offset.
-func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) error {
+// offset read up to the window) and writes it at offset. Body reads arrive
+// in small, unaligned pieces; they are coalesced in wbuf and written in
+// len(wbuf)-sized aligned pieces, which cuts write syscalls by an order of
+// magnitude and is what makes bypassing the page cache pay off. Progress
+// (sidecar and meter) advances only for bytes that reached the file, and
+// whatever is buffered is flushed before any early return, so a cancelled or
+// failed window leaves exact resume state.
+func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64, wbuf []byte) error {
 	usedURL := d.currentURL()
 
 	// Take a connection slot; the limit shrinks if the host refuses extras.
@@ -158,36 +164,58 @@ func (d *Downloader) streamRange(ctx context.Context, idx int, from, end int64) 
 	defer body.Close()
 
 	want := end - from + 1
-	var got int64
+	var got int64 // bytes received (buffered or written)
 	offset := from
-	buf := make([]byte, chunkSize)
-	for {
-		n, rerr := body.Read(buf)
+	if len(wbuf) == 0 {
+		wbuf = make([]byte, chunkSize)
+	}
+	buffered := 0
+	flush := func() error {
+		if buffered == 0 {
+			return nil
+		}
+		if _, werr := d.file.WriteAt(wbuf[:buffered], offset); werr != nil {
+			return werr
+		}
+		offset += int64(buffered)
+		d.ctrl.advance(idx, int64(buffered))
+		d.meter.Add(int64(buffered))
+		buffered = 0
+		return nil
+	}
+	for got < want {
+		// Read straight into the free part of the buffer, never past the
+		// requested window even if the server sends more.
+		space := int64(len(wbuf) - buffered)
+		if rem := want - got; rem < space {
+			space = rem
+		}
+		n, rerr := body.Read(wbuf[buffered : buffered+int(space)])
 		if n > 0 {
-			// Never write past the requested window, even if the server sends more.
-			if got+int64(n) > want {
-				n = int(want - got)
-			}
-			if werr := d.limiter.Wait(ctx, n); werr != nil {
-				return werr
-			}
-			if _, werr := d.file.WriteAt(buf[:n], offset); werr != nil {
-				return werr
-			}
-			offset += int64(n)
+			buffered += n
 			got += int64(n)
-			d.ctrl.advance(idx, int64(n))
-			d.meter.Add(int64(n))
-			if got >= want {
-				break
+			if werr := d.limiter.Wait(ctx, n); werr != nil {
+				_ = flush() // keep what arrived; the sidecar stays exact
+				return werr
+			}
+			if buffered == len(wbuf) {
+				if werr := flush(); werr != nil {
+					return werr
+				}
 			}
 		}
 		if rerr == io.EOF {
 			break
 		}
 		if rerr != nil {
+			if werr := flush(); werr != nil {
+				return werr
+			}
 			return &netError{rerr} // read error mid-body (incl. TLS bad record MAC): retry
 		}
+	}
+	if err := flush(); err != nil {
+		return err
 	}
 	if got < want {
 		return io.ErrUnexpectedEOF // short read: transient, retry resumes from advanced Done

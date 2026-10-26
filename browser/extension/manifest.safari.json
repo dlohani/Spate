@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Cascade Download Capture",
+  "name": "Spate Download Capture",
   "version": "0.4.0",
-  "description": "Send downloads to the Cascade app: right-click a link, or click a file link with capture on.",
+  "description": "Send downloads to the Spate app: right-click a link, or click a file link with capture on.",
   "permissions": [
     "cookies",
     "storage",
@@ -33,7 +33,7 @@
     "page": "options.html"
   },
   "action": {
-    "default_title": "Cascade",
+    "default_title": "Spate",
     "default_popup": "options.html",
     "default_icon": {
       "16": "icons/16.png",

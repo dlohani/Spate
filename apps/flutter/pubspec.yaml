@@ -1,5 +1,5 @@
-name: cascade_app
-description: "A new Flutter project."
+name: spate_app
+description: "Spate desktop app: the Flutter shell over the Go download core."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -34,10 +34,13 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  # dart:ffi helpers (Utf8 marshalling) for the libcascade C ABI binding.
+  # dart:ffi helpers (Utf8 marshalling) for the libspate C ABI binding.
   ffi: ^2.1.0
   window_manager: ^0.5.2
   tray_manager: ^0.7.0
+  local_notifier: 0.1.6
+  file_selector: 1.1.0
+  desktop_drop: 0.8.4
 
 dev_dependencies:
   flutter_test:
@@ -61,6 +64,10 @@ flutter:
     - assets/tray/icon@2x.png
     - assets/tray/icon.ico
     - assets/tray/icon-color.png
+    - assets/tray/icon-pulse.png
+    - assets/tray/icon-pulse@2x.png
+    - assets/tray/icon-color-pulse.png
+    - assets/tray/icon-pulse.ico
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
