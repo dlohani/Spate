@@ -2,18 +2,23 @@
 /spate
 /dist/
 *.exe
+/*.h
 
-# Download artifacts / resume sidecars
+# Partial downloads and resume sidecars (tests and local runs)
+*.part
 *.spate
 *.spate.tmp
 *.cascade
 *.cascade.tmp
+*.log
 
-# OS cruft
-.DS_Store
-
-# editor / assistant tool caches
-.serena/
-
-# populated by scripts/build-windows.sh; embedded into spate-setup.exe
+# Windows setup payload, filled by scripts/build-windows.sh
 /cmd/spate-setup/payload/
+
+# Editors and assistant tooling
+.DS_Store
+.idea/
+*.iml
+.serena/
+.claude/
+.superpowers/
