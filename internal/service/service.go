@@ -61,6 +61,7 @@ type Service struct {
 	settingsPath string
 	limiter      *download.Limiter // global cap shared by all downloads
 	cancel       context.CancelFunc
+	queue        *queuePersister
 
 	pairMu      sync.Mutex
 	pairPending bool
@@ -171,19 +172,35 @@ func StartWith(o StartOpts) (*Service, error) {
 	s.limiter.SetRate(st.EffectiveLimit(time.Now()))
 	mgr.SetStartGate(func() bool { return s.Settings.MayStart(time.Now()) })
 
+	// The queue as it was when the app last stopped (paused, scheduled and
+	// in-flight jobs with their request customisation), then any partial a
+	// sidecar still describes that the queue does not know about.
+	qp := queuePath(spath)
+	if recs, err := loadQueue(qp); err == nil {
+		for _, r := range recs {
+			_, _ = mgr.AddRecord(r, download.Options{SharedLimiter: s.limiter})
+		}
+	}
+	ResumeOrphans(mgr, s.Dir, s.limiter)
+	s.queue = startQueuePersister(qp, mgr)
+
 	s.API = localapi.New(mgr, s.Token, s.Dir)
 	s.API.PairFunc = s.pairFunc
 	s.API.ResolveDir = s.Resolve
 	if addr, err := s.API.Start(); err == nil {
 		s.Addr = addr
 	}
-	ResumeOrphans(mgr, s.Dir, s.limiter)
 	go s.scheduler(ctx)
 	return s, nil
 }
 
-// Stop shuts the service down.
+// Stop shuts the service down: the queue is written first (running jobs are
+// recorded as pending so they resume next start), then the capture endpoint
+// closes and the manager is cancelled.
 func (s *Service) Stop() {
+	if s.queue != nil {
+		_ = s.queue.Close()
+	}
 	if s.API != nil {
 		_ = s.API.Close()
 	}
@@ -355,13 +372,23 @@ func randToken() string {
 
 // ResumeOrphans re-queues downloads whose .cascade sidecar is still present
 // under dir (searched one level of subfolders deep, for category folders),
-// continuing from where they stopped. limiter may be nil.
+// continuing from where they stopped. Outputs the queue already tracks are
+// skipped. limiter may be nil.
 func ResumeOrphans(mgr *job.Manager, dir string, limiter *download.Limiter) int {
 	sidecars, _ := filepath.Glob(filepath.Join(dir, "*.cascade"))
 	nested, _ := filepath.Glob(filepath.Join(dir, "*", "*.cascade"))
+	queued := map[string]bool{}
+	for _, st := range mgr.Statuses() {
+		if !st.State.Terminal() {
+			queued[st.Out] = true
+		}
+	}
 	n := 0
 	for _, sc := range append(sidecars, nested...) {
 		out := strings.TrimSuffix(sc, ".cascade")
+		if queued[out] {
+			continue
+		}
 		ctrl, err := download.LoadControl(out)
 		if err != nil || ctrl == nil || ctrl.URL == "" {
 			continue
