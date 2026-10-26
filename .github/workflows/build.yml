@@ -138,3 +138,40 @@ jobs:
           name: windows-debug-symbols
           path: dist/debug-symbols/**
           if-no-files-found: ignore
+
+  # Version tags publish a draft GitHub Release carrying the macOS, Linux and
+  # Windows installers from the jobs above plus a SHA256SUMS file. Publish it
+  # from the Releases page once the notes read right; the Homebrew cask and
+  # winget manifest point at these assets.
+  release:
+    needs: [macos, linux, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: tag must match VERSION
+        run: |
+          v="$(tr -d '[:space:]' < VERSION)"
+          [ "${GITHUB_REF_NAME}" = "v$v" ] || { echo "tag ${GITHUB_REF_NAME} does not match VERSION $v" >&2; exit 1; }
+      - uses: actions/download-artifact@v4
+        with: { name: macos, path: release }
+      - uses: actions/download-artifact@v4
+        with: { name: linux, path: release }
+      - uses: actions/download-artifact@v4
+        with: { name: windows, path: release }
+      - name: checksums
+        run: |
+          cd release
+          find . -type f ! -name '*.sha256' ! -name 'SHA256SUMS' -exec sha256sum {} \; | sed 's| \./| |' | sort -k2 > SHA256SUMS
+          cat SHA256SUMS
+      - name: draft release with the installers attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="$(tr -d '[:space:]' < VERSION)"
+          files="$(find release -type f ! -name '*.sha256' | sort | tr '\n' ' ')"
+          gh release create "${GITHUB_REF_NAME}" $files \
+            --draft --title "Spate $v" --generate-notes \
+            --notes "Installers for macOS (.pkg), Debian/Ubuntu (.deb) and Windows (.exe), plus the browser extension zips. Verify with SHA256SUMS."
