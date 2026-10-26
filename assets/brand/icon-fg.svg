@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Android adaptive foreground: the glyph alone, white, inside the 66% safe zone. -->
+  <g transform="translate(512 512) scale(0.78) translate(-512 -512)" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M282 286 C282 420, 470 430, 500 520" stroke-width="58"/>
+    <path d="M742 286 C742 420, 554 430, 524 520" stroke-width="58"/>
+    <path d="M512 272 L512 520" stroke-width="58"/>
+    <path d="M512 500 L512 746" stroke-width="84"/>
+    <path d="M352 606 L512 766 L672 606" stroke-width="84"/>
+  </g>
+</svg>
