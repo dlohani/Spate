@@ -6,6 +6,8 @@
 # Download artifacts / resume sidecars
 *.spate
 *.spate.tmp
+*.cascade
+*.cascade.tmp
 
 # OS cruft
 .DS_Store

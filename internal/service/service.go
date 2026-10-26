@@ -27,6 +27,7 @@ import (
 	"spate/internal/job"
 	"spate/internal/localapi"
 	"spate/internal/logx"
+	"spate/internal/paths"
 	"spate/internal/settings"
 	"spate/internal/version"
 )
@@ -378,11 +379,10 @@ func LoadOrCreateToken() string {
 	if t := os.Getenv("SPATE_TOKEN"); t != "" {
 		return t
 	}
-	dir, err := os.UserConfigDir()
+	cdir, err := paths.ConfigDir()
 	if err != nil {
 		return randToken()
 	}
-	cdir := filepath.Join(dir, "spate")
 	tokenPath := filepath.Join(cdir, "token")
 	if b, err := os.ReadFile(tokenPath); err == nil {
 		if t := strings.TrimSpace(string(b)); t != "" {
@@ -411,6 +411,11 @@ func randToken() string {
 func ResumeOrphans(mgr *job.Manager, dir string, limiter *download.Limiter) int {
 	sidecars, _ := filepath.Glob(filepath.Join(dir, "*.spate"))
 	nested, _ := filepath.Glob(filepath.Join(dir, "*", "*.spate"))
+	// Sidecars written before the rename.
+	oldTop, _ := filepath.Glob(filepath.Join(dir, "*.cascade"))
+	oldNested, _ := filepath.Glob(filepath.Join(dir, "*", "*.cascade"))
+	sidecars = append(sidecars, oldTop...)
+	nested = append(nested, oldNested...)
 	queued := map[string]bool{}
 	for _, st := range mgr.Statuses() {
 		if !st.State.Terminal() {
@@ -419,7 +424,7 @@ func ResumeOrphans(mgr *job.Manager, dir string, limiter *download.Limiter) int 
 	}
 	n := 0
 	for _, sc := range append(sidecars, nested...) {
-		out := strings.TrimSuffix(sc, ".spate")
+		out := strings.TrimSuffix(strings.TrimSuffix(sc, ".spate"), ".cascade")
 		if queued[out] {
 			continue
 		}

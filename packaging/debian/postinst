@@ -24,7 +24,9 @@ for d in /etc/opt/chrome/native-messaging-hosts \
   mkdir -p "$d"
   printf '%s\n' "$manifest" > "$d/$NAME.json"
   chmod 0644 "$d/$NAME.json"
+  rm -f "$d/com.cascade.host.json"   # the host's previous name
 done
+rm -f /usr/lib/mozilla/native-messaging-hosts/com.cascade.host.json
 # Firefox (system-wide): fixed add-on ID, keyed by allowed_extensions.
 mkdir -p /usr/lib/mozilla/native-messaging-hosts
 printf '{\n  "name": "%s",\n  "description": "Spate download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["spate@amlabs.dev"]\n}\n' "$NAME" "$HOST" > "/usr/lib/mozilla/native-messaging-hosts/$NAME.json"

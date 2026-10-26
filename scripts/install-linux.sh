@@ -35,6 +35,13 @@ MAP="$(mktemp "${TMPDIR:-/tmp}/spate-exports.XXXXXX")"; trap 'rm -f "$MAP"' EXIT
 
 # Stop a running instance before replacing its files.
 pkill -x spate_app >/dev/null 2>&1 || true   # by process name; a -f pattern could match a shell
+# A previous install under the old product name (Cascade): stop it and drop
+# its binaries, menu and autostart entries and host manifests. Its settings,
+# token and queue under ~/.config/cascade are migrated on first start.
+pkill -x cascade_app >/dev/null 2>&1 || true
+rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/cascade/bin"
+rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/applications/cascade.desktop" "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/cascade.desktop"
+find "${XDG_CONFIG_HOME:-$HOME/.config}" "$HOME/snap/chromium/common/chromium" "$HOME/.mozilla" -path "*NativeMessagingHosts/com.cascade.host.json" -delete 2>/dev/null || true
 sleep 1
 mv -f "$BIN/spate-host.new" "$BIN/spate-host"
 mv -f "$BIN/libspate.so.new" "$BIN/libspate.so"

@@ -9,6 +9,10 @@ import (
 // controlExt is appended to the output path for the resume sidecar file.
 const controlExt = ".spate"
 
+// legacyControlExt is the sidecar extension from before the product was
+// renamed; LoadControl adopts such a sidecar by renaming it.
+const legacyControlExt = ".cascade"
+
 // Segment is one contiguous byte range [Start, End] and how much of it has been
 // written to disk. Done is a count of bytes, so the next fetch resumes at
 // Start+Done. Complete when Done == End-Start+1.
@@ -69,6 +73,13 @@ func NewControl(outPath, url string, total int64, validator string, segs []Segme
 // when no sidecar exists.
 func LoadControl(outPath string) (*Control, error) {
 	p := controlPath(outPath)
+	if _, err := os.Stat(p); os.IsNotExist(err) {
+		if old := outPath + legacyControlExt; fileExists(old) {
+			if err := os.Rename(old, p); err != nil {
+				return nil, err
+			}
+		}
+	}
 	data, err := os.ReadFile(p)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -140,6 +151,11 @@ func (c *Control) BytesDone() int64 {
 	return t
 }
 
+func fileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && !fi.IsDir()
+}
+
 // LegacyPartial reports whether the file at outPath is the partial data of a
 // pre-.part download: a sidecar exists for it, that sidecar predates .part
 // naming, and no .part file exists. Anything else at outPath (a finished
@@ -165,7 +181,7 @@ func RemovePartial(outPath string) error {
 	if LegacyPartial(outPath) {
 		targets = append(targets, outPath)
 	}
-	targets = append(targets, controlPath(outPath))
+	targets = append(targets, controlPath(outPath), outPath+legacyControlExt)
 	var first error
 	for _, p := range targets {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) && first == nil {

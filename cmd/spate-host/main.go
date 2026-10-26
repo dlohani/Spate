@@ -24,6 +24,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"spate/internal/paths"
 )
 
 const (
@@ -149,9 +151,8 @@ func launchApp() error {
 	}
 
 	// Serialize concurrent launches (two downloads arriving at once).
-	cfg, _ := os.UserConfigDir()
-	lockPath := filepath.Join(cfg, "spate", "launch.lock")
-	_ = os.MkdirAll(filepath.Dir(lockPath), 0o700)
+	cfg, _ := paths.ConfigDir()
+	lockPath := filepath.Join(cfg, "launch.lock")
 	unlock, ok := tryLock(lockPath)
 	if !ok {
 		return nil // another host is launching it; the caller polls /ping
@@ -181,11 +182,11 @@ func fileExists(p string) bool {
 // readToken returns the persisted capture token the app uses ("" if none yet;
 // the app creates it on first start).
 func readToken() string {
-	cfg, err := os.UserConfigDir()
+	cfg, err := paths.ConfigDir()
 	if err != nil {
 		return ""
 	}
-	b, err := os.ReadFile(filepath.Join(cfg, "spate", "token"))
+	b, err := os.ReadFile(filepath.Join(cfg, "token"))
 	if err != nil {
 		return ""
 	}
