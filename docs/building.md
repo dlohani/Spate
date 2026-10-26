@@ -299,3 +299,26 @@ connection happy path with checksum, resume-after-failure, validator-changed
 restart, no-range single-connection fallback, and cancellation leaving
 resumable state.
 
+## Releasing
+
+Installers are never committed; they are attached to a GitHub Release by
+CI. A release is cut from `main` like this:
+
+    ./build bump 0.5.0            # VERSION, pubspec, extension manifests, cask, winget
+    git commit -am "Release 0.5.0"
+    git tag v0.5.0 && git push origin main v0.5.0
+
+The tag push runs the build matrix on macOS, Ubuntu and Windows runners,
+then the `release` job checks that the tag matches `VERSION`, downloads the
+three artifact sets, writes `SHA256SUMS`, and creates a **draft** release
+named "Spate 0.5.0" with the `.pkg`, `.deb`, `.exe` and extension zips
+attached. Read the generated notes on the Releases page, edit if needed,
+and press Publish; until then nothing is public. Tag builds are obfuscated
+(`SPATE_OBFUSCATE=1`); for an open-source release consider turning that off
+in the workflow so the binaries are reproducible from the tag.
+
+The Homebrew cask (`packaging/homebrew/spate.rb`) and the winget manifest
+(`packaging/winget/AMLabs.Spate.yaml`) download from that release; fill in
+the repository owner (`REPLACE_OWNER`) and the asset checksums after the
+first published release.
+
