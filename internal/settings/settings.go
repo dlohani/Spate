@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"spate/internal/paths"
 )
 
 // Category routes files by extension into a folder (relative to the base
@@ -105,13 +107,14 @@ func Default(downloadDir string) *Settings {
 	}
 }
 
-// Path is the settings file location under the user config dir.
+// Path is the settings file location under the user config dir (migrating a
+// previous install's files on the way, see internal/paths).
 func Path() (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := paths.ConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "spate", "settings.json"), nil
+	return filepath.Join(dir, "settings.json"), nil
 }
 
 // Load reads the settings file, returning Default(downloadDir) if absent.

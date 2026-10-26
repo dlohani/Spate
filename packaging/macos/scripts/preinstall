@@ -23,5 +23,17 @@ launchctl bootout "gui/$(id -u)/com.amlabs.spate" >/dev/null 2>&1 || true
 # whose command line mentions the path.
 pkill -x spate_app >/dev/null 2>&1 || true
 pkill -x spate-mac >/dev/null 2>&1 || true
+
+# A previous install under the product's old name (Cascade): stop it, drop its
+# login item, app bundle, helper binaries and browser host manifests. Its
+# settings, pairing token and queue are migrated by the core on first start.
+launchctl bootout "gui/$(id -u)/dev.d3xt3r.cascade" >/dev/null 2>&1 || true
+rm -f "$HOME/Library/LaunchAgents/dev.d3xt3r.cascade.plist"
+pkill -x cascade_app >/dev/null 2>&1 || true
+rm -rf "$HOME/Applications/Cascade.app" "$HOME/Library/Application Support/cascade/bin" "$HOME/Library/Application Support/cascade/extension"
+for b in Chromium Google/Chrome BraveSoftware/Brave-Browser "Microsoft Edge" Vivaldi; do
+  rm -f "$HOME/Library/Application Support/$b/NativeMessagingHosts/com.cascade.host.json"
+done
+rm -f "$HOME/Library/Application Support/Mozilla/NativeMessagingHosts/com.cascade.host.json"
 sleep 1
 exit 0

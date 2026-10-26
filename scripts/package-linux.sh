@@ -115,7 +115,7 @@ if [ "$CLI_ONLY" = 0 ]; then
   done
   DEPENDS="libc6, libgtk-3-0, libglib2.0-0"
   RECOMMENDS="libayatana-appindicator3-1, chromium | google-chrome-stable | microsoft-edge-stable"
-  CONFLICTS="spate-cli"
+  CONFLICTS="spate-cli, cascade, cascade-cli"   # the old package names: upgrading replaces them
   DESC="Download manager: parallel connections, resume, queue, browser capture
  Spate takes over downloads from the browser (Chrome, Chromium, Edge,
  Brave, Vivaldi via its extension), downloads with several connections,
@@ -125,7 +125,7 @@ if [ "$CLI_ONLY" = 0 ]; then
 else
   DEPENDS="libc6"
   RECOMMENDS=""
-  CONFLICTS="spate"
+  CONFLICTS="spate, cascade, cascade-cli"
   DESC="Command-line download manager: parallel connections and resume
  The spate command downloads a file with several connections, resumes
  broken transfers, verifies checksums and limits speed. No GUI; the

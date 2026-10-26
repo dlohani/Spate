@@ -24,4 +24,5 @@ esac
 # Files of a running app cannot be replaced cleanly; by process name (-x),
 # never a -f pattern that could match a shell.
 pkill -x spate_app >/dev/null 2>&1 || true
+pkill -x cascade_app >/dev/null 2>&1 || true   # the package's previous name
 exit 0

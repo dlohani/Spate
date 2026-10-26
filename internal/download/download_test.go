@@ -931,3 +931,33 @@ func TestSmallBodyReadsCoalesce(t *testing.T) {
 		t.Fatal("file differs")
 	}
 }
+
+func TestLegacySidecarExtensionIsAdopted(t *testing.T) {
+	data := randomBlob(2 << 20)
+	budget := &atomic.Int64{}
+	budget.Store(int64(len(data)) / 2)
+	m := &manualServer{data: data, etag: `"v1"`, budget: budget}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "file.bin")
+	d1 := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10, Retries: 1, Resume: true})
+	if err := d1.Run(context.Background()); err == nil {
+		t.Fatal("expected the budgeted run to fail")
+	}
+	// As written by the previous product version: sidecar under the old name.
+	if err := os.Rename(controlPath(out), out+legacyControlExt); err != nil {
+		t.Fatal(err)
+	}
+	budget.Store(1 << 62)
+	m.served.Store(0)
+	d2 := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10, Resume: true, SHA256: sha256hex(data)})
+	if err := d2.Run(context.Background()); err != nil {
+		t.Fatalf("resume from legacy sidecar: %v", err)
+	}
+	if served := m.served.Load(); served >= int64(len(data)) {
+		t.Fatalf("legacy sidecar not reused: served %d of %d", served, len(data))
+	}
+	if exists(out+legacyControlExt) || exists(controlPath(out)) {
+		t.Fatal("sidecars left behind")
+	}
+}
