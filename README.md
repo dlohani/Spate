@@ -36,8 +36,14 @@ Implemented (headless engine + CLI):
 - Wi-Fi-only and battery-aware gating (macOS and Linux providers; Windows
   reports unsupported).
 
-Not implemented yet: desktop GUI; the browser extension with a floating download
-button for non-DRM streaming media; native `.rar`/`.7z` extraction.
+Also implemented: the Flutter desktop app (macOS, Windows, Linux; tray,
+single instance, settings), the browser extension (Chromium family, Firefox,
+Safari) with its native-messaging host, a persisted queue (`queue.json`) that
+restores paused, scheduled and in-flight downloads with their cookies after a
+restart, and an engine log (`cascade.log`).
+
+Not implemented yet: a floating download button for non-DRM streaming media;
+native `.rar`/`.7z` extraction; a headless daemon separate from the UI.
 
 ## Build
 
@@ -269,11 +275,29 @@ front-end can read/write it through `CascadeSettingsJSON`/`CascadeSettingsApply`
 
 ## How resume works
 
-Progress is tracked in a sidecar `<output>.cascade` (JSON) holding the URL, total
-size, a validator (ETag or Last-Modified), and each segment's byte offset. On
-resume, cascade re-probes and sends `If-Range`; if the validator changed (the
-upstream file changed), it discards the partial data and restarts rather than
-producing a corrupt merge.
+While a download runs its data lives in `<output>.part` (preallocated to the
+full size) and progress is tracked in a sidecar `<output>.cascade` (JSON)
+holding the URL, total size, a validator (ETag or Last-Modified), and each
+segment's byte offset. On completion the `.part` is renamed to `<output>`,
+never over an existing file (`name (1).ext` is used instead). On resume,
+cascade re-probes and sends `If-Range`; if the validator changed (the upstream
+file changed), it discards the partial data and restarts rather than producing
+a corrupt merge. A partial from before `.part` naming (data at `<output>` with
+a sidecar beside it) is adopted on the next resume.
+
+The app also keeps `queue.json` beside `settings.json`: every pending, paused
+and running job with its priority, schedule and the cookies and headers a
+browser hand-off carried, so a restart brings the queue back exactly, and
+session-bound downloads still resume. Sidecars not in the queue (CLI downloads
+in the download folder) are picked up too.
+
+## Logs
+
+The core writes `cascade.log` beside `settings.json` (rotated to `cascade.log.1`
+past 5 MiB): start and stop, every job state change with the reason, hand-offs
+accepted or refused and why, resume decisions, gate closures and connection
+reductions. The CLI is silent unless run with `-v`, which logs the same to
+stderr. When something "silently stops working", read this file first.
 
 ## Test
 

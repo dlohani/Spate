@@ -15,12 +15,14 @@ edges, and they are where parity and cost problems come from.
   pairing, show-window. The gomobile package (`mobile/`) wraps the job manager
   directly, skipping `internal/service`, and exposes add, pause, resume,
   status and close. Mobile cannot reach parity while this is so.
-- Policy gating (Wi-Fi-only, battery) has a macOS provider only.
+- Policy gating (Wi-Fi-only, battery) has macOS and Linux providers; Windows,
+  Android and iOS have none.
 - The resident desktop process is the Flutter app, autostarted hidden, hosting
   the Go core in-process. A Flutter engine idles at tens of megabytes to guard
   a Go loop that would idle at a few.
-- The UI polls the core every 500 ms, serialising and parsing the whole job
-  list even when idle and hidden.
+- The UI polls the core every 500 ms. Since October 2026 it first reads
+  `CascadeQueueVersion` and skips the status round trip when the queue is
+  unchanged and nothing is running; push (callback) remains for Phase 4.
 - Delivery is manual and can degrade silently: the Windows UI is built by
   hand in a VM and copied back, and a build without it produced an installer
   that looked complete. Two Windows installers exist (Go setup exe, NSIS).
@@ -29,8 +31,16 @@ edges, and they are where parity and cost problems come from.
 
 What already holds and must be kept: the Go core has no third-party modules;
 the Flutter shell has four pinned packages; the loopback API binds 127.0.0.1
-only, guards writes with a 0600 token compared in constant time and rejects
-web-page origins; settings and state are written atomically with 0600.
+only, guards writes with a 0600 token compared in constant time, rejects
+web-page origins and reduces a hand-off's file name to one path element;
+settings, the queue (`queue.json`, versioned) and sidecars are written
+atomically with 0600. Since October 2026: partial downloads live under
+`<out>.part` and are renamed on completion without overwriting; the queue
+(pause state, schedule, priority, hand-off cookies and headers) survives a
+restart; every C export reports its failure through `CascadeLastError`, and the
+shell shows a start failure instead of exiting; the core logs to `cascade.log`
+beside the settings; the status JSON is one Go type (`job.StatusJSON`) with a
+field-set test; CI runs `flutter analyze` and the FFI test on macOS and Linux.
 
 ## Principles
 
@@ -81,8 +91,8 @@ web-page origins; settings and state are written atomically with 0600.
   binding on all five platforms. gomobile is retired unless a native Kotlin or
   Swift shell is actually wanted.
 - `CascadeABIVersion` export and the add-only rule for the JSON schema.
-- The JSON crossing FFI and loopback is defined once in Go with a schema test;
-  Dart models are generated from it.
+- The JSON crossing FFI and loopback is defined once in Go with a schema test
+  (done: `job.StatusJSON`); Dart models are generated from it (open).
 
 ### Phase 4: daemon, client interface, push
 
@@ -92,9 +102,9 @@ web-page origins; settings and state are written atomically with 0600.
 - One Dart `CascadeClient` interface with two implementations (FFI, loopback)
   under one contract test suite run on every platform. Screens never branch on
   platform for behaviour.
-- Push, not poll: the core signals change (version counter or `NativeCallable`
-  callback) and the UI redraws on change. At minimum adaptive polling: fast
-  while running and visible, seconds when idle, stopped when hidden.
+- Push, not poll: the core signals change (`NativeCallable` callback) and the
+  UI redraws on change. The version counter half is done (`CascadeQueueVersion`,
+  the UI skips idle polls); stopping the timer when hidden is open.
 
 ### Throughout: the parity matrix and the manifest
 
@@ -134,7 +144,9 @@ NetworkManager get a clear "unavailable" for Wi-Fi-only).
 - The core stays standard-library only, enforced by a CI check. Flutter
   packages are pinned to exact versions and updates are reviewed as code.
 - Queue state and settings carry a version field and a checksum; partial or
-  foreign files are rejected, not loaded.
+  foreign files are rejected, not loaded. (`queue.json` has the version and
+  rejects newer or malformed files; the checksum and the settings version are
+  open.)
 - Tests are the definition of done: schema contract tests, client interface
   tests per platform, and the installer smoke test per OS.
 
@@ -155,7 +167,7 @@ Three layers:
   via `build-windows.sh`, Linux via `package-linux.sh`, all through the same
   `scripts/lib/obfuscate.sh` helper); the shared library also gets `-literals`
   (string and constant obfuscation) and `-tiny`; the CLI gets `-tiny` only.
-- C ABI: the shared library exports only the 26 `Cascade*` symbols, on macOS,
+- C ABI: the shared library exports only the 28 `Cascade*` symbols, on macOS,
   Windows and Linux (always-on hardening, independent of the switch).
 - Dart UI: `flutter build --obfuscate --split-debug-info` randomizes Dart
   identifiers on the macOS, Windows and Linux desktop builds.

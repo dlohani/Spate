@@ -118,12 +118,17 @@ rather than starting a duplicate.
 
 ## Firefox
 
-The manifest targets Chromium MV3 (service worker). Firefox needs
-`background.scripts` instead of `service_worker` and a
-`browser_specific_settings` block; the rest of the code is compatible. A Firefox
-manifest variant is a follow-up.
+`manifest.firefox.json` is the same code as an MV2 event page
+(`background.scripts`, `browser_action`, a fixed add-on ID
+`cascade@d3xt3r.dev` so the native host manifest can allow it). The installers
+register the host for Firefox too. `scripts/package-extension.sh` builds
+`cascade-extension-firefox-<ver>.zip`; permanent installs need the AMO-signed
+`.xpi` (see `STORE.md`), temporary ones load from `about:debugging`.
 
 ## Safari
 
-Safari requires a Safari Web Extension bundled in a signed macOS app (needs full
-Xcode) and has a more limited downloads API. Not included yet.
+`manifest.safari.json` plus `scripts/safari-extension.sh` (runs Xcode's
+`safari-web-extension-converter`) produce "Cascade for Safari.app" with the
+extension inside; `./build extension` on a Mac with Xcode does this. Safari
+has no downloads API, so capture there is the right-click "Download with
+Cascade" menu and `capture.js` intercepting clicks on file links.
