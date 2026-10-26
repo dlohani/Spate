@@ -170,8 +170,48 @@ func (d *Downloader) setMeter(m *progress.Meter) {
 	d.mu.Unlock()
 }
 
-// Output returns the resolved output path (valid after Run resolves it).
-func (d *Downloader) Output() string { return d.out }
+// Output returns the resolved output path (valid after Run resolves it). After
+// a successful Run it is the final name, which differs from the requested one
+// when that name was already taken ("file (1).bin").
+func (d *Downloader) Output() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.out
+}
+
+// PartPath is where a download's data lives until it completes: the final
+// path plus ".part". Finder and file managers therefore never show a
+// half-written file under its real name, and a partial is recognisable as one.
+func PartPath(out string) string { return out + ".part" }
+
+// uniquePath returns out if nothing exists there, else the first free
+// "name (N).ext" beside it.
+func uniquePath(out string) string {
+	if _, err := os.Lstat(out); err != nil {
+		return out
+	}
+	ext := filepath.Ext(out)
+	stem := out[:len(out)-len(ext)]
+	for n := 1; ; n++ {
+		cand := fmt.Sprintf("%s (%d)%s", stem, n, ext)
+		if _, err := os.Lstat(cand); err != nil {
+			return cand
+		}
+	}
+}
+
+// finalize moves the completed .part into place under the final name, never
+// overwriting a file that already exists there, and records the chosen name.
+func (d *Downloader) finalize() error {
+	dst := uniquePath(d.out)
+	if err := os.Rename(PartPath(d.out), dst); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	d.out = dst
+	d.mu.Unlock()
+	return nil
+}
 
 // Run executes the download to completion or returns an error. On error or
 // cancellation the partial file and its .cascade sidecar are left in place so a
@@ -254,10 +294,13 @@ func (d *Downloader) Run(ctx context.Context) error {
 	if err := d.file.Sync(); err != nil {
 		return err
 	}
-	if err := verifySHA256(d.out, d.opts.SHA256); err != nil {
+	if err := verifySHA256(PartPath(d.out), d.opts.SHA256); err != nil {
 		return err
 	}
 	if err := d.ctrl.Remove(); err != nil {
+		return err
+	}
+	if err := d.finalize(); err != nil {
 		return err
 	}
 	return d.postProcess()
@@ -347,7 +390,14 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 			return err
 		}
 		if existing != nil && d.canResume(existing, probe) {
-			f, err := os.OpenFile(d.out, os.O_RDWR, 0o644)
+			part := PartPath(d.out)
+			if _, err := os.Stat(part); err != nil {
+				// Legacy layout (before .part): the data sat at the final path.
+				if err := os.Rename(d.out, part); err != nil {
+					return fmt.Errorf("resume: adopt legacy partial: %w", err)
+				}
+			}
+			f, err := os.OpenFile(part, os.O_RDWR, 0o644)
 			if err != nil {
 				return fmt.Errorf("resume: reopen output: %w", err)
 			}
@@ -355,7 +405,7 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 			d.ctrl = existing
 			return nil
 		}
-		// Stale or mismatched sidecar: discard and start fresh.
+		// Stale or mismatched sidecar (or its data is gone): start fresh.
 		if existing != nil {
 			_ = existing.Remove()
 		}
@@ -365,7 +415,7 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 	if err := os.MkdirAll(filepath.Dir(d.out), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(d.out, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(PartPath(d.out), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
@@ -391,10 +441,15 @@ func (d *Downloader) canResume(existing *Control, probe ProbeResult) bool {
 			return false
 		}
 	}
-	if _, err := os.Stat(d.out); err != nil {
-		return false // partial output gone
+	// The partial data must still be there: under .part, or (legacy layout)
+	// at the final path while a sidecar exists for it.
+	if _, err := os.Stat(PartPath(d.out)); err == nil {
+		return true
 	}
-	return true
+	if _, err := os.Stat(d.out); err == nil {
+		return true
+	}
+	return false
 }
 
 // runWorkers runs a fixed pool of Conns workers. Each pulls a segment from the
@@ -482,7 +537,7 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 	if err := os.MkdirAll(filepath.Dir(d.out), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(d.out, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(PartPath(d.out), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
@@ -511,7 +566,10 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 	if err := f.Sync(); err != nil {
 		return err
 	}
-	if err := verifySHA256(d.out, d.opts.SHA256); err != nil {
+	if err := verifySHA256(PartPath(d.out), d.opts.SHA256); err != nil {
+		return err
+	}
+	if err := d.finalize(); err != nil {
 		return err
 	}
 	return d.postProcess()
