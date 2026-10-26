@@ -165,16 +165,6 @@ func register(s *service.Service) C.longlong {
 //export SpateServiceStop
 func SpateServiceStop(handle C.longlong) { stopID(int64(handle)) }
 
-// SpateNew is kept for compatibility: a service with the default directory.
-//
-//export SpateNew
-func SpateNew(maxConcurrent C.int) C.longlong { return SpateServiceStart(maxConcurrent, nil) }
-
-// SpateClose is kept for compatibility (same as SpateServiceStop).
-//
-//export SpateClose
-func SpateClose(handle C.longlong) { SpateServiceStop(handle) }
-
 // SpateInfoJSON returns {"addr","dir"} for the service (caller frees).
 //
 //export SpateInfoJSON
@@ -369,6 +359,24 @@ func SpateClearFinished(handle C.longlong) C.int {
 		return 0
 	}
 	return C.int(s.Mgr.ClearFinished())
+}
+
+// SpatePauseAll pauses every running and queued job.
+//
+//export SpatePauseAll
+func SpatePauseAll(handle C.longlong) {
+	if s := lookup(handle); s != nil {
+		s.Mgr.PauseAll()
+	}
+}
+
+// SpateResumeAll resumes every paused job.
+//
+//export SpateResumeAll
+func SpateResumeAll(handle C.longlong) {
+	if s := lookup(handle); s != nil {
+		s.Mgr.ResumeAll()
+	}
 }
 
 // SpateCancelAll force-cancels every active job.

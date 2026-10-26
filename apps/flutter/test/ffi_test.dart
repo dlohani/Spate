@@ -125,7 +125,9 @@ void main() {
       if (j.isNotEmpty && j.first.state == 'done') break;
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
-    expect(core.statuses().firstWhere((s) => s.id == a).state, 'done');
+    final doneA = core.statuses().firstWhere((s) => s.id == a);
+    expect(doneA.state, 'done');
+    expect(doneA.finishedAt, isNotNull); // history carries when it finished
     expect(core.statuses().firstWhere((s) => s.id == b).isScheduled, isTrue);
   });
 }

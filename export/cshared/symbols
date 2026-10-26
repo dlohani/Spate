@@ -2,8 +2,6 @@ SpateVersion
 SpateServiceStart
 SpateServiceStartJSON
 SpateServiceStop
-SpateNew
-SpateClose
 SpateInfoJSON
 SpateAdd
 SpateAddJSON
@@ -18,6 +16,8 @@ SpateCancel
 SpateRemove
 SpateDiscard
 SpateClearFinished
+SpatePauseAll
+SpateResumeAll
 SpateCancelAll
 SpateStatusJSON
 SpateQueueVersion

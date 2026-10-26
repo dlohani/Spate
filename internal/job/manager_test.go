@@ -502,12 +502,14 @@ func TestRecordsRoundTrip(t *testing.T) {
 		!recs[0].StartAt.Equal(at) || recs[0].Priority != 3 || recs[0].Conns != 2 || recs[0].Out != out {
 		t.Fatalf("record lost fields: %+v", recs)
 	}
-	// Terminal jobs are not recorded.
-	if err := m.Cancel(id); err == nil {
-		// paused -> cancelled is allowed
+	// Terminal jobs are recorded as history: state and finish time, no
+	// request customisation (nothing will run again).
+	if err := m.Cancel(id); err != nil {
+		t.Fatal(err)
 	}
-	if got := m.Records(); len(got) != 0 {
-		t.Fatalf("cancelled job still recorded: %+v", got)
+	got := m.Records()
+	if len(got) != 1 || got[0].State != "cancelled" || got[0].FinishedAt.IsZero() || got[0].Cookie != "" {
+		t.Fatalf("cancelled job not recorded as history: %+v", got)
 	}
 
 	m2 := New(1)
@@ -651,5 +653,69 @@ func TestSeveralScheduledJobsAndReschedule(t *testing.T) {
 	}
 	if err := m.SetStartAt("nope", far); err == nil {
 		t.Fatal("unknown job accepted")
+	}
+}
+
+func TestHistoryRestoredAsDone(t *testing.T) {
+	m := New(1)
+	at := time.Now().Add(-time.Hour).Truncate(time.Second)
+	id, err := m.AddRecord(Record{ID: "job-3", URL: "http://x/a", Out: "/dl/a.bin", State: "done", FinishedAt: at, Bytes: 100, Total: 100}, download.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, _ := m.Status(id)
+	if st.State != Done || !st.FinishedAt.Equal(at) || st.Bytes != 100 || st.Total != 100 {
+		t.Fatalf("restored history wrong: %+v", st)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = m.Serve(ctx) }()
+	time.Sleep(150 * time.Millisecond)
+	if st, _ := m.Status(id); st.State != Done {
+		t.Fatalf("history job ran: %s", st.State)
+	}
+	if _, err := m.AddRecord(Record{ID: "job-4", URL: "http://x/b", Out: "/dl/b", State: "weird"}, download.Options{}); err == nil {
+		t.Fatal("unknown terminal state accepted")
+	}
+	recs := m.Records()
+	if len(recs) != 1 || recs[0].State != "done" || recs[0].Bytes != 100 {
+		t.Fatalf("history not recorded: %+v", recs)
+	}
+}
+
+func TestRecordsCapHistory(t *testing.T) {
+	m := New(1)
+	old := time.Now().Add(-HistoryFor - time.Hour)
+	for i := 0; i < HistoryMax+5; i++ {
+		_, _ = m.AddRecord(Record{ID: fmt.Sprintf("job-%d", i+1), URL: "http://x/f", Out: fmt.Sprintf("/dl/%d", i), State: "done", FinishedAt: time.Now().Add(time.Duration(i) * time.Second)}, download.Options{})
+	}
+	_, _ = m.AddRecord(Record{ID: "job-old", URL: "http://x/o", Out: "/dl/o", State: "done", FinishedAt: old}, download.Options{})
+	recs := m.Records()
+	if len(recs) != HistoryMax {
+		t.Fatalf("history records = %d, want %d", len(recs), HistoryMax)
+	}
+	for _, r := range recs {
+		if r.ID == "job-old" || r.ID == "job-1" || r.ID == "job-5" {
+			t.Fatalf("expired or oldest record kept: %s", r.ID)
+		}
+	}
+}
+
+func TestPauseAllResumeAll(t *testing.T) {
+	m := New(2)
+	m.SetStartGate(func() bool { return false })
+	a, _ := m.Add(Spec{URL: "http://x/a"})
+	b, _ := m.Add(Spec{URL: "http://x/b"})
+	m.PauseAll()
+	for _, id := range []string{a, b} {
+		if st, _ := m.Status(id); st.State != Paused {
+			t.Fatalf("%s not paused: %s", id, st.State)
+		}
+	}
+	m.ResumeAll()
+	for _, id := range []string{a, b} {
+		if st, _ := m.Status(id); st.State != Pending {
+			t.Fatalf("%s not resumed: %s", id, st.State)
+		}
 	}
 }

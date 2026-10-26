@@ -12,7 +12,7 @@ import (
 func TestStatusJSONFieldSet(t *testing.T) {
 	at := time.Unix(1_800_000_000, 0)
 	st := Status{ID: "job-1", URL: "http://x/a", Out: "/dl/a", State: Pending, Priority: 2,
-		Bytes: 10, Total: 100, Retries: 1, StartAt: at, Err: errors.New("boom")}
+		Bytes: 10, Total: 100, Retries: 1, StartAt: at, FinishedAt: at, Err: errors.New("boom")}
 	b, err := json.Marshal(st.JSON())
 	if err != nil {
 		t.Fatal(err)
@@ -26,7 +26,7 @@ func TestStatusJSONFieldSet(t *testing.T) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	want := []string{"bytes", "error", "id", "out", "priority", "retries", "startAt", "state", "total", "url"}
+	want := []string{"bytes", "error", "finishedAt", "id", "out", "priority", "retries", "startAt", "state", "total", "url"}
 	if !reflect.DeepEqual(keys, want) {
 		t.Fatalf("keys = %v, want %v", keys, want)
 	}
@@ -39,7 +39,7 @@ func TestStatusJSONFieldSet(t *testing.T) {
 		t.Fatalf("empty list = %s", b)
 	}
 	b, _ = json.Marshal(Status{ID: "j", State: Done}.JSON())
-	if s := string(b); contains(s, "startAt") || contains(s, "error") {
+	if s := string(b); contains(s, "startAt") || contains(s, "error") || contains(s, "finishedAt") {
 		t.Fatalf("unset optionals present: %s", s)
 	}
 }
