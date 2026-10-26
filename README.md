@@ -237,6 +237,7 @@ Flags:
     -wifi-only         only download while on Wi-Fi (macOS, Linux)
     -battery-min N     only download when battery >= N% or on AC power (macOS, Linux)
     -v                 log engine decisions (retries, resume, gating) to stderr
+    -wbuf <size>       write buffer per connection (default 512K; tuning)
 
 Examples:
 
@@ -290,6 +291,28 @@ and running job with its priority, schedule and the cookies and headers a
 browser hand-off carried, so a restart brings the queue back exactly, and
 session-bound downloads still resume. Sidecars not in the queue (CLI downloads
 in the download folder) are picked up too.
+
+## Footprint
+
+Body reads arrive in small, unaligned pieces; the engine coalesces them per
+connection into 512 KiB aligned writes and, on macOS, bypasses the page cache
+(`F_NOCACHE`; `CASCADE_PAGE_CACHE=1` restores the old behaviour) so a
+multi-GiB download neither burns kernel CPU nor evicts the user's working set.
+On Linux the pages are dropped once the file is flushed (`posix_fadvise`).
+Measured on APFS, Apple M4, against a loopback server (26 October 2026):
+
+| Workload | Core peak RSS | Kernel CPU | Wall |
+|---|---|---|---|
+| 4 GiB, 8 connections, before | 19 MB | 7.5 s | 6.7 s |
+| 4 GiB, 8 connections, after | 24 MB | 1.0 s | 2.5 s |
+| 3 x 2 GiB concurrently, 8 each, after | 50 MB | 1.9 s | 2.3 s |
+| Resident app, hidden, idle | 75 to 80 MB | about 0.1% of a core | |
+| Resident app, hidden, 3 downloads | about 110 MB | | |
+| Resident app, window shown, 3 downloads | about 215 MB while the bars animate, 115 MB after | | |
+
+The hidden app does not rebuild or rasterise its window for progress ticks;
+only the tray summary updates. The shown-and-downloading figure is Flutter's
+renderer animating the progress bars at the display refresh rate.
 
 ## Logs
 

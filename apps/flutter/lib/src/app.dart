@@ -778,8 +778,13 @@ class _DownloadCardState extends State<DownloadCard> {
                   Row(
                     children: [
                       Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
+                        // The bar animates for most of every 500 ms tick, so
+                        // it gets its own repaint boundary (the card and the
+                        // list around it do not re-rasterise) and draws its
+                        // rounded corners itself instead of through a clip
+                        // layer, which the renderer would back with an
+                        // offscreen surface per row.
+                        child: RepaintBoundary(
                           child: TweenAnimationBuilder<double>(
                             tween: Tween(end: job.fraction),
                             duration: kMotionSlow,
@@ -787,6 +792,7 @@ class _DownloadCardState extends State<DownloadCard> {
                             builder: (_, v, _) => LinearProgressIndicator(
                               value: job.total > 0 ? v : (job.state == 'running' ? null : 0),
                               minHeight: 6,
+                              borderRadius: BorderRadius.circular(4),
                               color: color,
                               backgroundColor: cs.surfaceContainerHighest,
                             ),
