@@ -28,12 +28,18 @@ func (s Segment) Remaining() int64 { return s.Length() - s.Done }
 // Complete reports whether the whole range has been written.
 func (s Segment) Complete() bool { return s.Done >= s.Length() }
 
+// layoutPart marks sidecars whose data lives at PartPath(out). Sidecars from
+// before .part naming have no layout field; only for those may the engine
+// treat a file at the final path as the partial.
+const layoutPart = "part"
+
 // Control is the persisted resume state, written next to the output file.
 type Control struct {
 	URL       string    `json:"url"`
 	Total     int64     `json:"total"`
 	Validator string    `json:"validator"` // ETag or Last-Modified at download start
 	Conns     int       `json:"conns"`
+	Layout    string    `json:"layout,omitempty"` // layoutPart, or "" for a pre-.part sidecar
 	Segments  []Segment `json:"segments"`
 
 	path     string       // sidecar path; not serialized
@@ -52,6 +58,7 @@ func NewControl(outPath, url string, total int64, validator string, segs []Segme
 		Total:     total,
 		Validator: validator,
 		Conns:     len(segs),
+		Layout:    layoutPart,
 		Segments:  segs,
 		path:      controlPath(outPath),
 		assigned:  make(map[int]bool),
@@ -133,12 +140,34 @@ func (c *Control) BytesDone() int64 {
 	return t
 }
 
+// LegacyPartial reports whether the file at outPath is the partial data of a
+// pre-.part download: a sidecar exists for it, that sidecar predates .part
+// naming, and no .part file exists. Anything else at outPath (a finished
+// download, a user's file) is never treated as partial data.
+func LegacyPartial(outPath string) bool {
+	if _, err := os.Stat(PartPath(outPath)); err == nil {
+		return false
+	}
+	c, err := LoadControl(outPath)
+	if err != nil || c == nil || c.Layout != "" {
+		return false
+	}
+	_, err = os.Stat(outPath)
+	return err == nil
+}
+
 // RemovePartial deletes a download's partial data (the .part file, or a
-// legacy partial at the output path) and its resume sidecar. Missing files
-// are not an error. Used when a job is discarded from a queue.
+// legacy partial at the output path, see LegacyPartial) and its resume
+// sidecar. A file at the output path that is not a legacy partial is left
+// alone. Missing files are not an error. Used when a job is discarded.
 func RemovePartial(outPath string) error {
+	targets := []string{PartPath(outPath)}
+	if LegacyPartial(outPath) {
+		targets = append(targets, outPath)
+	}
+	targets = append(targets, controlPath(outPath))
 	var first error
-	for _, p := range []string{PartPath(outPath), outPath, controlPath(outPath)} {
+	for _, p := range targets {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) && first == nil {
 			first = err
 		}

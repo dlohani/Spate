@@ -35,7 +35,9 @@ only, guards writes with a 0600 token compared in constant time, rejects
 web-page origins and reduces a hand-off's file name to one path element;
 settings, the queue (`queue.json`, versioned) and sidecars are written
 atomically with 0600. Since October 2026: partial downloads live under
-`<out>.part` and are renamed on completion without overwriting; the queue
+`<out>.part` and are renamed on completion without overwriting (sidecars carry
+`"layout":"part"`; only a sidecar without it may treat a file at the final path
+as its partial, so a finished file is never adopted or deleted as one); the queue
 (pause state, schedule, priority, hand-off cookies and headers) survives a
 restart; every C export reports its failure through `CascadeLastError`, and the
 shell shows a start failure instead of exiting; the core logs to `cascade.log`
@@ -143,6 +145,9 @@ NetworkManager get a clear "unavailable" for Wi-Fi-only).
   are pinned.
 - The core stays standard-library only, enforced by a CI check. Flutter
   packages are pinned to exact versions and updates are reviewed as code.
+- `queue.json` holds a hand-off's cookies, custom headers and basic-auth
+  password in plaintext (mode 0600) for as long as the job is queued or
+  paused. Encrypting them with an OS keychain-backed key is open.
 - Queue state and settings carry a version field and a checksum; partial or
   foreign files are rejected, not loaded. (`queue.json` has the version and
   rejects newer or malformed files; the checksum and the settings version are

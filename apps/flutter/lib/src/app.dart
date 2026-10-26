@@ -19,6 +19,7 @@ class CascadeController extends ChangeNotifier {
   Timer? _timer;
   String? lastError;
   int _lastVersion = -1; // core queue version at the last full refresh
+  int _lastLimit = -1; // bytes/sec cap shown at the last refresh
 
   /// Called when another launch of the app asked this instance to show its
   /// window (the desktop shell hooks window_manager here).
@@ -29,19 +30,26 @@ class CascadeController extends ChangeNotifier {
     _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _tick());
   }
 
-  void _tick() {
+  /// Refreshes from the core. [force] redraws even when the queue is
+  /// unchanged (after a user action, so its result or error shows at once).
+  void _tick({bool force = false}) {
     final now = DateTime.now();
     // Idle and unchanged: no status round trip and no redraw. The queue
     // version advances on any add, remove or state change; progress bytes do
     // not, so a running job keeps the full refresh going for its speed and
-    // bar. A pairing request is not part of the version and is checked here.
+    // bar. Things outside the version are checked here: a pairing request,
+    // the speed cap changing with its time windows, and a scheduled job
+    // whose start time passes (its row then stops saying "Scheduled").
     final version = core.queueVersion;
+    final limit = core.currentLimit;
     final running = jobs.any((j) => j.state == 'running');
-    if (version == _lastVersion && !running && !core.pairPending) {
+    final scheduled = jobs.any((j) => j.startAt != null && j.state == 'pending');
+    if (!force && version == _lastVersion && limit == _lastLimit && !running && !scheduled && !core.pairPending) {
       if (core.showPending) onShowRequested?.call();
       return;
     }
     _lastVersion = version;
+    _lastLimit = limit;
     final next = core.statuses();
     for (final j in next) {
       _rates.putIfAbsent(j.id, () => _Rate()).observe(j.bytes, now);
@@ -67,7 +75,7 @@ class CascadeController extends ChangeNotifier {
       'startAt': startAt == null ? 0 : startAt.millisecondsSinceEpoch ~/ 1000,
     });
     lastError = id == null ? (core.lastError ?? 'That does not look like a downloadable link.') : null;
-    _tick();
+    _tick(force: true);
     return id != null;
   }
 
@@ -77,39 +85,39 @@ class CascadeController extends ChangeNotifier {
 
   void startNow(String id) {
     core.startNow(id);
-    _tick();
+    _tick(force: true);
   }
 
   void pause(String id) {
     core.pause(id);
-    _tick();
+    _tick(force: true);
   }
 
   void resume(String id) {
     core.resume(id);
-    _tick();
+    _tick(force: true);
   }
 
   void cancel(String id) {
     core.cancel(id);
-    _tick();
+    _tick(force: true);
   }
 
   /// Removes a row. An unfinished download's partial file and resume sidecar
   /// are deleted with it; a finished file stays where it is.
   void remove(String id) {
     core.discard(id);
-    _tick();
+    _tick(force: true);
   }
 
   void clearFinished() {
     core.clearFinished();
-    _tick();
+    _tick(force: true);
   }
 
   void cancelAll() {
     core.cancelAll();
-    _tick();
+    _tick(force: true);
   }
 
   /// Retry a failed/cancelled download: re-queue the same link into the same
@@ -118,7 +126,7 @@ class CascadeController extends ChangeNotifier {
     final dir = File(j.out).parent.path;
     core.remove(j.id);
     core.add(j.url, dir: dir);
-    _tick();
+    _tick(force: true);
   }
 
   void reveal(String path) {

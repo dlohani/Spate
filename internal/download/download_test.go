@@ -825,9 +825,18 @@ func TestLegacyPartialIsAdopted(t *testing.T) {
 	if err := d1.Run(context.Background()); err == nil {
 		t.Fatal("expected the budgeted run to fail")
 	}
-	// Old layout: the data lived at the final path, sidecar beside it.
+	// Old layout: the data lived at the final path, sidecar beside it, and
+	// the sidecar had no layout field.
 	if err := os.Rename(PartPath(out), out); err != nil {
 		t.Fatal(err)
+	}
+	ctrl, _ := LoadControl(out)
+	ctrl.Layout = ""
+	if err := ctrl.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if !LegacyPartial(out) {
+		t.Fatal("pre-.part layout not recognised")
 	}
 	budget.Store(1 << 62)
 	m.served.Store(0)
@@ -840,5 +849,40 @@ func TestLegacyPartialIsAdopted(t *testing.T) {
 	}
 	if exists(PartPath(out)) {
 		t.Fatal(".part left behind")
+	}
+}
+
+func TestFinishedFileIsNotAdoptedAsPartial(t *testing.T) {
+	// A sidecar written with .part naming whose .part is gone, beside a
+	// complete file at out: the file must stay untouched and the download
+	// start fresh into a new .part.
+	data := randomBlob(1 << 20)
+	m := &manualServer{data: data, etag: `"v1"`}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	dir := t.TempDir()
+	out := filepath.Join(dir, "file.bin")
+	if err := os.WriteFile(out, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	segs := PlanSegments(int64(len(data)), 2, 256<<10)
+	segs[0].Done = segs[0].Length() / 2
+	if err := NewControl(out, srv.URL, int64(len(data)), `"v1"`, segs).Save(); err != nil {
+		t.Fatal(err)
+	}
+	if LegacyPartial(out) {
+		t.Fatal("a .part-layout sidecar must never mark the output as legacy partial")
+	}
+	before, _ := os.Stat(out)
+	d := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10, Resume: true})
+	if err := d.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.Stat(out)
+	if !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
+		t.Fatal("finished file was modified")
+	}
+	if d.Output() != filepath.Join(dir, "file (1).bin") {
+		t.Fatalf("Output = %q", d.Output())
 	}
 }

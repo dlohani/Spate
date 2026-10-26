@@ -225,11 +225,15 @@ func StartWith(o StartOpts) (*Service, error) {
 // recorded as pending so they resume next start), then the capture endpoint
 // closes and the manager is cancelled.
 func (s *Service) Stop() {
-	if s.queue != nil {
-		_ = s.queue.Close()
-	}
 	if s.API != nil {
 		_ = s.API.Close()
+	}
+	// Stop running downloads first and wait for them: a job that finishes
+	// in this window is recorded Done (not re-downloaded next start), one
+	// that is interrupted is recorded pending with Resume.
+	s.Mgr.Shutdown()
+	if s.queue != nil {
+		_ = s.queue.Close()
 	}
 	s.cancel()
 	slog.Info("stopped")
@@ -423,7 +427,7 @@ func ResumeOrphans(mgr *job.Manager, dir string, limiter *download.Limiter) int 
 		if err != nil || ctrl == nil || ctrl.URL == "" {
 			continue
 		}
-		if !hasPartial(out) {
+		if !hasPartial(out, ctrl.Layout == "") {
 			continue
 		}
 		if _, err := mgr.Add(job.Spec{URL: ctrl.URL, Out: out, Options: download.Options{Resume: true, SharedLimiter: limiter}}); err == nil {
@@ -433,11 +437,14 @@ func ResumeOrphans(mgr *job.Manager, dir string, limiter *download.Limiter) int 
 	return n
 }
 
-// hasPartial reports whether partial data exists for out: the .part file, or
-// (legacy layout) the output path itself.
-func hasPartial(out string) bool {
+// hasPartial reports whether partial data exists for out: the .part file,
+// or, only when the sidecar predates .part naming, the output path itself.
+func hasPartial(out string, legacy bool) bool {
 	if _, err := os.Stat(download.PartPath(out)); err == nil {
 		return true
+	}
+	if !legacy {
+		return false
 	}
 	_, err := os.Stat(out)
 	return err == nil

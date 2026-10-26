@@ -170,6 +170,7 @@ type Manager struct {
 	version atomic.Uint64  // bumped on every queue change (see Version)
 
 	startGate func() bool // optional: may queued jobs start right now?
+	shutdown  bool        // Shutdown called: nothing starts, interruptions become Pending
 }
 
 // gateRecheck is how often the loop re-evaluates a closed start gate.
@@ -229,7 +230,7 @@ func (m *Manager) Records() []Record {
 	for _, j := range jobs {
 		o := j.Options
 		r := Record{ID: j.ID, URL: j.URL, Out: j.outputPath(), Priority: j.Priority, StartAt: j.StartAt,
-			Paused: j.state == Paused, Conns: o.Conns, SHA256: o.SHA256, Cookie: o.Cookie,
+			Paused: j.state == Paused || j.paused, Conns: o.Conns, SHA256: o.SHA256, Cookie: o.Cookie,
 			BasicUser: o.BasicUser, BasicPassword: o.BasicPassword}
 		if len(o.Headers) > 0 {
 			r.Headers = make(map[string]string, len(o.Headers))
@@ -278,6 +279,11 @@ func (m *Manager) add(s Spec, state State) (string, error) {
 	}
 	j := &Job{Spec: s, seq: m.seqNext, state: state}
 	m.seqNext++
+	// A restored ID ("job-7") must not be handed out again by the generator.
+	var n int
+	if _, err := fmt.Sscanf(s.ID, "job-%d", &n); err == nil && n >= m.seqNext {
+		m.seqNext = n
+	}
 	m.jobs[s.ID] = j
 	m.signal()
 	slog.Info("job added", "id", s.ID, "url", s.URL, "out", s.Out, "state", state.String(), "priority", s.Priority, "startAt", s.StartAt)
@@ -472,6 +478,24 @@ func (m *Manager) StartNow(id string) error {
 	return nil
 }
 
+// Shutdown stops every running download and waits for the goroutines to
+// exit. Interrupted jobs become Pending with Resume set (they continue next
+// start) rather than Failed, and no new job starts afterwards. Call it before
+// persisting the queue for the last time; cancelling the Serve context
+// afterwards is still required to end the loop.
+func (m *Manager) Shutdown() {
+	m.mu.Lock()
+	m.shutdown = true
+	for _, j := range m.jobs {
+		if j.state == Running && j.cancel != nil {
+			j.cancel()
+		}
+	}
+	m.mu.Unlock()
+	m.signal()
+	m.wg.Wait()
+}
+
 // SetStartGate installs a policy consulted before any queued job starts (e.g.
 // a "download window"); running jobs are unaffected. nil removes it.
 func (m *Manager) SetStartGate(gate func() bool) {
@@ -606,6 +630,9 @@ func (m *Manager) drive(ctx context.Context, exitOnDrain bool) error {
 // startEligibleLocked launches as many eligible jobs as capacity allows, highest
 // priority first (ties broken by insertion order). Caller holds m.mu.
 func (m *Manager) startEligibleLocked(ctx context.Context) {
+	if m.shutdown {
+		return
+	}
 	if m.startGate != nil && !m.startGate() {
 		return // outside the download window; drive() re-checks periodically
 	}
@@ -665,6 +692,11 @@ func (m *Manager) launchLocked(ctx context.Context, j *Job) {
 			j.state = Paused
 			j.err = nil
 			why = "pause"
+		case m.shutdown && errors.Is(err, context.Canceled):
+			j.Options.Resume = true
+			j.state = Pending
+			j.err = nil
+			why = "shutdown"
 		case isGateError(err):
 			why = "gate"
 			// Policy (Wi-Fi/battery) blocked it; re-queue to retry when

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -203,10 +204,28 @@ func uniquePath(out string) string {
 
 // finalize moves the completed .part into place under the final name, never
 // overwriting a file that already exists there, and records the chosen name.
+// A hard link fails atomically when the target exists, so two downloads
+// settling on the same free name cannot clobber each other; filesystems
+// without hard links fall back to a plain rename after the free-name check.
 func (d *Downloader) finalize() error {
-	dst := uniquePath(d.out)
-	if err := os.Rename(PartPath(d.out), dst); err != nil {
-		return err
+	part := PartPath(d.out)
+	var dst string
+	for attempt := 0; ; attempt++ {
+		dst = uniquePath(d.out)
+		err := os.Link(part, dst)
+		if err == nil {
+			if err := os.Remove(part); err != nil {
+				return err
+			}
+			break
+		}
+		if errors.Is(err, fs.ErrExist) && attempt < 100 {
+			continue // lost the race for that name; pick the next
+		}
+		if err := os.Rename(part, dst); err != nil {
+			return err
+		}
+		break
 	}
 	d.mu.Lock()
 	d.out = dst
@@ -232,8 +251,10 @@ func (d *Downloader) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if d.out == "" {
-		d.out = deriveFilename(d.currentURL(), probe.Filename, probe.ContentType)
+	if d.Output() == "" {
+		d.mu.Lock()
+		d.out = deriveFilename(d.url, probe.Filename, probe.ContentType)
+		d.mu.Unlock()
 	}
 	d.validator = probe.Validator()
 
@@ -400,9 +421,12 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 			part := PartPath(d.out)
 			if _, err := os.Stat(part); err != nil {
 				// Legacy layout (before .part): the data sat at the final path.
+				// canResume only says ok for that when the sidecar predates
+				// .part, so a finished file is never mistaken for a partial.
 				if err := os.Rename(d.out, part); err != nil {
 					return fmt.Errorf("resume: adopt legacy partial: %w", err)
 				}
+				existing.Layout = layoutPart
 			}
 			f, err := os.OpenFile(part, os.O_RDWR, 0o644)
 			if err != nil {
@@ -450,13 +474,15 @@ func (d *Downloader) canResume(existing *Control, probe ProbeResult) (bool, stri
 			return false, "validator changed (upstream file modified)"
 		}
 	}
-	// The partial data must still be there: under .part, or (legacy layout)
-	// at the final path while a sidecar exists for it.
+	// The partial data must still be there: under .part, or, only for a
+	// sidecar written before .part naming, at the final path.
 	if _, err := os.Stat(PartPath(d.out)); err == nil {
 		return true, ""
 	}
-	if _, err := os.Stat(d.out); err == nil {
-		return true, ""
+	if existing.Layout == "" {
+		if _, err := os.Stat(d.out); err == nil {
+			return true, ""
+		}
 	}
 	return false, "partial data missing"
 }

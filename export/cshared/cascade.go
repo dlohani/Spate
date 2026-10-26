@@ -63,7 +63,8 @@ func lastErrorText() string {
 }
 
 // CascadeLastError returns the message of the most recent failed call in this
-// library, or "" when the last call succeeded or nothing failed yet. Caller
+// library, or "" when the last call succeeded or nothing failed yet (calls
+// that take a bad handle are the exception: they leave it as is). Caller
 // frees. A failed CascadeServiceStart* reports here whether Cascade was
 // already running (ErrAlreadyRunning's text) or something else went wrong.
 //
@@ -207,6 +208,7 @@ func CascadeAdd(handle C.longlong, url, dir, sha256 *C.char, conns C.int) *C.cha
 		setErr(err)
 		return cstr("")
 	}
+	setErr(nil)
 	return cstr(id)
 }
 
@@ -241,6 +243,7 @@ func CascadeAddJSON(handle C.longlong, spec *C.char) *C.char {
 		setErr(err)
 		return cstr("")
 	}
+	setErr(nil)
 	return cstr(id)
 }
 
@@ -272,6 +275,7 @@ func CascadeSettingsApply(handle C.longlong, doc *C.char) C.int {
 		setErr(err)
 		return -1
 	}
+	setErr(nil)
 	return 0
 }
 
@@ -301,6 +305,7 @@ func act(handle C.longlong, id *C.char, f func(*service.Service, string) error) 
 		setErr(err)
 		return -1
 	}
+	setErr(nil)
 	return 0
 }
 

@@ -527,3 +527,84 @@ func TestRecordsRoundTrip(t *testing.T) {
 		t.Fatalf("restored options wrong: %+v", j.Options)
 	}
 }
+
+func TestDiscardKeepsUnrelatedFileAtOutput(t *testing.T) {
+	// A finished file (or any user file) sits at out; a new job for that name
+	// writes only out.part. Removing the job must not touch the existing file.
+	dir := t.TempDir()
+	out := filepath.Join(dir, "f.bin")
+	if err := os.WriteFile(out, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := New(1)
+	m.SetStartGate(func() bool { return false })
+	id, err := m.Add(Spec{URL: "http://127.0.0.1:1/f.bin", Out: out})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Cancel(id); err != nil {
+		t.Fatal(err)
+	}
+	if n := m.ClearFinished(); n != 1 {
+		t.Fatalf("ClearFinished = %d", n)
+	}
+	if b, err := os.ReadFile(out); err != nil || string(b) != "keep me" {
+		t.Fatalf("existing file touched: %q %v", b, err)
+	}
+	id2, _ := m.Add(Spec{URL: "http://127.0.0.1:1/f.bin", Out: out})
+	if err := m.Discard(id2); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(out); err != nil || string(b) != "keep me" {
+		t.Fatalf("existing file touched by Discard: %q %v", b, err)
+	}
+}
+
+func TestRestoredIDsDoNotCollide(t *testing.T) {
+	m := New(1)
+	m.SetStartGate(func() bool { return false })
+	if _, err := m.AddRecord(Record{ID: "job-3", URL: "http://x/a", Out: filepath.Join(t.TempDir(), "a")}, download.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := m.Add(Spec{URL: "http://x/b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := m.Add(Spec{URL: "http://x/c"})
+	if err != nil {
+		t.Fatalf("second add after restore: %v", err)
+	}
+	if a != "job-4" || b != "job-5" {
+		t.Fatalf("ids after restoring job-3: %s, %s", a, b)
+	}
+}
+
+func TestShutdownRecordsRunningAsPending(t *testing.T) {
+	data := blob(8 << 20)
+	srv := httptest.NewServer(rangeServer(data, 50*time.Millisecond, nil, nil, nil))
+	defer srv.Close()
+	m := New(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = m.Serve(ctx) }()
+	out := filepath.Join(t.TempDir(), "big.bin")
+	id, err := m.Add(Spec{URL: srv.URL, Out: out, Options: download.Options{Conns: 2, MinSegment: 1 << 20}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 5*time.Second, func() bool { st, _ := m.Status(id); return st.State == Running && st.Bytes > 0 })
+	m.Shutdown()
+	st, _ := m.Status(id)
+	if st.State != Pending {
+		t.Fatalf("after Shutdown state = %s, want pending", st.State)
+	}
+	recs := m.Records()
+	if len(recs) != 1 || recs[0].Paused {
+		t.Fatalf("records after shutdown: %+v", recs)
+	}
+	// Nothing starts after Shutdown even though a slot is free.
+	time.Sleep(200 * time.Millisecond)
+	if st, _ := m.Status(id); st.State != Pending {
+		t.Fatalf("job restarted after Shutdown: %s", st.State)
+	}
+}
