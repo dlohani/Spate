@@ -63,14 +63,14 @@ func parseRange(h string, total int64) (start, end int64, ok bool) {
 // optional byte budget after which it returns 503 (to simulate a mid-download
 // failure that the client must resume from).
 type manualServer struct {
-	data    []byte
-	etag    string
-	noRange bool
-	budget   *atomic.Int64 // nil = unlimited
-	maxConc  atomic.Int64
-	curConc  atomic.Int64
-	delay    time.Duration
-	slowFrom int64 // ranges whose start >= slowFrom incur delay (default 0 = all)
+	data      []byte
+	etag      string
+	noRange   bool
+	budget    *atomic.Int64 // nil = unlimited
+	maxConc   atomic.Int64
+	curConc   atomic.Int64
+	delay     time.Duration
+	slowFrom  int64 // ranges whose start >= slowFrom incur delay (default 0 = all)
 	connLimit int64 // if > 0, concurrent range requests beyond this get 503
 
 	// Optional access requirements; when set, requests missing them get 401.
@@ -79,6 +79,8 @@ type manualServer struct {
 	reqCookie    string
 	reqUser      string
 	reqPass      string
+
+	served atomic.Int64 // body bytes written across all range responses
 }
 
 func (m *manualServer) authOK(r *http.Request) bool {
@@ -164,6 +166,7 @@ func (m *manualServer) handler() http.HandlerFunc {
 		w.Header().Set("Content-Length", strconv.FormatInt(allowed, 10))
 		w.WriteHeader(http.StatusPartialContent)
 		w.Write(m.data[start : start+allowed])
+		m.served.Add(allowed)
 	}
 }
 
@@ -715,5 +718,246 @@ func TestCancellationLeavesResumableState(t *testing.T) {
 	}
 	if ctrl, _ := LoadControl(out); ctrl == nil {
 		t.Fatal("expected resumable sidecar after cancellation")
+	}
+}
+
+func exists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+func TestWritesPartThenRenames(t *testing.T) {
+	data := randomBlob(2 << 20)
+	m := &manualServer{data: data, etag: `"v1"`, delay: 150 * time.Millisecond}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "file.bin")
+	if PartPath(out) != out+".part" {
+		t.Fatalf("PartPath = %q", PartPath(out))
+	}
+	d := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10})
+	done := make(chan error, 1)
+	go func() { done <- d.Run(context.Background()) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for !exists(PartPath(out)) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !exists(PartPath(out)) {
+		t.Fatal("no .part file appeared while downloading")
+	}
+	if exists(out) {
+		t.Fatal("final path exists while the download is in progress")
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if exists(PartPath(out)) || exists(controlPath(out)) {
+		t.Fatal(".part or sidecar left behind after completion")
+	}
+	got, _ := os.ReadFile(out)
+	if !bytes.Equal(got, data) {
+		t.Fatal("final file differs")
+	}
+	if d.Output() != out {
+		t.Fatalf("Output = %q", d.Output())
+	}
+}
+
+func TestResumeWithoutPartStartsFresh(t *testing.T) {
+	data := randomBlob(2 << 20)
+	budget := &atomic.Int64{}
+	budget.Store(int64(len(data)) / 2)
+	m := &manualServer{data: data, etag: `"v1"`, budget: budget}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "file.bin")
+	d1 := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10, Retries: 1, Resume: true})
+	if err := d1.Run(context.Background()); err == nil {
+		t.Fatal("expected the budgeted run to fail")
+	}
+	if !exists(PartPath(out)) || !exists(controlPath(out)) {
+		t.Fatal("expected .part and sidecar after failure")
+	}
+	os.Remove(PartPath(out)) // the user cleaned up while the app was closed
+	budget.Store(1 << 62)
+	d2 := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10, Resume: true, SHA256: sha256hex(data)})
+	if err := d2.Run(context.Background()); err != nil {
+		t.Fatalf("fresh start after missing part: %v", err)
+	}
+	got, _ := os.ReadFile(out)
+	if !bytes.Equal(got, data) {
+		t.Fatal("file differs")
+	}
+}
+
+func TestCompleteDoesNotOverwriteExisting(t *testing.T) {
+	data := randomBlob(1 << 20)
+	m := &manualServer{data: data, etag: `"v1"`}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	dir := t.TempDir()
+	out := filepath.Join(dir, "file.bin")
+	if err := os.WriteFile(out, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10})
+	if err := d.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(out); string(b) != "keep me" {
+		t.Fatal("existing file was overwritten")
+	}
+	want := filepath.Join(dir, "file (1).bin")
+	if d.Output() != want {
+		t.Fatalf("Output = %q, want %q", d.Output(), want)
+	}
+	if got, _ := os.ReadFile(want); !bytes.Equal(got, data) {
+		t.Fatal("renamed file differs")
+	}
+}
+
+func TestLegacyPartialIsAdopted(t *testing.T) {
+	data := randomBlob(2 << 20)
+	budget := &atomic.Int64{}
+	budget.Store(int64(len(data)) / 2)
+	m := &manualServer{data: data, etag: `"v1"`, budget: budget}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "file.bin")
+	d1 := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10, Retries: 1, Resume: true})
+	if err := d1.Run(context.Background()); err == nil {
+		t.Fatal("expected the budgeted run to fail")
+	}
+	// Old layout: the data lived at the final path, sidecar beside it, and
+	// the sidecar had no layout field.
+	if err := os.Rename(PartPath(out), out); err != nil {
+		t.Fatal(err)
+	}
+	ctrl, _ := LoadControl(out)
+	ctrl.Layout = ""
+	if err := ctrl.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if !LegacyPartial(out) {
+		t.Fatal("pre-.part layout not recognised")
+	}
+	budget.Store(1 << 62)
+	m.served.Store(0)
+	d2 := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10, Resume: true, SHA256: sha256hex(data)})
+	if err := d2.Run(context.Background()); err != nil {
+		t.Fatalf("resume from legacy layout: %v", err)
+	}
+	if served := m.served.Load(); served >= int64(len(data)) {
+		t.Fatalf("legacy partial was not reused: served %d of %d", served, len(data))
+	}
+	if exists(PartPath(out)) {
+		t.Fatal(".part left behind")
+	}
+}
+
+func TestFinishedFileIsNotAdoptedAsPartial(t *testing.T) {
+	// A sidecar written with .part naming whose .part is gone, beside a
+	// complete file at out: the file must stay untouched and the download
+	// start fresh into a new .part.
+	data := randomBlob(1 << 20)
+	m := &manualServer{data: data, etag: `"v1"`}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	dir := t.TempDir()
+	out := filepath.Join(dir, "file.bin")
+	if err := os.WriteFile(out, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	segs := PlanSegments(int64(len(data)), 2, 256<<10)
+	segs[0].Done = segs[0].Length() / 2
+	if err := NewControl(out, srv.URL, int64(len(data)), `"v1"`, segs).Save(); err != nil {
+		t.Fatal(err)
+	}
+	if LegacyPartial(out) {
+		t.Fatal("a .part-layout sidecar must never mark the output as legacy partial")
+	}
+	before, _ := os.Stat(out)
+	d := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10, Resume: true})
+	if err := d.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.Stat(out)
+	if !after.ModTime().Equal(before.ModTime()) || after.Size() != before.Size() {
+		t.Fatal("finished file was modified")
+	}
+	if d.Output() != filepath.Join(dir, "file (1).bin") {
+		t.Fatalf("Output = %q", d.Output())
+	}
+}
+
+// TestSmallBodyReadsCoalesce: a server that trickles the body in 1 KiB
+// flushes still produces a correct file, and progress never runs ahead of
+// what is on disk (the sidecar's Done is at most the bytes written).
+func TestSmallBodyReadsCoalesce(t *testing.T) {
+	data := randomBlob(3 << 20)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		total := int64(len(data))
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("ETag", `"v1"`)
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", strconv.FormatInt(total, 10))
+			return
+		}
+		start, end, ok := parseRange(r.Header.Get("Range"), total)
+		if !ok {
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, total))
+		w.Header().Set("Content-Length", strconv.FormatInt(end-start+1, 10))
+		w.WriteHeader(http.StatusPartialContent)
+		fl, _ := w.(http.Flusher)
+		for off := start; off <= end; off += 1024 {
+			stop := off + 1024
+			if stop > end+1 {
+				stop = end + 1
+			}
+			w.Write(data[off:stop])
+			if fl != nil {
+				fl.Flush()
+			}
+		}
+	}))
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "trickle.bin")
+	d := New(srv.URL, out, Options{Conns: 3, MinSegment: 512 << 10, WriteBuffer: 256 << 10, SHA256: sha256hex(data)})
+	if err := d.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(out)
+	if !bytes.Equal(got, data) {
+		t.Fatal("file differs")
+	}
+}
+
+func TestLegacySidecarExtensionIsAdopted(t *testing.T) {
+	data := randomBlob(2 << 20)
+	budget := &atomic.Int64{}
+	budget.Store(int64(len(data)) / 2)
+	m := &manualServer{data: data, etag: `"v1"`, budget: budget}
+	srv := httptest.NewServer(m.handler())
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "file.bin")
+	d1 := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10, Retries: 1, Resume: true})
+	if err := d1.Run(context.Background()); err == nil {
+		t.Fatal("expected the budgeted run to fail")
+	}
+	// As written by the previous product version: sidecar under the old name.
+	if err := os.Rename(controlPath(out), out+legacyControlExt); err != nil {
+		t.Fatal(err)
+	}
+	budget.Store(1 << 62)
+	m.served.Store(0)
+	d2 := New(srv.URL, out, Options{Conns: 2, MinSegment: 256 << 10, Resume: true, SHA256: sha256hex(data)})
+	if err := d2.Run(context.Background()); err != nil {
+		t.Fatalf("resume from legacy sidecar: %v", err)
+	}
+	if served := m.served.Load(); served >= int64(len(data)) {
+		t.Fatalf("legacy sidecar not reused: served %d of %d", served, len(data))
+	}
+	if exists(out+legacyControlExt) || exists(controlPath(out)) {
+		t.Fatal("sidecars left behind")
 	}
 }

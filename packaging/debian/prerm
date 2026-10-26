@@ -1,5 +1,5 @@
 #!/bin/sh
-# Cascade .deb prerm: stop running instances before files are removed.
+# Spate .deb prerm: stop running instances before files are removed.
 set -e
-pkill -x cascade_app >/dev/null 2>&1 || true
+pkill -x spate_app >/dev/null 2>&1 || true
 exit 0

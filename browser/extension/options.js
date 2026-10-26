@@ -1,5 +1,5 @@
 const PORTS = [8760, 8761, 8762];
-const CLIENT_HEADERS = { "X-Cascade-Client": "extension" };
+const CLIENT_HEADERS = { "X-Spate-Client": "extension" };
 const tokenEl = document.getElementById("token");
 const enabledEl = document.getElementById("enabled");
 const statusEl = document.getElementById("status");
@@ -35,7 +35,7 @@ async function findBase() {
 
 // One-click pairing: the app shows an Allow? prompt; no token to copy.
 document.getElementById("pair").addEventListener("click", async () => {
-  setStatus("Asking the Cascade app... click Allow in the app window.", true);
+  setStatus("Asking the Spate app... click Allow in the app window.", true);
   const res = await chrome.runtime.sendMessage({ type: "pair" });
   if (res && res.ok) setStatus("Paired.", true);
   else setStatus("Pairing failed: " + (res && res.reason), false);
@@ -56,8 +56,8 @@ document.getElementById("clearRules").addEventListener("click", async () => {
 
 document.getElementById("test").addEventListener("click", async () => {
   const base = await findBase();
-  if (base) setStatus(`Cascade app reachable at ${base}.`, true);
-  else setStatus("Cascade app not reachable. Is it running?", false);
+  if (base) setStatus(`Spate app reachable at ${base}.`, true);
+  else setStatus("Spate app not reachable. Is it running?", false);
 });
 
 // Runs the exact token + POST the background uses, from the extension origin.
@@ -69,7 +69,7 @@ document.getElementById("testadd").addEventListener("click", async () => {
   try {
     const resp = await fetch(`${base}/add`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Cascade-Token": token, ...CLIENT_HEADERS },
+      headers: { "Content-Type": "application/json", "X-Spate-Token": token, ...CLIENT_HEADERS },
       body: JSON.stringify({ url: "https://cdimage.ubuntu.com/ubuntu/releases/24.04.2/release/SHA256SUMS" }),
     });
     const text = await resp.text();

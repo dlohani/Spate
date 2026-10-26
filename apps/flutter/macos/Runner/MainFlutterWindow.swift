@@ -10,6 +10,8 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    // Help menu and notifications: see SpateBridge.swift.
+    SpateBridge.shared.setUp(messenger: flutterViewController.engine.binaryMessenger)
 
     // The app draws its own header as the title bar (native title hidden,
     // traffic lights kept; see main.dart). An empty unified toolbar makes the
@@ -42,7 +44,7 @@ class MainFlutterWindow: NSWindow {
 
   private func minimizeToTrayPreferred() -> Bool {
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-    guard let url = support?.appendingPathComponent("cascade/ui.json"),
+    guard let url = support?.appendingPathComponent("spate/ui.json"),
           let data = try? Data(contentsOf: url),
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let v = json["minimizeToTray"] as? Bool else { return true }

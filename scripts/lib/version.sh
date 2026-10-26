@@ -22,8 +22,8 @@ vercmp() {
 # are reported as unknown so they never block an upgrade.
 installed_version_macos() {
   local plist v b
-  for plist in "$HOME/Applications/Cascade.app/Contents/Info.plist" \
-               "$HOME/Library/Application Support/cascade/bin/Cascade.app/Contents/Info.plist"; do
+  for plist in "$HOME/Applications/Spate.app/Contents/Info.plist" \
+               "$HOME/Library/Application Support/spate/bin/Spate.app/Contents/Info.plist"; do
     [ -f "$plist" ] && break
   done
   [ -f "$plist" ] || return 0
@@ -35,29 +35,29 @@ installed_version_macos() {
 
 # installed_version_linux: the marker the Linux installer writes, or nothing.
 installed_version_linux() {
-  local f="${XDG_DATA_HOME:-$HOME/.local/share}/cascade/VERSION"
+  local f="${XDG_DATA_HOME:-$HOME/.local/share}/spate/VERSION"
   [ -f "$f" ] && tr -d '[:space:]' < "$f"
   return 0
 }
 
 # check_install_version INSTALLED NEW: says what this install is and refuses a
-# downgrade (exit 1) unless CASCADE_FORCE=1.
+# downgrade (exit 1) unless SPATE_FORCE=1.
 check_install_version() {
   local have="$1" want="$2"
   if [ -z "$have" ]; then
-    echo "==> installing Cascade $want"
+    echo "==> installing Spate $want"
     return 0
   fi
   case "$(vercmp "$have" "$want")" in
     1)
-      if [ "${CASCADE_FORCE:-0}" = "1" ]; then
-        echo "==> downgrading Cascade $have -> $want (CASCADE_FORCE=1)"
+      if [ "${SPATE_FORCE:-0}" = "1" ]; then
+        echo "==> downgrading Spate $have -> $want (SPATE_FORCE=1)"
         return 0
       fi
-      echo "error: Cascade $have is installed and $want is older; downgrades are not supported." >&2
-      echo "       Uninstall first, or run again with CASCADE_FORCE=1." >&2
+      echo "error: Spate $have is installed and $want is older; downgrades are not supported." >&2
+      echo "       Uninstall first, or run again with SPATE_FORCE=1." >&2
       return 1 ;;
-    0) echo "==> Cascade $have is already installed; reinstalling (settings and downloads are kept)" ;;
-    *) echo "==> upgrading Cascade $have -> $want" ;;
+    0) echo "==> Spate $have is already installed; reinstalling (settings and downloads are kept)" ;;
+    *) echo "==> upgrading Spate $have -> $want" ;;
   esac
 }

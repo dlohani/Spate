@@ -1,4 +1,4 @@
-// Package settings holds Cascade's persisted user preferences: where downloads
+// Package settings holds Spate's persisted user preferences: where downloads
 // go (base folder, category and per-site destination rules), bandwidth limits
 // with time windows, the queue's download window, and recurring downloads.
 // It is pure policy: the service applies it to the engine and queue.
@@ -12,10 +12,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"spate/internal/paths"
 )
 
 // Category routes files by extension into a folder (relative to the base
@@ -78,9 +79,14 @@ type Settings struct {
 	QueueWindow        QueueWindow `json:"queueWindow"`
 	Recurring          []Recurring `json:"recurring"`
 	MaxConcurrent      int         `json:"maxConcurrent"`
+	DefaultConns       int         `json:"defaultConns"` // connections per download when a request does not say
 
 	mu sync.Mutex `json:"-"`
 }
+
+// DefaultConnsValue is the connections per download for a fresh install and
+// for a document that predates the field.
+const DefaultConnsValue = 8
 
 // DefaultCategories is the starting set; users can edit it.
 func DefaultCategories() []Category {
@@ -102,16 +108,18 @@ func Default(downloadDir string) *Settings {
 		OrganizeByCategory: false,
 		Categories:         DefaultCategories(),
 		MaxConcurrent:      3,
+		DefaultConns:       DefaultConnsValue,
 	}
 }
 
-// Path is the settings file location under the user config dir.
+// Path is the settings file location under the user config dir (migrating a
+// previous install's files on the way, see internal/paths).
 func Path() (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := paths.ConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "cascade", "settings.json"), nil
+	return filepath.Join(dir, "settings.json"), nil
 }
 
 // Load reads the settings file, returning Default(downloadDir) if absent.
@@ -133,10 +141,15 @@ func Load(path, downloadDir string) (*Settings, error) {
 	if s.MaxConcurrent <= 0 {
 		s.MaxConcurrent = 3
 	}
+	if s.DefaultConns <= 0 {
+		s.DefaultConns = DefaultConnsValue
+	}
 	return s, nil
 }
 
-// Save writes the settings atomically.
+// Save writes the settings atomically: a uniquely named temp file beside the
+// target (so concurrent saves cannot rename each other's half-written file),
+// mode 0600, then rename.
 func (s *Settings) Save(path string) error {
 	s.mu.Lock()
 	b, err := json.MarshalIndent(s, "", "  ")
@@ -147,11 +160,26 @@ func (s *Settings) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "settings-*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	name := tmp.Name()
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return os.Rename(name, path)
 }
 
 // JSON returns the settings document.
@@ -200,8 +228,14 @@ func (s *Settings) Apply(b []byte) error {
 	if in.MaxConcurrent <= 0 {
 		in.MaxConcurrent = s.MaxConcurrent
 	}
+	if in.DefaultConns <= 0 {
+		in.DefaultConns = s.DefaultConns
+	}
+	if in.DefaultConns > 32 {
+		return fmt.Errorf("settings: connections per download %d is above the maximum of 32", in.DefaultConns)
+	}
 	s.DownloadDir, s.OrganizeByCategory, s.Categories, s.SiteRules = in.DownloadDir, in.OrganizeByCategory, in.Categories, in.SiteRules
-	s.Limits, s.QueueWindow, s.Recurring, s.MaxConcurrent = in.Limits, in.QueueWindow, in.Recurring, in.MaxConcurrent
+	s.Limits, s.QueueWindow, s.Recurring, s.MaxConcurrent, s.DefaultConns = in.Limits, in.QueueWindow, in.Recurring, in.MaxConcurrent, in.DefaultConns
 	return nil
 }
 
@@ -226,16 +260,6 @@ func (s *Settings) Resolve(rawURL, filename string) string {
 		}
 	}
 	return base
-}
-
-// CategoryName returns the matching category for a filename ("" if none).
-func (s *Settings) CategoryName(filename string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if c := s.categoryFor(filename); c != nil {
-		return c.Name
-	}
-	return ""
 }
 
 func (s *Settings) categoryFor(filename string) *Category {
@@ -326,6 +350,7 @@ func (s *Settings) Snapshot() Settings {
 		QueueWindow:   s.QueueWindow,
 		Recurring:     append([]Recurring(nil), s.Recurring...),
 		MaxConcurrent: s.MaxConcurrent,
+		DefaultConns:  s.DefaultConns,
 	}
 }
 
@@ -414,16 +439,4 @@ func parseHM(s string) (int, error) {
 		return 0, fmt.Errorf("settings: bad time %q (want HH:MM)", s)
 	}
 	return h*60 + m, nil
-}
-
-// SortedCategoryNames is a helper for UIs.
-func (s *Settings) SortedCategoryNames() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	names := make([]string, 0, len(s.Categories))
-	for _, c := range s.Categories {
-		names = append(names, c.Name)
-	}
-	sort.Strings(names)
-	return names
 }

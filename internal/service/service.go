@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,11 +23,17 @@ import (
 	"sync"
 	"time"
 
-	"cascade/internal/download"
-	"cascade/internal/job"
-	"cascade/internal/localapi"
-	"cascade/internal/settings"
+	"spate/internal/download"
+	"spate/internal/job"
+	"spate/internal/localapi"
+	"spate/internal/logx"
+	"spate/internal/paths"
+	"spate/internal/settings"
+	"spate/internal/version"
 )
+
+// logMaxBytes bounds spate.log before it is rotated to spate.log.1.
+const logMaxBytes = 5 << 20
 
 // PairTimeout bounds how long a pairing request waits for the user's decision.
 const PairTimeout = 90 * time.Second
@@ -35,9 +42,9 @@ const PairTimeout = 90 * time.Second
 // downloads are re-evaluated.
 const schedulerTick = 30 * time.Second
 
-// ErrAlreadyRunning is returned by Start when another Cascade instance already
+// ErrAlreadyRunning is returned by Start when another Spate instance already
 // answers on the capture ports; a shell should exit quietly (or defer to it).
-var ErrAlreadyRunning = errors.New("cascade is already running")
+var ErrAlreadyRunning = errors.New("spate is already running")
 
 // AddOpts describes a download to enqueue.
 type AddOpts struct {
@@ -61,13 +68,14 @@ type Service struct {
 	settingsPath string
 	limiter      *download.Limiter // global cap shared by all downloads
 	cancel       context.CancelFunc
+	queue        *queuePersister
 
 	pairMu      sync.Mutex
 	pairPending bool
 	pairCh      chan bool
 }
 
-// AlreadyRunning reports whether a Cascade capture endpoint is already up on
+// AlreadyRunning reports whether a Spate capture endpoint is already up on
 // one of the ports the browser extension probes.
 func AlreadyRunning() bool {
 	c := &http.Client{Timeout: 300 * time.Millisecond}
@@ -81,7 +89,7 @@ func AlreadyRunning() bool {
 		}
 		_ = json.NewDecoder(resp.Body).Decode(&body)
 		resp.Body.Close()
-		if body.App == "cascade" {
+		if body.App == "spate" {
 			return true
 		}
 	}
@@ -99,7 +107,7 @@ func RequestShow() bool {
 		if err != nil {
 			continue
 		}
-		req.Header.Set("X-Cascade-Token", token)
+		req.Header.Set("X-Spate-Token", token)
 		resp, err := c.Do(req)
 		if err != nil {
 			continue
@@ -122,8 +130,9 @@ func (s *Service) ShowPending() bool { return s.API != nil && s.API.ShowPending(
 type StartOpts struct {
 	MaxConcurrent int
 	DownloadDir   string
-	SettingsPath  string // "" = CASCADE_SETTINGS env, else settings.Path()
+	SettingsPath  string // "" = SPATE_SETTINGS env, else settings.Path()
 	AllowMultiple bool   // skip the single-instance guard (tests, development)
+	Token         string // "" = SPATE_TOKEN env, else the persisted per-user token
 }
 
 // Start brings the service up: settings, manager loop, capture endpoint,
@@ -138,8 +147,8 @@ func Start(maxConcurrent int, downloadDir string) (*Service, error) {
 // out of the user's config folder.
 func StartWith(o StartOpts) (*Service, error) {
 	maxConcurrent, downloadDir := o.MaxConcurrent, o.DownloadDir
-	// CASCADE_ALLOW_MULTIPLE=1 disables the guard (tests, development).
-	if !o.AllowMultiple && os.Getenv("CASCADE_ALLOW_MULTIPLE") != "1" && AlreadyRunning() {
+	// SPATE_ALLOW_MULTIPLE=1 disables the guard (tests, development).
+	if !o.AllowMultiple && os.Getenv("SPATE_ALLOW_MULTIPLE") != "1" && AlreadyRunning() {
 		return nil, ErrAlreadyRunning
 	}
 	if downloadDir == "" {
@@ -147,13 +156,19 @@ func StartWith(o StartOpts) (*Service, error) {
 	}
 	spath := o.SettingsPath
 	if spath == "" {
-		spath = os.Getenv("CASCADE_SETTINGS")
+		spath = os.Getenv("SPATE_SETTINGS")
 	}
 	if spath == "" {
 		spath, _ = settings.Path()
 	}
+	// The core logs to a file beside settings.json; a shell has nowhere
+	// else to show what the engine, queue and capture endpoint decided.
+	if lg, err := logx.ToFile(filepath.Join(filepath.Dir(spath), "spate.log"), logMaxBytes); err == nil {
+		slog.SetDefault(lg)
+	}
 	st, err := settings.Load(spath, downloadDir)
 	if err != nil {
+		slog.Error("settings load failed", "path", spath, "err", err)
 		return nil, err
 	}
 	if maxConcurrent <= 0 {
@@ -164,30 +179,70 @@ func StartWith(o StartOpts) (*Service, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { _ = mgr.Serve(ctx) }()
 
+	token := o.Token
+	if token == "" {
+		token = LoadOrCreateToken()
+	}
 	s := &Service{
-		Mgr: mgr, Settings: st, Dir: st.Snapshot().DownloadDir, Token: LoadOrCreateToken(),
+		Mgr: mgr, Settings: st, Dir: st.Snapshot().DownloadDir, Token: token,
 		settingsPath: spath, limiter: download.NewSharedLimiter(), cancel: cancel,
 	}
 	s.limiter.SetRate(st.EffectiveLimit(time.Now()))
 	mgr.SetStartGate(func() bool { return s.Settings.MayStart(time.Now()) })
+
+	// The queue as it was when the app last stopped (paused, scheduled and
+	// in-flight jobs with their request customisation), then any partial a
+	// sidecar still describes that the queue does not know about.
+	qp := queuePath(spath)
+	if recs, err := loadQueue(qp); err != nil {
+		slog.Warn("queue load failed; starting with an empty queue", "path", qp, "err", err)
+	} else {
+		n := 0
+		for _, r := range recs {
+			if _, err := mgr.AddRecord(r, download.Options{SharedLimiter: s.limiter}); err == nil {
+				n++
+			} else {
+				slog.Warn("queue record skipped", "id", r.ID, "err", err)
+			}
+		}
+		if n > 0 {
+			slog.Info("queue restored", "jobs", n)
+		}
+	}
+	if n := ResumeOrphans(mgr, s.Dir, s.limiter); n > 0 {
+		slog.Info("orphan partials resumed", "n", n)
+	}
+	s.queue = startQueuePersister(qp, mgr)
 
 	s.API = localapi.New(mgr, s.Token, s.Dir)
 	s.API.PairFunc = s.pairFunc
 	s.API.ResolveDir = s.Resolve
 	if addr, err := s.API.Start(); err == nil {
 		s.Addr = addr
+	} else {
+		slog.Error("capture endpoint failed to bind; browser hand-off disabled", "err", err)
 	}
-	ResumeOrphans(mgr, s.Dir, s.limiter)
+	slog.Info("started", "version", version.Version, "addr", s.Addr, "dir", s.Dir, "settings", spath, "maxConcurrent", maxConcurrent)
 	go s.scheduler(ctx)
 	return s, nil
 }
 
-// Stop shuts the service down.
+// Stop shuts the service down: the queue is written first (running jobs are
+// recorded as pending so they resume next start), then the capture endpoint
+// closes and the manager is cancelled.
 func (s *Service) Stop() {
 	if s.API != nil {
 		_ = s.API.Close()
 	}
+	// Stop running downloads first and wait for them: a job that finishes
+	// in this window is recorded Done (not re-downloaded next start), one
+	// that is interrupted is recorded pending with Resume.
+	s.Mgr.Shutdown()
+	if s.queue != nil {
+		_ = s.queue.Close()
+	}
 	s.cancel()
+	slog.Info("stopped")
 }
 
 // Resolve picks the folder for a download per the settings rules.
@@ -198,16 +253,20 @@ func (s *Service) Resolve(rawURL, filename string) string {
 // AddWith enqueues a download described by o.
 func (s *Service) AddWith(o AddOpts) (string, error) {
 	if _, err := url.ParseRequestURI(o.URL); err != nil {
-		return "", fmt.Errorf("invalid URL")
+		return "", fmt.Errorf("invalid URL %q", o.URL)
 	}
 	name := FilenameFor(o.URL)
 	dir := o.Dir
 	if dir == "" {
 		dir = s.Resolve(o.URL, name)
 	}
+	conns := o.Conns
+	if conns <= 0 {
+		conns = s.Settings.Snapshot().DefaultConns
+	}
 	return s.Mgr.Add(job.Spec{
 		URL: o.URL, Out: filepath.Join(dir, name), Priority: o.Priority, StartAt: o.StartAt,
-		Options: download.Options{Conns: o.Conns, SHA256: o.SHA256, Resume: true, SharedLimiter: s.limiter},
+		Options: download.Options{Conns: conns, SHA256: o.SHA256, Resume: true, SharedLimiter: s.limiter},
 	})
 }
 
@@ -237,6 +296,7 @@ func (s *Service) ApplySettings(b []byte) error {
 	s.Mgr.SetMaxConcurrent(snap.MaxConcurrent)
 	s.limiter.SetRate(s.Settings.EffectiveLimit(time.Now()))
 	s.Mgr.SetStartGate(func() bool { return s.Settings.MayStart(time.Now()) }) // re-signals the loop
+	slog.Info("settings applied", "dir", snap.DownloadDir, "maxConcurrent", snap.MaxConcurrent, "limit", s.limiter.Rate(), "queueWindow", snap.QueueWindow.Enabled)
 	return nil
 }
 
@@ -255,7 +315,8 @@ func (s *Service) scheduler(ctx context.Context) {
 			s.limiter.SetRate(s.Settings.EffectiveLimit(now))
 			due := s.Settings.Due(now)
 			for _, r := range due {
-				_, _ = s.AddWith(AddOpts{URL: r.URL, Dir: r.Dir})
+				id, err := s.AddWith(AddOpts{URL: r.URL, Dir: r.Dir})
+				slog.Info("recurring due", "id", id, "url", r.URL, "every", r.Every, "err", err)
 			}
 			if len(due) > 0 {
 				_ = s.Settings.Save(s.settingsPath) // NextAt advanced
@@ -321,17 +382,16 @@ func DefaultDownloadDir() string {
 	return "."
 }
 
-// LoadOrCreateToken returns a stable capture token: CASCADE_TOKEN if set, else
+// LoadOrCreateToken returns a stable capture token: SPATE_TOKEN if set, else
 // one persisted under the user config dir (generated once).
 func LoadOrCreateToken() string {
-	if t := os.Getenv("CASCADE_TOKEN"); t != "" {
+	if t := os.Getenv("SPATE_TOKEN"); t != "" {
 		return t
 	}
-	dir, err := os.UserConfigDir()
+	cdir, err := paths.ConfigDir()
 	if err != nil {
 		return randToken()
 	}
-	cdir := filepath.Join(dir, "cascade")
 	tokenPath := filepath.Join(cdir, "token")
 	if b, err := os.ReadFile(tokenPath); err == nil {
 		if t := strings.TrimSpace(string(b)); t != "" {
@@ -348,25 +408,40 @@ func LoadOrCreateToken() string {
 func randToken() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return "cascade-token"
+		return "spate-token"
 	}
 	return hex.EncodeToString(b)
 }
 
-// ResumeOrphans re-queues downloads whose .cascade sidecar is still present
+// ResumeOrphans re-queues downloads whose .spate sidecar is still present
 // under dir (searched one level of subfolders deep, for category folders),
-// continuing from where they stopped. limiter may be nil.
+// continuing from where they stopped. Outputs the queue already tracks are
+// skipped. limiter may be nil.
 func ResumeOrphans(mgr *job.Manager, dir string, limiter *download.Limiter) int {
-	sidecars, _ := filepath.Glob(filepath.Join(dir, "*.cascade"))
-	nested, _ := filepath.Glob(filepath.Join(dir, "*", "*.cascade"))
+	sidecars, _ := filepath.Glob(filepath.Join(dir, "*.spate"))
+	nested, _ := filepath.Glob(filepath.Join(dir, "*", "*.spate"))
+	// Sidecars written before the rename.
+	oldTop, _ := filepath.Glob(filepath.Join(dir, "*.cascade"))
+	oldNested, _ := filepath.Glob(filepath.Join(dir, "*", "*.cascade"))
+	sidecars = append(sidecars, oldTop...)
+	nested = append(nested, oldNested...)
+	queued := map[string]bool{}
+	for _, st := range mgr.Statuses() {
+		if !st.State.Terminal() {
+			queued[st.Out] = true
+		}
+	}
 	n := 0
 	for _, sc := range append(sidecars, nested...) {
-		out := strings.TrimSuffix(sc, ".cascade")
+		out := strings.TrimSuffix(strings.TrimSuffix(sc, ".spate"), ".cascade")
+		if queued[out] {
+			continue
+		}
 		ctrl, err := download.LoadControl(out)
 		if err != nil || ctrl == nil || ctrl.URL == "" {
 			continue
 		}
-		if _, err := os.Stat(out); err != nil {
+		if !hasPartial(out, ctrl.Layout == "") {
 			continue
 		}
 		if _, err := mgr.Add(job.Spec{URL: ctrl.URL, Out: out, Options: download.Options{Resume: true, SharedLimiter: limiter}}); err == nil {
@@ -374,6 +449,19 @@ func ResumeOrphans(mgr *job.Manager, dir string, limiter *download.Limiter) int 
 		}
 	}
 	return n
+}
+
+// hasPartial reports whether partial data exists for out: the .part file,
+// or, only when the sidecar predates .part naming, the output path itself.
+func hasPartial(out string, legacy bool) bool {
+	if _, err := os.Stat(download.PartPath(out)); err == nil {
+		return true
+	}
+	if !legacy {
+		return false
+	}
+	_, err := os.Stat(out)
+	return err == nil
 }
 
 // FilenameFor derives a file name from a URL path, defaulting to download.bin.

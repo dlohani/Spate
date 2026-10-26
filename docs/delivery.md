@@ -1,4 +1,4 @@
-# Delivering Cascade to every platform
+# Delivering Spate to every platform
 
 This is the reference for how the app is built, shipped and kept the same on
 macOS, Windows, Linux, Android and iOS. `architecture.md` says what the layers
@@ -15,12 +15,17 @@ edges, and they are where parity and cost problems come from.
   pairing, show-window. The gomobile package (`mobile/`) wraps the job manager
   directly, skipping `internal/service`, and exposes add, pause, resume,
   status and close. Mobile cannot reach parity while this is so.
-- Policy gating (Wi-Fi-only, battery) has a macOS provider only.
+- Policy gating (Wi-Fi-only, battery) has macOS and Linux providers; Windows,
+  Android and iOS have none.
 - The resident desktop process is the Flutter app, autostarted hidden, hosting
-  the Go core in-process. A Flutter engine idles at tens of megabytes to guard
-  a Go loop that would idle at a few.
-- The UI polls the core every 500 ms, serialising and parsing the whole job
-  list even when idle and hidden.
+  the Go core in-process. Measured (October 2026): hidden and idle it holds 75
+  to 80 MB at about 0.1% CPU, the Go core alone would be about 20 MB; with the
+  window shown and downloads animating it reaches about 215 MB, dropping to
+  about 115 MB after. The daemon split (Phase 4) is what removes the Flutter
+  share from the always-on process.
+- The UI polls the core every 500 ms. Since October 2026 it first reads
+  `SpateQueueVersion` and skips the status round trip when the queue is
+  unchanged and nothing is running; push (callback) remains for Phase 4.
 - Delivery is manual and can degrade silently: the Windows UI is built by
   hand in a VM and copied back, and a build without it produced an installer
   that looked complete. Two Windows installers exist (Go setup exe, NSIS).
@@ -28,9 +33,23 @@ edges, and they are where parity and cost problems come from.
   each platform must support.
 
 What already holds and must be kept: the Go core has no third-party modules;
-the Flutter shell has four pinned packages; the loopback API binds 127.0.0.1
-only, guards writes with a 0600 token compared in constant time and rejects
-web-page origins; settings and state are written atomically with 0600.
+the Flutter shell has seven pinned packages (window, tray, ffi, notifications, folder picker, drag-and-drop); the loopback API binds 127.0.0.1
+only, guards writes with a 0600 token compared in constant time, rejects
+web-page origins and reduces a hand-off's file name to one path element;
+settings, the queue (`queue.json`, versioned) and sidecars are written
+atomically with 0600. Since October 2026: partial downloads live under
+`<out>.part` and are renamed on completion without overwriting (sidecars carry
+`"layout":"part"`; only a sidecar without it may treat a file at the final path
+as its partial, so a finished file is never adopted or deleted as one); the queue
+(pause state, schedule, priority, hand-off cookies and headers) survives a
+restart; every C export reports its failure through `SpateLastError`, and the
+shell shows a start failure instead of exiting; the core logs to `spate.log`
+beside the settings; the status JSON is one Go type (`job.StatusJSON`) with a
+field-set test; CI runs `flutter analyze` and the FFI test on macOS and Linux.
+Engine writes are coalesced into 512 KiB aligned blocks and bypass the page
+cache (macOS `F_NOCACHE`, Linux `fadvise`): 4 GiB over 8 connections went from
+7.5 s to 1.0 s of kernel CPU; the hidden app no longer rasterises frames for
+progress ticks (see README "Footprint").
 
 ## Principles
 
@@ -57,7 +76,7 @@ web-page origins; settings and state are written atomically with 0600.
 - `./build windows` and `scripts/build-windows.sh` refuse to produce an
   installer without the Flutter bundle unless explicitly told to build a
   CLI-only artifact, and that artifact is named as such.
-- `cascade-setup.exe` refuses to install without the UI in its payload unless
+- `spate-setup.exe` refuses to install without the UI in its payload unless
   told to (`--no-ui`), so a UI-less setup can never look like a full one.
 - A release build requires a clean, tagged tree; dev builds keep the
   `+sha.dirty` label and cannot be published.
@@ -80,21 +99,21 @@ web-page origins; settings and state are written atomically with 0600.
   `c-archive` linked statically on iOS. Flutter uses the identical `dart:ffi`
   binding on all five platforms. gomobile is retired unless a native Kotlin or
   Swift shell is actually wanted.
-- `CascadeABIVersion` export and the add-only rule for the JSON schema.
-- The JSON crossing FFI and loopback is defined once in Go with a schema test;
-  Dart models are generated from it.
+- `SpateABIVersion` export and the add-only rule for the JSON schema.
+- The JSON crossing FFI and loopback is defined once in Go with a schema test
+  (done: `job.StatusJSON`); Dart models are generated from it (open).
 
 ### Phase 4: daemon, client interface, push
 
 - On desktop the resident process becomes a headless Go daemon. The Flutter
   UI launches on demand and talks to it over the existing loopback API. On
   mobile the UI keeps FFI in-process.
-- One Dart `CascadeClient` interface with two implementations (FFI, loopback)
+- One Dart `SpateClient` interface with two implementations (FFI, loopback)
   under one contract test suite run on every platform. Screens never branch on
   platform for behaviour.
-- Push, not poll: the core signals change (version counter or `NativeCallable`
-  callback) and the UI redraws on change. At minimum adaptive polling: fast
-  while running and visible, seconds when idle, stopped when hidden.
+- Push, not poll: the core signals change (`NativeCallable` callback) and the
+  UI redraws on change. The version counter half is done (`SpateQueueVersion`,
+  the UI skips idle polls); stopping the timer when hidden is open.
 
 ### Throughout: the parity matrix and the manifest
 
@@ -109,19 +128,20 @@ Every "no" is a decision. Current state:
 | Settings, rules, schedules, windows | yes | yes | yes | no | no |
 | Browser capture | yes | yes | yes | n/a | n/a |
 | Share-sheet capture | n/a | n/a | n/a | not built | not built |
-| Wi-Fi / battery gating | yes | no | no | no | no |
+| Wi-Fi / battery gating | yes | no | yes | no | no |
 | Tray, background, single instance | yes | yes | partial | n/a | n/a |
 
-Gating providers to add: Windows (Network List Manager, power APIs), Linux
-(NetworkManager and UPower over D-Bus), Android (WorkManager constraints),
-iOS (background URLSession policy).
+Gating providers to add: Windows (Network List Manager, power APIs), Android
+(WorkManager constraints), iOS (background URLSession policy). Linux uses
+`ip route`, `nmcli` and sysfs (no D-Bus dependency; hosts without
+NetworkManager get a clear "unavailable" for Wi-Fi-only).
 
 ## Tamper resistance
 
 - Signed, reproducible artifacts from CI only (Phase 2). A dirty or untagged
   tree cannot produce a release-labelled artifact (Phase 1).
 - The FFI loader in release builds accepts exactly one location, the
-  application bundle. `CASCADE_LIB` and the repo-relative candidates stay
+  application bundle. `SPATE_LIB` and the repo-relative candidates stay
   behind a debug flag. The native host launches the app only from its
   installed location.
 - No silent fallbacks. The fixed capture token fallback is removed: if the
@@ -132,19 +152,24 @@ iOS (background URLSession policy).
   are pinned.
 - The core stays standard-library only, enforced by a CI check. Flutter
   packages are pinned to exact versions and updates are reviewed as code.
+- `queue.json` holds a hand-off's cookies, custom headers and basic-auth
+  password in plaintext (mode 0600) for as long as the job is queued or
+  paused. Encrypting them with an OS keychain-backed key is open.
 - Queue state and settings carry a version field and a checksum; partial or
-  foreign files are rejected, not loaded.
+  foreign files are rejected, not loaded. (`queue.json` has the version and
+  rejects newer or malformed files; the checksum and the settings version are
+  open.)
 - Tests are the definition of done: schema contract tests, client interface
   tests per platform, and the installer smoke test per OS.
 
 ### Release obfuscation
 
 `./build release <targets>` and tag-push CI (`refs/tags/v*`) build with
-`CASCADE_OBFUSCATE=1`. Dev builds and PR/branch CI do not, for speed. Set the
+`SPATE_OBFUSCATE=1`. Dev builds and PR/branch CI do not, for speed. Set the
 variable yourself to try it on a dev build; a release without `garble` on PATH
 (`go install mvdan.cc/garble@v0.18.0`) fails loudly instead of shipping plain
 binaries. The garble seed derives from VERSION plus the git SHA (override with
-`CASCADE_OBF_SEED`), so a release rebuilds identically given the pinned
+`SPATE_OBF_SEED`), so a release rebuilds identically given the pinned
 toolchains CI uses (Go 1.27.x and garble v0.18.0).
 
 Three layers:
@@ -154,13 +179,23 @@ Three layers:
   via `build-windows.sh`, Linux via `package-linux.sh`, all through the same
   `scripts/lib/obfuscate.sh` helper); the shared library also gets `-literals`
   (string and constant obfuscation) and `-tiny`; the CLI gets `-tiny` only.
-- C ABI: the shared library exports only the 26 `Cascade*` symbols, on macOS,
+- C ABI: the shared library exports only the 28 `Spate*` symbols, on macOS,
   Windows and Linux (always-on hardening, independent of the switch).
 - Dart UI: `flutter build --obfuscate --split-debug-info` randomizes Dart
   identifiers on the macOS, Windows and Linux desktop builds.
 
 Cost: `-literals` roughly doubles the size of the core library, and garble
 builds are slower.
+
+Verified, not assumed: `scripts/verify-obfuscation.sh` runs inside every
+packager when `SPATE_OBFUSCATE=1` and fails the build if a shipped Go
+artifact still names a `spate/...` package in its symbols or strings, or if
+the shared library exports anything but the listed `Spate*` symbols. The
+macOS and Linux native hosts are built through the same helper as the core.
+Measured on the 0.4.0 tree: the library goes from 11,715 symbols and 283
+package-path symbols to 149 and none, with no telltale strings left; the CLI
+from 9,759 symbols to 114. Size: library 7.6 MB to 16.8 MB (`-literals`), CLI
+9.8 MB to 6.3 MB (`-tiny`).
 
 Symbol maps: `--split-debug-info` writes maps to
 `dist/debug-symbols/<platform>-<version>/`. They are required to symbolize

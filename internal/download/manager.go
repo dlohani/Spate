@@ -9,10 +9,13 @@
 package download
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"log/slog"
 	"mime"
 	"net/http"
 	"net/url"
@@ -23,22 +26,23 @@ import (
 	"sync/atomic"
 	"time"
 
-	"cascade/internal/httpc"
-	"cascade/internal/progress"
+	"spate/internal/httpc"
+	"spate/internal/progress"
 )
 
 // Options configures a download.
 type Options struct {
 	Conns             int           // max parallel connections (default 8)
-	MinSegment        int64         // smallest initial segment size in bytes (default 1 MiB)
+	MinSegment        int64         // smallest initial segment size in bytes (default 256 KiB)
 	WindowSize        int64         // per-request window for windowed fetching (default 4 MiB)
+	WriteBuffer       int64         // bytes coalesced per WriteAt (default 512 KiB; body reads are small and unaligned)
 	StealMinRemaining int64         // min tail to justify a work-steal split (default 2*WindowSize)
 	Retries           int           // per-window extra attempts; 0 = keep retrying for RetryFor
 	RetryFor          time.Duration // how long a window keeps retrying when Retries == 0 (default 15m)
 	RateLimit         int64         // this download's cap in bytes/sec, 0 = unlimited
 	SharedLimiter     *Limiter      // if set, a limiter shared across downloads (global cap); overrides RateLimit
 	SHA256            string        // optional expected hex digest to verify on completion
-	Resume            bool          // reuse an existing .cascade sidecar if valid
+	Resume            bool          // reuse an existing .spate sidecar if valid
 	ExtractTo         string        // if set, extract a downloaded archive into this dir
 
 	// Request customization.
@@ -66,10 +70,19 @@ func (o *Options) setDefaults() {
 		o.Conns = 8
 	}
 	if o.MinSegment <= 0 {
-		o.MinSegment = 1 << 20 // 1 MiB
+		// 256 KiB: a 2 MiB file still spreads over 8 connections, which is
+		// what makes a per-connection-capped link add up; one request per
+		// 256 KiB is negligible overhead on a fast one.
+		o.MinSegment = 256 << 10
 	}
 	if o.WindowSize <= 0 {
 		o.WindowSize = 4 << 20 // 4 MiB
+	}
+	if o.WriteBuffer <= 0 {
+		o.WriteBuffer = 512 << 10 // 512 KiB: same kernel cost as 1 MiB, half the memory per connection
+	}
+	if o.WriteBuffer > o.WindowSize {
+		o.WriteBuffer = o.WindowSize
 	}
 	// A steal must leave the victim's in-flight window untouched, so the split
 	// point is guaranteed to sit beyond it: require at least two windows.
@@ -170,11 +183,69 @@ func (d *Downloader) setMeter(m *progress.Meter) {
 	d.mu.Unlock()
 }
 
-// Output returns the resolved output path (valid after Run resolves it).
-func (d *Downloader) Output() string { return d.out }
+// Output returns the resolved output path (valid after Run resolves it). After
+// a successful Run it is the final name, which differs from the requested one
+// when that name was already taken ("file (1).bin").
+func (d *Downloader) Output() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.out
+}
+
+// PartPath is where a download's data lives until it completes: the final
+// path plus ".part". Finder and file managers therefore never show a
+// half-written file under its real name, and a partial is recognisable as one.
+func PartPath(out string) string { return out + ".part" }
+
+// uniquePath returns out if nothing exists there, else the first free
+// "name (N).ext" beside it.
+func uniquePath(out string) string {
+	if _, err := os.Lstat(out); err != nil {
+		return out
+	}
+	ext := filepath.Ext(out)
+	stem := out[:len(out)-len(ext)]
+	for n := 1; ; n++ {
+		cand := fmt.Sprintf("%s (%d)%s", stem, n, ext)
+		if _, err := os.Lstat(cand); err != nil {
+			return cand
+		}
+	}
+}
+
+// finalize moves the completed .part into place under the final name, never
+// overwriting a file that already exists there, and records the chosen name.
+// A hard link fails atomically when the target exists, so two downloads
+// settling on the same free name cannot clobber each other; filesystems
+// without hard links fall back to a plain rename after the free-name check.
+func (d *Downloader) finalize() error {
+	part := PartPath(d.out)
+	var dst string
+	for attempt := 0; ; attempt++ {
+		dst = uniquePath(d.out)
+		err := os.Link(part, dst)
+		if err == nil {
+			if err := os.Remove(part); err != nil {
+				return err
+			}
+			break
+		}
+		if errors.Is(err, fs.ErrExist) && attempt < 100 {
+			continue // lost the race for that name; pick the next
+		}
+		if err := os.Rename(part, dst); err != nil {
+			return err
+		}
+		break
+	}
+	d.mu.Lock()
+	d.out = dst
+	d.mu.Unlock()
+	return nil
+}
 
 // Run executes the download to completion or returns an error. On error or
-// cancellation the partial file and its .cascade sidecar are left in place so a
+// cancellation the partial file and its .spate sidecar are left in place so a
 // later Run with Resume can continue.
 func (d *Downloader) Run(ctx context.Context) error {
 	client, err := httpc.New(httpc.Config{
@@ -191,12 +262,15 @@ func (d *Downloader) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if d.out == "" {
-		d.out = deriveFilename(d.currentURL(), probe.Filename, probe.ContentType)
+	if d.Output() == "" {
+		d.mu.Lock()
+		d.out = deriveFilename(d.url, probe.Filename, probe.ContentType)
+		d.mu.Unlock()
 	}
 	d.validator = probe.Validator()
 
 	if ge := d.gateOpen(); ge != nil {
+		slog.Info("gate closed before start", "out", d.out, "reason", ge.Reason)
 		return ge
 	}
 
@@ -243,6 +317,7 @@ func (d *Downloader) Run(ctx context.Context) error {
 	_ = d.ctrl.Save() // final flush regardless of outcome
 
 	if ge := gateCheck(); ge != nil {
+		slog.Info("gate closed mid-download", "out", d.out, "reason", ge.Reason, "bytes", d.ctrl.BytesDone())
 		return ge // policy closed mid-download; state is saved for resume
 	}
 	if runErr != nil {
@@ -254,10 +329,14 @@ func (d *Downloader) Run(ctx context.Context) error {
 	if err := d.file.Sync(); err != nil {
 		return err
 	}
-	if err := verifySHA256(d.out, d.opts.SHA256); err != nil {
+	releaseCache(d.file)
+	if err := verifySHA256(PartPath(d.out), d.opts.SHA256); err != nil {
 		return err
 	}
 	if err := d.ctrl.Remove(); err != nil {
+		return err
+	}
+	if err := d.finalize(); err != nil {
 		return err
 	}
 	return d.postProcess()
@@ -346,17 +425,33 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 		if err != nil {
 			return err
 		}
-		if existing != nil && d.canResume(existing, probe) {
-			f, err := os.OpenFile(d.out, os.O_RDWR, 0o644)
+		ok, reason := false, ""
+		if existing != nil {
+			ok, reason = d.canResume(existing, probe)
+		}
+		if ok {
+			part := PartPath(d.out)
+			if _, err := os.Stat(part); err != nil {
+				// Legacy layout (before .part): the data sat at the final path.
+				// canResume only says ok for that when the sidecar predates
+				// .part, so a finished file is never mistaken for a partial.
+				if err := os.Rename(d.out, part); err != nil {
+					return fmt.Errorf("resume: adopt legacy partial: %w", err)
+				}
+				existing.Layout = layoutPart
+			}
+			f, err := os.OpenFile(part, os.O_RDWR, 0o644)
 			if err != nil {
 				return fmt.Errorf("resume: reopen output: %w", err)
 			}
+			bypassCache(f)
 			d.file = f
 			d.ctrl = existing
 			return nil
 		}
-		// Stale or mismatched sidecar: discard and start fresh.
+		// Stale or mismatched sidecar (or its data is gone): start fresh.
 		if existing != nil {
+			slog.Info("resume discarded", "out", d.out, "reason", reason)
 			_ = existing.Remove()
 		}
 	}
@@ -365,7 +460,7 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 	if err := os.MkdirAll(filepath.Dir(d.out), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(d.out, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(PartPath(d.out), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
@@ -373,28 +468,37 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 		f.Close()
 		return fmt.Errorf("preallocate %d bytes: %w", probe.Size, err)
 	}
+	bypassCache(f)
 	d.file = f
 	segs := PlanSegments(probe.Size, d.opts.Conns, d.opts.MinSegment)
 	d.ctrl = NewControl(d.out, probe.FinalURL, probe.Size, probe.Validator(), segs)
 	return d.ctrl.Save()
 }
 
-// canResume reports whether existing sidecar state matches the current probe.
-func (d *Downloader) canResume(existing *Control, probe ProbeResult) bool {
+// canResume reports whether existing sidecar state matches the current probe,
+// and if not, why (for the log).
+func (d *Downloader) canResume(existing *Control, probe ProbeResult) (bool, string) {
 	if existing.Total != probe.Size {
-		return false
+		return false, fmt.Sprintf("size changed %d -> %d", existing.Total, probe.Size)
 	}
 	// If either side has a validator, they must match; a changed validator means
 	// the upstream file changed and the partial data can't be trusted.
 	if probe.Validator() != "" || existing.Validator != "" {
 		if existing.Validator != probe.Validator() {
-			return false
+			return false, "validator changed (upstream file modified)"
 		}
 	}
-	if _, err := os.Stat(d.out); err != nil {
-		return false // partial output gone
+	// The partial data must still be there: under .part, or, only for a
+	// sidecar written before .part naming, at the final path.
+	if _, err := os.Stat(PartPath(d.out)); err == nil {
+		return true, ""
 	}
-	return true
+	if existing.Layout == "" {
+		if _, err := os.Stat(d.out); err == nil {
+			return true, ""
+		}
+	}
+	return false, "partial data missing"
 }
 
 // runWorkers runs a fixed pool of Conns workers. Each pulls a segment from the
@@ -422,6 +526,9 @@ func (d *Downloader) runWorkers(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// One write buffer per worker for the whole run: body reads land
+			// in it and reach the file in aligned WriteBuffer-sized pieces.
+			wbuf := make([]byte, d.opts.WriteBuffer)
 			for {
 				if ctx.Err() != nil {
 					fail(ctx.Err())
@@ -431,7 +538,7 @@ func (d *Downloader) runWorkers(ctx context.Context) error {
 				if !ok {
 					return // no more work worth doing
 				}
-				err := d.fetchPiece(ctx, idx)
+				err := d.fetchPiece(ctx, idx, wbuf)
 				d.ctrl.finish(idx)
 				if err != nil {
 					fail(err)
@@ -482,13 +589,15 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 	if err := os.MkdirAll(filepath.Dir(d.out), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(d.out, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
+	f, err := os.OpenFile(PartPath(d.out), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	bypassCache(f)
 
 	d.setMeter(progress.New(size))
+	bw := bufio.NewWriterSize(f, int(d.opts.WriteBuffer))
 	buf := make([]byte, chunkSize)
 	for {
 		n, rerr := body.Read(buf)
@@ -496,7 +605,7 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 			if werr := d.limiter.Wait(ctx, n); werr != nil {
 				return werr
 			}
-			if _, werr := f.Write(buf[:n]); werr != nil {
+			if _, werr := bw.Write(buf[:n]); werr != nil {
 				return werr
 			}
 			d.meter.Add(int64(n))
@@ -508,10 +617,17 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 			return rerr
 		}
 	}
+	if err := bw.Flush(); err != nil {
+		return err
+	}
 	if err := f.Sync(); err != nil {
 		return err
 	}
-	if err := verifySHA256(d.out, d.opts.SHA256); err != nil {
+	releaseCache(f)
+	if err := verifySHA256(PartPath(d.out), d.opts.SHA256); err != nil {
+		return err
+	}
+	if err := d.finalize(); err != nil {
 		return err
 	}
 	return d.postProcess()

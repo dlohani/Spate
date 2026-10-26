@@ -1,13 +1,13 @@
-// Exercises the real libcascade through dart:ffi (no Flutter/Xcode needed):
+// Exercises the real libspate through dart:ffi (no Flutter/Xcode needed):
 // run `make lib` at the repo root first, then `flutter test` or `dart test`.
 import 'dart:io';
 
-import 'package:cascade_app/src/ffi/cascade_ffi.dart';
+import 'package:spate_app/src/ffi/spate_ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('service starts, downloads a local file, reports status, stops', () async {
-    final dir = Directory.systemTemp.createTempSync('cascade-ffi-');
+    final dir = Directory.systemTemp.createTempSync('spate-ffi-');
     // A tiny local origin the core can fetch (byte ranges via HttpServer).
     final data = List<int>.generate(300 * 1024, (i) => i % 251);
     final server = await HttpServer.bind('127.0.0.1', 0);
@@ -36,11 +36,12 @@ void main() {
 
     // Own settings file + no single-instance guard: the test must never touch
     // the user's config or fail because the desktop app is running.
-    final core = Cascade.start(
+    final core = Spate.start(
       maxConcurrent: 2,
       downloadDir: dir.path,
       settingsPath: '${dir.path}/settings.json',
       allowMultiple: true,
+      token: 'test-token', // never read or create the user's pairing token
     );
     addTearDown(() {
       core.stop();
@@ -84,10 +85,16 @@ void main() {
     }), isTrue);
     expect(core.settings()['organizeByCategory'], isTrue);
     expect(core.applySettings({'limits': {'windows': [{'from': '99:00', 'to': '01:00'}]}}), isFalse);
+    expect(core.lastError, contains('bad time'));
+    expect(core.add('not a url'), isNull);
+    expect(core.lastError, contains('invalid URL'));
+    final v = core.queueVersion;
+    expect(v, greaterThan(0));
 
     final later = DateTime.now().add(const Duration(hours: 1));
     final sid = core.addJson({'url': 'http://127.0.0.1:${server.port}/f.bin', 'conns': 1, 'startAt': later.millisecondsSinceEpoch ~/ 1000});
     expect(sid, isNotNull);
+    expect(core.queueVersion, greaterThan(v));
     final sched = core.statuses().firstWhere((s) => s.id == sid);
     expect(sched.isScheduled, isTrue);
     expect(core.startNow(sid!), isTrue);
@@ -99,5 +106,28 @@ void main() {
     }
     // Site rule routed it into Local/ (site rules beat categories).
     expect(File('${dir.path}/Local/f.bin').existsSync(), isTrue);
+
+    // Several scheduled downloads coexist, and a queued one can be rescheduled.
+    final t1 = DateTime.now().add(const Duration(hours: 2));
+    final t2 = DateTime.now().add(const Duration(hours: 3));
+    final a = core.addJson({'url': 'http://127.0.0.1:${server.port}/a.bin', 'startAt': t1.millisecondsSinceEpoch ~/ 1000});
+    final b = core.addJson({'url': 'http://127.0.0.1:${server.port}/b.bin', 'startAt': t1.millisecondsSinceEpoch ~/ 1000});
+    expect(a, isNotNull);
+    expect(b, isNotNull);
+    expect(core.statuses().where((s) => s.isScheduled).length, 2);
+    expect(core.schedule(b!, t2), isTrue);
+    expect(core.statuses().firstWhere((s) => s.id == b).startAt!.millisecondsSinceEpoch ~/ 1000, t2.millisecondsSinceEpoch ~/ 1000);
+    expect(core.schedule(a!, null), isTrue); // released: runs now
+    expect(core.schedule('no-such-job', t2), isFalse);
+    final deadline3 = DateTime.now().add(const Duration(seconds: 10));
+    while (DateTime.now().isBefore(deadline3)) {
+      final j = core.statuses().where((s) => s.id == a).toList();
+      if (j.isNotEmpty && j.first.state == 'done') break;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    final doneA = core.statuses().firstWhere((s) => s.id == a);
+    expect(doneA.state, 'done');
+    expect(doneA.finishedAt, isNotNull); // history carries when it finished
+    expect(core.statuses().firstWhere((s) => s.id == b).isScheduled, isTrue);
   });
 }
