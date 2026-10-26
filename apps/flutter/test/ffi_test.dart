@@ -41,6 +41,7 @@ void main() {
       downloadDir: dir.path,
       settingsPath: '${dir.path}/settings.json',
       allowMultiple: true,
+      token: 'test-token', // never read or create the user's pairing token
     );
     addTearDown(() {
       core.stop();

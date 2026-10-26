@@ -94,13 +94,16 @@ class Spate {
 
   /// Starts the service. [downloadDir] empty selects the platform default;
   /// [maxConcurrent] 0 takes the value from settings. [settingsPath] points
-  /// the core at a settings file other than the per-user one, and
-  /// [allowMultiple] skips the single-instance guard (both for tests).
+  /// the core at a settings file other than the per-user one, [allowMultiple]
+  /// skips the single-instance guard and [token] replaces the per-user
+  /// pairing token (all three for tests, so they never touch the user's
+  /// config folder).
   factory Spate.start({
     int maxConcurrent = 0,
     String downloadDir = '',
     String settingsPath = '',
     bool allowMultiple = false,
+    String token = '',
     String? libraryPath,
   }) {
     final lib = DynamicLibrary.open(libraryPath ?? locateLibrary());
@@ -110,6 +113,7 @@ class Spate {
       'downloadDir': downloadDir,
       'settingsPath': settingsPath,
       'allowMultiple': allowMultiple,
+      'token': token,
     }).toNativeUtf8();
     try {
       final h = start(spec);

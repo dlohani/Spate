@@ -73,9 +73,15 @@ async function pair() {
 // native-messaging host if it is not running. With the host installed the
 // token comes back over the browser-enforced trusted channel (no prompt);
 // without it, falls back to /pair (Allow prompt in the app).
-async function ensureApp() {
+async function ensureApp(forceRepair) {
   let base = await findBase();
   let { token } = await getConfig();
+  if (forceRepair) {
+    // The app rejected our token (it was reinstalled or re-paired): forget
+    // it and take the current one from the native host, or prompt to pair.
+    token = "";
+    await chrome.storage.local.remove("token");
+  }
   if (base && token) return { base, token };
   try {
     const r = await chrome.runtime.sendNativeMessage("com.amlabs.spate.host", { type: "ensure" });
@@ -212,18 +218,28 @@ async function handOff(item) {
 
   let handedOff = false;
   try {
-    const resp = await fetch(`${app.base}/add`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Spate-Token": app.token, ...CLIENT_HEADERS },
-      body: JSON.stringify({
-        url: item.url,
-        filename,
-        cookie,
-        referrer: item.referrer || "",
-        userAgent: navigator.userAgent,
-        headers: browserLikeHeaders(item.url, item.referrer),
-      }),
+    const body = JSON.stringify({
+      url: item.url,
+      filename,
+      cookie,
+      referrer: item.referrer || "",
+      userAgent: navigator.userAgent,
+      headers: browserLikeHeaders(item.url, item.referrer),
     });
+    const post = (a) => fetch(`${a.base}/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Spate-Token": a.token, ...CLIENT_HEADERS },
+      body,
+    });
+    let resp = await post(app);
+    if (resp.status === 401) {
+      // Stale pairing: re-pair once through the native host and retry.
+      const fresh = await ensureApp(true);
+      if (fresh.base && fresh.token) {
+        await note("token was stale; re-paired", item.url);
+        resp = await post(fresh);
+      }
+    }
     handedOff = resp.ok;
     if (handedOff) {
       await note("handed off to app", item.url);

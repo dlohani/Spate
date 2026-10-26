@@ -132,6 +132,7 @@ type StartOpts struct {
 	DownloadDir   string
 	SettingsPath  string // "" = SPATE_SETTINGS env, else settings.Path()
 	AllowMultiple bool   // skip the single-instance guard (tests, development)
+	Token         string // "" = SPATE_TOKEN env, else the persisted per-user token
 }
 
 // Start brings the service up: settings, manager loop, capture endpoint,
@@ -178,8 +179,12 @@ func StartWith(o StartOpts) (*Service, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() { _ = mgr.Serve(ctx) }()
 
+	token := o.Token
+	if token == "" {
+		token = LoadOrCreateToken()
+	}
 	s := &Service{
-		Mgr: mgr, Settings: st, Dir: st.Snapshot().DownloadDir, Token: LoadOrCreateToken(),
+		Mgr: mgr, Settings: st, Dir: st.Snapshot().DownloadDir, Token: token,
 		settingsPath: spath, limiter: download.NewSharedLimiter(), cancel: cancel,
 	}
 	s.limiter.SetRate(st.EffectiveLimit(time.Now()))
