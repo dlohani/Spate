@@ -5,10 +5,10 @@ cask "spate" do
   version "0.4.0"
   sha256 "REPLACE_WITH_SHA256_OF_Spate-#{version}.pkg"
 
-  url "https://github.com/REPLACE_OWNER/spate/releases/download/v#{version}/Spate-#{version}.pkg"
+  url "https://github.com/dlohani/Spate/releases/download/v#{version}/Spate-#{version}.pkg"
   name "Spate"
   desc "Download manager with browser capture, parallel connections and resume"
-  homepage "https://github.com/REPLACE_OWNER/spate"
+  homepage "https://github.com/dlohani/Spate"
 
   depends_on macos: ">= :ventura"
 

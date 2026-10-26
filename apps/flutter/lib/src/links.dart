@@ -2,9 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
-/// Where the project lives. REPLACE_OWNER is substituted when the repository
-/// is published (the packaging templates carry the same placeholder).
-const repoUrl = 'https://github.com/REPLACE_OWNER/spate';
+/// Where the project lives. The packaging templates use the same owner and name.
+const repoUrl = 'https://github.com/dlohani/Spate';
 
 /// The user guide, rendered by GitHub from docs/help.md in the repository.
 const helpUrl = '$repoUrl/blob/main/docs/help.md';

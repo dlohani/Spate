@@ -12,7 +12,7 @@ Installers:
   - Architecture: x64
     InstallerType: nullsoft
     Scope: user
-    InstallerUrl: https://github.com/REPLACE_OWNER/spate/releases/download/v0.4.0/Spate-Setup-0.4.0.exe
+    InstallerUrl: https://github.com/dlohani/Spate/releases/download/v0.4.0/Spate-Setup-0.4.0.exe
     InstallerSha256: REPLACE_WITH_SHA256_OF_Spate-Setup-0.4.0.exe
     InstallerSwitches:
       Silent: /S
