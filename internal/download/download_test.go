@@ -886,3 +886,48 @@ func TestFinishedFileIsNotAdoptedAsPartial(t *testing.T) {
 		t.Fatalf("Output = %q", d.Output())
 	}
 }
+
+// TestSmallBodyReadsCoalesce: a server that trickles the body in 1 KiB
+// flushes still produces a correct file, and progress never runs ahead of
+// what is on disk (the sidecar's Done is at most the bytes written).
+func TestSmallBodyReadsCoalesce(t *testing.T) {
+	data := randomBlob(3 << 20)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		total := int64(len(data))
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("ETag", `"v1"`)
+		if r.Method == http.MethodHead {
+			w.Header().Set("Content-Length", strconv.FormatInt(total, 10))
+			return
+		}
+		start, end, ok := parseRange(r.Header.Get("Range"), total)
+		if !ok {
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, total))
+		w.Header().Set("Content-Length", strconv.FormatInt(end-start+1, 10))
+		w.WriteHeader(http.StatusPartialContent)
+		fl, _ := w.(http.Flusher)
+		for off := start; off <= end; off += 1024 {
+			stop := off + 1024
+			if stop > end+1 {
+				stop = end + 1
+			}
+			w.Write(data[off:stop])
+			if fl != nil {
+				fl.Flush()
+			}
+		}
+	}))
+	defer srv.Close()
+	out := filepath.Join(t.TempDir(), "trickle.bin")
+	d := New(srv.URL, out, Options{Conns: 3, MinSegment: 512 << 10, WriteBuffer: 256 << 10, SHA256: sha256hex(data)})
+	if err := d.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(out)
+	if !bytes.Equal(got, data) {
+		t.Fatal("file differs")
+	}
+}

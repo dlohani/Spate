@@ -74,17 +74,19 @@ Future<void> main(List<String> args) async {
         // at launch by MainFlutterWindow; the Windows/Linux runners show it
         // themselves, so hide it here.
         if (!Platform.isMacOS) await windowManager.hide();
+        controller.setVisible(false);
         return;
       }
       await windowManager.show();
       await windowManager.focus();
+      controller.setVisible(true);
     });
     // Stay resident: closing the window hides it; downloads and browser
     // capture keep running. Quit from the menu-bar/tray icon.
     await windowManager.setPreventClose(true);
-    windowManager.addListener(_Resident(prefs));
+    windowManager.addListener(_Resident(prefs, controller));
     // A second launch (Spotlight, Finder, Dock) lands here as a show request.
-    controller.onShowRequested = showWindow;
+    controller.onShowRequested = () => showWindow(controller);
     await _setupTray(core, controller);
   }
 
@@ -132,30 +134,40 @@ class _FatalApp extends StatelessWidget {
 }
 
 /// Brings the window back from hidden or minimised state.
-Future<void> showWindow() async {
+Future<void> showWindow(CascadeController controller) async {
   if (await windowManager.isMinimized()) await windowManager.restore();
   await windowManager.show();
   await windowManager.focus();
+  controller.setVisible(true);
 }
 
 class _Resident with WindowListener {
   final UiPrefs prefs;
-  _Resident(this.prefs);
+  final CascadeController controller;
+  _Resident(this.prefs, this.controller);
 
   @override
   void onWindowClose() async {
     await windowManager.hide();
+    controller.setVisible(false);
   }
 
   // Minimise -> into the tray (when the preference is on): the window leaves
   // the Dock/taskbar and comes back from the tray menu or a second launch.
   @override
   void onWindowMinimize() async {
-    if (!prefs.minimizeToTray) return;
+    if (!prefs.minimizeToTray) {
+      controller.setVisible(false); // minimised: nothing to paint either
+      return;
+    }
     // orderOut on the miniaturised window drops it from the Dock/taskbar;
     // showWindow() de-miniaturises before showing it again.
     await windowManager.hide();
+    controller.setVisible(false);
   }
+
+  @override
+  void onWindowRestore() => controller.setVisible(true);
 
   // Remember the size the user settled on; next launch opens at that size.
   @override
@@ -179,7 +191,7 @@ Future<void> _setupTray(Cascade core, CascadeController controller) async {
     await tray.setIcon(icon);
     final status = _TrayStatus(tray, core, controller);
     await status.apply(force: true);
-    controller.addListener(status.apply);
+    controller.onJobsRefreshed = status.apply; // runs hidden or shown
   } catch (_) {
     // No tray available (e.g. some Linux sessions); the window still works.
   }
@@ -225,7 +237,7 @@ class _TrayStatus {
         items: [
           MenuItem(label: line, disabled: true),
           MenuItem.separator(),
-          MenuItem(label: 'Open Cascade', onClick: (_) => showWindow()),
+          MenuItem(label: 'Open Cascade', onClick: (_) => showWindow(controller)),
           MenuItem.separator(),
           MenuItem(
             label: 'Quit Cascade',
