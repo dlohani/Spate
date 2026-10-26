@@ -5,6 +5,7 @@ import UserNotifications
 @main
 class AppDelegate: FlutterAppDelegate, UNUserNotificationCenterDelegate {
   private var notifyChannel: FlutterMethodChannel?
+  private var menuChannel: FlutterMethodChannel?
 
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     // Resident app: keep running with no windows (menu-bar icon, background
@@ -25,14 +26,55 @@ class AppDelegate: FlutterAppDelegate, UNUserNotificationCenterDelegate {
     return true
   }
 
+  override func applicationDidFinishLaunching(_ notification: Notification) {
+    super.applicationDidFinishLaunching(notification)
+    guard let controller = mainFlutterWindow?.contentViewController as? FlutterViewController else { return }
+    setUpNotifications(controller)
+    setUpHelpMenu(controller)
+  }
+
+  // MARK: Help menu
+
+  // The Help menu in the menu bar: Spate Help (Cmd-?), Keyboard Shortcuts,
+  // Report a Problem, Buy Me a Coffee. Each item hands its name to Dart over
+  // the "spate/menu" channel, which owns the URLs, so the in-app overflow
+  // menu on Windows and Linux and this menu stay one list.
+  private func setUpHelpMenu(_ controller: FlutterViewController) {
+    let channel = FlutterMethodChannel(name: "spate/menu", binaryMessenger: controller.engine.binaryMessenger)
+    menuChannel = channel
+    guard let help = NSApp.helpMenu ?? NSApp.mainMenu?.item(withTitle: "Help")?.submenu else { return }
+    help.removeAllItems()
+    func add(_ title: String, _ action: String, key: String = "", mods: NSEvent.ModifierFlags = []) {
+      let item = NSMenuItem(title: title, action: #selector(helpItem(_:)), keyEquivalent: key)
+      item.keyEquivalentModifierMask = mods
+      item.representedObject = action
+      item.target = self
+      help.addItem(item)
+    }
+    add("Spate Help", "help", key: "?", mods: [.command])
+    add("Keyboard Shortcuts", "shortcuts")
+    help.addItem(.separator())
+    add("Report a Problem…", "report")
+    help.addItem(.separator())
+    add("Buy Me a Coffee…", "coffee")
+  }
+
+  @objc private func helpItem(_ sender: NSMenuItem) {
+    guard let action = sender.representedObject as? String else { return }
+    if let window = NSApp.windows.first, !window.isVisible {
+      window.makeKeyAndOrderFront(nil) // the shortcuts dialog needs a window
+    }
+    menuChannel?.invokeMethod("help", arguments: action)
+  }
+
+  // MARK: Notifications
+
   // Notifications through the current UserNotifications framework (the
   // Dart-side plugin covers Windows and Linux; on macOS its legacy API no
   // longer delivers). "notify" {id, title, body, actions[]} posts one and
   // asks for permission the first time; a click comes back on the same
   // channel as "action" {id, action: index or -1 for the body}.
-  override func applicationDidFinishLaunching(_ notification: Notification) {
-    super.applicationDidFinishLaunching(notification)
-    guard let controller = mainFlutterWindow?.contentViewController as? FlutterViewController else { return }
+  private func setUpNotifications(_ controller: FlutterViewController) {
     let channel = FlutterMethodChannel(name: "spate/notify", binaryMessenger: controller.engine.binaryMessenger)
     notifyChannel = channel
     let center = UNUserNotificationCenter.current()

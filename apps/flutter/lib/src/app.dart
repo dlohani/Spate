@@ -9,6 +9,7 @@ import 'package:window_manager/window_manager.dart';
 import 'add_bar.dart';
 import 'brand.dart';
 import 'ffi/spate_ffi.dart';
+import 'links.dart';
 import 'model/job.dart';
 import 'model/ui_prefs.dart';
 import 'rows.dart';
@@ -327,6 +328,10 @@ Route<T> fadeRoute<T>(Widget page) => PageRouteBuilder<T>(
   },
 );
 
+/// The app's navigator, so the macOS Help menu (a native menu, outside the
+/// widget tree) can open dialogs and pages.
+final navigatorKey = GlobalKey<NavigatorState>();
+
 class SpateApp extends StatelessWidget {
   final SpateController controller;
   final UiPrefs prefs;
@@ -399,6 +404,7 @@ class SpateApp extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: prefs,
     builder: (context, _) => MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Spate',
       debugShowCheckedModeBanner: false,
       themeMode: prefs.mode,
@@ -424,15 +430,26 @@ class _HomeScreenState extends State<HomeScreen> {
   bool? _finishedOpen; // null = automatic (open only when nothing is active)
   bool _dragging = false;
 
+  static const _menuChannel = MethodChannel('spate/menu');
+
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_maybePromptPairing);
+    // The macOS Help menu lands here with the item's name.
+    _menuChannel.setMethodCallHandler((call) async {
+      if (call.method != 'help') return null;
+      final item = HelpItem.values.where((v) => v.name == call.arguments).firstOrNull;
+      final ctx = navigatorKey.currentContext;
+      if (item != null && ctx != null) runHelpItem(ctx, item);
+      return null;
+    });
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_maybePromptPairing);
+    _menuChannel.setMethodCallHandler(null);
     _listFocus.dispose();
     super.dispose();
   }
@@ -724,12 +741,16 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
         const SizedBox(width: 4),
         PopupMenuButton<String>(
-          tooltip: 'Queue',
+          tooltip: 'Queue and help',
           icon: const Icon(Icons.more_horiz_rounded),
           onSelected: (k) => switch (k) {
             'pauseall' => c.pauseAll(),
             'resumeall' => c.resumeAll(),
             'clear' => c.clearFinished(),
+            'help' => runHelpItem(context, HelpItem.help),
+            'shortcuts' => runHelpItem(context, HelpItem.shortcuts),
+            'report' => runHelpItem(context, HelpItem.report),
+            'coffee' => runHelpItem(context, HelpItem.coffee),
             _ => _openSettings(),
           },
           itemBuilder: (_) => [
@@ -738,6 +759,16 @@ class _HomeScreenState extends State<HomeScreen> {
             PopupMenuItem(value: 'clear', height: 36, enabled: jobs.any((j) => j.isTerminal), child: const Text('Clear finished')),
             const PopupMenuDivider(height: 8),
             const PopupMenuItem(value: 'settings', height: 36, child: Text('Settings…')),
+            const PopupMenuDivider(height: 8),
+            const PopupMenuItem(value: 'help', height: 36, child: Text('Spate help')),
+            const PopupMenuItem(value: 'shortcuts', height: 36, child: Text('Keyboard shortcuts')),
+            const PopupMenuItem(value: 'report', height: 36, child: Text('Report a problem…')),
+            const PopupMenuDivider(height: 8),
+            const PopupMenuItem(
+              value: 'coffee',
+              height: 36,
+              child: Row(children: [Icon(Icons.coffee_rounded, size: 16), SizedBox(width: 10), Text('Buy me a coffee…')]),
+            ),
           ],
         ),
         IconButton(tooltip: 'Settings (Cmd-,)', icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
