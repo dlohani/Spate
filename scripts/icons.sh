@@ -69,6 +69,18 @@ for png in pngs: out+=png
 open(sys.argv[1],"wb").write(out); print("ico:", len(out), "bytes")
 EOF
 cp "$BRAND/spate.ico" "$ROOT/apps/flutter/assets/tray/icon.ico"
+for s in 16 32 48; do sips -z $s $s "$ROOT/apps/flutter/assets/tray/icon-pulse-256.png" --out "/tmp/spate-pulse-$s.png" >/dev/null; done
+cp "$ROOT/apps/flutter/assets/tray/icon-pulse-256.png" /tmp/spate-pulse-256.png
+python3 - "$ROOT/apps/flutter/assets/tray/icon-pulse.ico" <<'EOF2'
+import struct,sys
+sizes=[16,32,48,256]; pngs=[open(f"/tmp/spate-pulse-{s}.png","rb").read() for s in sizes]
+out=bytearray(struct.pack("<HHH",0,1,len(sizes))); off=6+16*len(sizes)
+for s,png in zip(sizes,pngs):
+    out+=struct.pack("<BBBBHHII", s%256, s%256, 0, 0, 1, 32, len(png), off); off+=len(png)
+for png in pngs: out+=png
+open(sys.argv[1],"wb").write(out); print("pulse ico:", len(out), "bytes")
+EOF2
+rm -f "$ROOT/apps/flutter/assets/tray/icon-pulse-256.png"
 echo "==> Flutter launcher icons (iOS, Android, macOS, Windows, Linux, web)"
 cd "$ROOT/apps/flutter"
 grep -q "flutter_launcher_icons" pubspec.yaml || flutter pub add --dev flutter_launcher_icons >/dev/null

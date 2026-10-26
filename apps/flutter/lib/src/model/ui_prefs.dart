@@ -44,6 +44,16 @@ class UiPrefs extends ChangeNotifier {
   /// is hidden or in the background.
   bool notify = true;
 
+  /// Pulse the menu-bar / tray icon while something is downloading.
+  bool pulseTray = true;
+
+  void setPulseTray(bool v) {
+    if (v == pulseTray) return;
+    pulseTray = v;
+    _save();
+    notifyListeners();
+  }
+
   void setNotify(bool v) {
     if (v == notify) return;
     notify = v;
@@ -107,6 +117,7 @@ class UiPrefs extends ChangeNotifier {
       final p = j['presence'] as String?;
       if (p != null && presences.contains(p)) presence = p;
       notify = j['notify'] as bool? ?? true;
+      pulseTray = j['pulseTray'] as bool? ?? true;
       final w = (j['windowW'] as num?)?.toDouble();
       final h = (j['windowH'] as num?)?.toDouble();
       if (w != null && h != null && w >= kMinWindowSize.width && h >= kMinWindowSize.height) {
@@ -127,6 +138,7 @@ class UiPrefs extends ChangeNotifier {
           'minimizeToTray': minimizeToTray,
           'presence': presence,
           'notify': notify,
+          'pulseTray': pulseTray,
           if (windowSize != null) 'windowW': windowSize!.width,
           if (windowSize != null) 'windowH': windowSize!.height,
         }),

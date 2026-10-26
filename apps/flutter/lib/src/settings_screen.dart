@@ -358,6 +358,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
+              title: Text('Pulse the $bar icon while downloading'),
+              subtitle: Text('The icon fades in and out once a second while anything is downloading; solid when idle.'),
+              value: widget.prefs.pulseTray && widget.prefs.hasTray,
+              onChanged: widget.prefs.hasTray ? widget.prefs.setPulseTray : null,
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
               title: const Text('Notify when a download finishes'),
               subtitle: const Text('A system notification, with Open and Show in folder, when the window is hidden or in the background.'),
               value: widget.prefs.notify,

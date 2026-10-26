@@ -64,6 +64,10 @@ flutter:
     - assets/tray/icon@2x.png
     - assets/tray/icon.ico
     - assets/tray/icon-color.png
+    - assets/tray/icon-pulse.png
+    - assets/tray/icon-pulse@2x.png
+    - assets/tray/icon-color-pulse.png
+    - assets/tray/icon-pulse.ico
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
