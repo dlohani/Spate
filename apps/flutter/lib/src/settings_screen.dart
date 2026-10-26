@@ -8,12 +8,12 @@ import 'package:window_manager/window_manager.dart';
 
 import 'app.dart' show kMotion, kMotionCurve;
 import 'ffi/spate_ffi.dart';
+import 'links.dart';
 import 'model/job.dart' show humanBytes;
 import 'model/settings.dart';
 import 'model/ui_prefs.dart';
 
 const _dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const _supportUrl = 'https://buymeacoffee.com/dlohani';
 
 /// Settings. Every change applies as soon as it is made (debounced for typed
 /// fields); the core validates and a refused change reverts with the reason.
@@ -98,16 +98,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<String?> _pickFolder(String current) async =>
       getDirectoryPath(initialDirectory: current.isEmpty || !Directory(current).existsSync() ? null : current);
-
-  void _open(String url) {
-    if (Platform.isMacOS) {
-      Process.start('open', [url]);
-    } else if (Platform.isWindows) {
-      Process.start('cmd', ['/c', 'start', '', url]);
-    } else {
-      Process.start('xdg-open', [url]);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -523,18 +513,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   FilledButton.icon(
-                    onPressed: () => _open(_supportUrl),
+                    onPressed: () => openUrl(supportUrl),
                     style: FilledButton.styleFrom(backgroundColor: bmcYellow, foregroundColor: bmcInk, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
                     icon: const Icon(Icons.coffee_rounded, size: 18),
                     label: const Text('Buy me a coffee', style: TextStyle(fontWeight: FontWeight.w700)),
                   ),
-                  SelectableText(_supportUrl.replaceFirst('https://', ''), style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()])),
+                  SelectableText(supportUrl.replaceFirst('https://', ''), style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()])),
                   IconButton(
                     tooltip: 'Copy link',
                     icon: const Icon(Icons.copy_rounded, size: 16),
                     visualDensity: VisualDensity.compact,
                     onPressed: () {
-                      Clipboard.setData(const ClipboardData(text: _supportUrl));
+                      Clipboard.setData(const ClipboardData(text: supportUrl));
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied'), duration: Duration(seconds: 2)));
                     },
                   ),

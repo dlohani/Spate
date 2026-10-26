@@ -60,6 +60,8 @@ The desktop app (macOS, Windows, Linux) is a thin shell over that engine:
   paused, scheduled and in-flight downloads with their cookies, and an engine
   log (`spate.log`).
 
+The user guide is [docs/help.md](docs/help.md) (also the app's Help menu).
+
 ![Spate on macOS, light](docs/ui-light.png)
 ![Spate on macOS, dark](docs/ui-dark.png)
 
