@@ -314,6 +314,12 @@ The hidden app does not rebuild or rasterise its window for progress ticks;
 only the tray summary updates. The shown-and-downloading figure is Flutter's
 renderer animating the progress bars at the display refresh rate.
 
+On capped links (simulated at the server: 256 KB/s per connection, 40 ms
+latency) 8 connections deliver 2 MB/s and 16 deliver 4 MB/s, at about 1% of a
+core; a 2 MiB file over four 32 KB/s connections takes 16 s (256 KiB minimum
+segment, so every connection gets work); a link that cuts 30% of range
+responses midway still completes with the checksum verified.
+
 ## Logs
 
 The core writes `cascade.log` beside `settings.json` (rotated to `cascade.log.1`
