@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -64,6 +65,7 @@ func (l *connLimiter) refused() {
 	} else {
 		l.max = 1
 	}
+	slog.Info("connections reduced: host refused an extra connection", "max", l.max)
 	l.mu.Unlock()
 }
 

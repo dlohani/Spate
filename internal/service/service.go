@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,8 +26,13 @@ import (
 	"cascade/internal/download"
 	"cascade/internal/job"
 	"cascade/internal/localapi"
+	"cascade/internal/logx"
 	"cascade/internal/settings"
+	"cascade/internal/version"
 )
+
+// logMaxBytes bounds cascade.log before it is rotated to cascade.log.1.
+const logMaxBytes = 5 << 20
 
 // PairTimeout bounds how long a pairing request waits for the user's decision.
 const PairTimeout = 90 * time.Second
@@ -153,8 +159,14 @@ func StartWith(o StartOpts) (*Service, error) {
 	if spath == "" {
 		spath, _ = settings.Path()
 	}
+	// The core logs to a file beside settings.json; a shell has nowhere
+	// else to show what the engine, queue and capture endpoint decided.
+	if lg, err := logx.ToFile(filepath.Join(filepath.Dir(spath), "cascade.log"), logMaxBytes); err == nil {
+		slog.SetDefault(lg)
+	}
 	st, err := settings.Load(spath, downloadDir)
 	if err != nil {
+		slog.Error("settings load failed", "path", spath, "err", err)
 		return nil, err
 	}
 	if maxConcurrent <= 0 {
@@ -176,12 +188,24 @@ func StartWith(o StartOpts) (*Service, error) {
 	// in-flight jobs with their request customisation), then any partial a
 	// sidecar still describes that the queue does not know about.
 	qp := queuePath(spath)
-	if recs, err := loadQueue(qp); err == nil {
+	if recs, err := loadQueue(qp); err != nil {
+		slog.Warn("queue load failed; starting with an empty queue", "path", qp, "err", err)
+	} else {
+		n := 0
 		for _, r := range recs {
-			_, _ = mgr.AddRecord(r, download.Options{SharedLimiter: s.limiter})
+			if _, err := mgr.AddRecord(r, download.Options{SharedLimiter: s.limiter}); err == nil {
+				n++
+			} else {
+				slog.Warn("queue record skipped", "id", r.ID, "err", err)
+			}
+		}
+		if n > 0 {
+			slog.Info("queue restored", "jobs", n)
 		}
 	}
-	ResumeOrphans(mgr, s.Dir, s.limiter)
+	if n := ResumeOrphans(mgr, s.Dir, s.limiter); n > 0 {
+		slog.Info("orphan partials resumed", "n", n)
+	}
 	s.queue = startQueuePersister(qp, mgr)
 
 	s.API = localapi.New(mgr, s.Token, s.Dir)
@@ -189,7 +213,10 @@ func StartWith(o StartOpts) (*Service, error) {
 	s.API.ResolveDir = s.Resolve
 	if addr, err := s.API.Start(); err == nil {
 		s.Addr = addr
+	} else {
+		slog.Error("capture endpoint failed to bind; browser hand-off disabled", "err", err)
 	}
+	slog.Info("started", "version", version.Version, "addr", s.Addr, "dir", s.Dir, "settings", spath, "maxConcurrent", maxConcurrent)
 	go s.scheduler(ctx)
 	return s, nil
 }
@@ -205,6 +232,7 @@ func (s *Service) Stop() {
 		_ = s.API.Close()
 	}
 	s.cancel()
+	slog.Info("stopped")
 }
 
 // Resolve picks the folder for a download per the settings rules.
@@ -254,6 +282,7 @@ func (s *Service) ApplySettings(b []byte) error {
 	s.Mgr.SetMaxConcurrent(snap.MaxConcurrent)
 	s.limiter.SetRate(s.Settings.EffectiveLimit(time.Now()))
 	s.Mgr.SetStartGate(func() bool { return s.Settings.MayStart(time.Now()) }) // re-signals the loop
+	slog.Info("settings applied", "dir", snap.DownloadDir, "maxConcurrent", snap.MaxConcurrent, "limit", s.limiter.Rate(), "queueWindow", snap.QueueWindow.Enabled)
 	return nil
 }
 
@@ -272,7 +301,8 @@ func (s *Service) scheduler(ctx context.Context) {
 			s.limiter.SetRate(s.Settings.EffectiveLimit(now))
 			due := s.Settings.Due(now)
 			for _, r := range due {
-				_, _ = s.AddWith(AddOpts{URL: r.URL, Dir: r.Dir})
+				id, err := s.AddWith(AddOpts{URL: r.URL, Dir: r.Dir})
+				slog.Info("recurring due", "id", id, "url", r.URL, "every", r.Every, "err", err)
 			}
 			if len(due) > 0 {
 				_ = s.Settings.Save(s.settingsPath) // NextAt advanced

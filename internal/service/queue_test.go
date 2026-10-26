@@ -3,6 +3,7 @@ package service
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +42,16 @@ func TestQueueSurvivesRestart(t *testing.T) {
 	s.Stop()
 	if _, err := os.Stat(queuePath(filepath.Join(dir, "settings.json"))); err != nil {
 		t.Fatalf("queue.json not written: %v", err)
+	}
+	// The core logged what it did, beside settings.json.
+	logb, err := os.ReadFile(filepath.Join(dir, "cascade.log"))
+	if err != nil {
+		t.Fatalf("cascade.log not written: %v", err)
+	}
+	for _, want := range []string{"msg=started", "msg=\"job added\"", "msg=stopped"} {
+		if !strings.Contains(string(logb), want) {
+			t.Fatalf("cascade.log lacks %s:\n%s", want, logb)
+		}
 	}
 
 	s2 := startTest(t, dir)

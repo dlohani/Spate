@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -240,7 +241,24 @@ func (m *Manager) add(s Spec, state State) (string, error) {
 	m.seqNext++
 	m.jobs[s.ID] = j
 	m.signal()
+	slog.Info("job added", "id", s.ID, "url", s.URL, "out", s.Out, "state", state.String(), "priority", s.Priority, "startAt", s.StartAt)
 	return s.ID, nil
+}
+
+// logTransition records a state change (caller holds m.mu or is in the run
+// goroutine epilogue, which holds it too).
+func logTransition(j *Job, from State, why string) {
+	attrs := []any{"id", j.ID, "from", from.String(), "to", j.state.String()}
+	if why != "" {
+		attrs = append(attrs, "why", why)
+	}
+	if j.err != nil {
+		attrs = append(attrs, "err", j.err.Error())
+	}
+	if j.state == Pending && !j.StartAt.IsZero() {
+		attrs = append(attrs, "retryAt", j.StartAt)
+	}
+	slog.Info("job", attrs...)
 }
 
 // Pause requests that a running or pending job stop. A running job is cancelled
@@ -260,6 +278,7 @@ func (m *Manager) Pause(id string) error {
 		}
 	case Pending:
 		j.state = Paused
+		logTransition(j, Pending, "pause")
 	default:
 		return fmt.Errorf("job %q is %s, cannot pause", id, j.state)
 	}
@@ -283,7 +302,9 @@ func (m *Manager) Cancel(id string) error {
 			j.cancel()
 		}
 	case Pending, Paused:
+		from := j.state
 		j.state = Cancelled
+		logTransition(j, from, "cancel")
 	default:
 		return fmt.Errorf("job %q is %s, cannot cancel", id, j.state)
 	}
@@ -307,6 +328,7 @@ func (m *Manager) Remove(id string) error {
 	}
 	delete(m.jobs, id)
 	m.signal()
+	slog.Info("job removed", "id", id, "state", j.state.String())
 	return nil
 }
 
@@ -337,6 +359,7 @@ func (m *Manager) Discard(id string) error {
 	delete(m.jobs, id)
 	m.mu.Unlock()
 	m.signal()
+	slog.Info("job discarded", "id", id, "out", out)
 	// Wait for the writer goroutine to close the file before deleting it, so
 	// a final sidecar flush cannot resurrect what we just removed.
 	if done != nil {
@@ -445,6 +468,7 @@ func (m *Manager) Resume(id string) error {
 	j.Options.Resume = true
 	j.paused = false
 	j.state = Pending
+	logTransition(j, Paused, "resume")
 	m.signal()
 	return nil
 }
@@ -589,6 +613,7 @@ func (m *Manager) launchLocked(ctx context.Context, j *Job) {
 
 		m.mu.Lock()
 		m.running--
+		why := ""
 		switch {
 		case err == nil:
 			j.state = Done
@@ -596,10 +621,13 @@ func (m *Manager) launchLocked(ctx context.Context, j *Job) {
 		case j.cancelReq && errors.Is(err, context.Canceled):
 			j.state = Cancelled
 			j.err = nil
+			why = "cancel"
 		case j.paused && errors.Is(err, context.Canceled):
 			j.state = Paused
 			j.err = nil
+			why = "pause"
 		case isGateError(err):
+			why = "gate"
 			// Policy (Wi-Fi/battery) blocked it; re-queue to retry when
 			// conditions may have changed, continuing from disk.
 			j.Options.Resume = true
@@ -615,11 +643,13 @@ func (m *Manager) launchLocked(ctx context.Context, j *Job) {
 			j.state = Pending
 			j.StartAt = time.Now().Add(failRetryDelay)
 			j.err = err
+			why = fmt.Sprintf("transient, retry %d/%d", j.autoRetries, maxAutoRetries)
 		default:
 			j.state = Failed
 			j.err = err
 		}
 		j.cancel = nil
+		logTransition(j, Running, why)
 		m.mu.Unlock()
 		m.signal()
 	}()
