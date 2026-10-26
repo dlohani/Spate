@@ -35,6 +35,22 @@ class UiPrefs extends ChangeNotifier {
   /// or taskbar (closing already does), so the app is not quit by accident.
   bool minimizeToTray = true;
 
+  /// Where the app shows itself: 'both' (menu-bar/tray icon and a Dock/
+  /// taskbar entry while the window is open), 'tray' (icon only, no Dock or
+  /// taskbar entry) or 'dock' (no tray icon; the window is the whole app).
+  String presence = 'both';
+  static const presences = ['both', 'tray', 'dock'];
+
+  /// With no tray icon there is nothing to minimise into.
+  bool get hasTray => presence != 'dock';
+
+  void setPresence(String p) {
+    if (!presences.contains(p) || p == presence) return;
+    presence = p;
+    _save();
+    notifyListeners();
+  }
+
   void setMinimizeToTray(bool v) {
     if (v == minimizeToTray) return;
     minimizeToTray = v;
@@ -82,6 +98,8 @@ class UiPrefs extends ChangeNotifier {
       final a = j['accent'] as String?;
       if (a != null && accentColors.containsKey(a)) accent = a;
       minimizeToTray = j['minimizeToTray'] as bool? ?? true;
+      final p = j['presence'] as String?;
+      if (p != null && presences.contains(p)) presence = p;
       final w = (j['windowW'] as num?)?.toDouble();
       final h = (j['windowH'] as num?)?.toDouble();
       if (w != null &&
@@ -105,6 +123,7 @@ class UiPrefs extends ChangeNotifier {
           'theme': mode.name,
           'accent': accent,
           'minimizeToTray': minimizeToTray,
+          'presence': presence,
           if (windowSize != null) 'windowW': windowSize!.width,
           if (windowSize != null) 'windowH': windowSize!.height,
         }),

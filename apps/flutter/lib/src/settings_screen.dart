@@ -161,17 +161,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _section(context, 'Behaviour', Icons.tune_outlined, [
                 AnimatedBuilder(
                   animation: widget.prefs,
-                  builder: (context, _) => SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Minimise to the tray'),
-                    subtitle: Text(
-                      Platform.isMacOS
-                          ? 'Minimising hides the window into the menu bar instead of the Dock. Closing always keeps Spate running; quit from the menu-bar icon.'
-                          : 'Minimising hides the window into the tray instead of the taskbar. Closing always keeps Spate running; quit from the tray icon.',
-                    ),
-                    value: widget.prefs.minimizeToTray,
-                    onChanged: widget.prefs.setMinimizeToTray,
-                  ),
+                  builder: (context, _) {
+                    final mac = Platform.isMacOS;
+                    final bar = mac ? 'menu bar' : 'tray';
+                    final dock = mac ? 'Dock' : 'taskbar';
+                    final presence = widget.prefs.presence;
+                    final closeNote = switch (presence) {
+                      'dock' => mac
+                          ? 'Closing the window keeps Spate running; the Dock icon brings it back. Quit with Cmd-Q.'
+                          : 'Closing the window quits Spate (there is no tray icon to reopen it from).',
+                      'tray' => 'No $dock entry; the window opens from the $bar icon. Closing hides it; quit from the $bar icon.',
+                      _ => 'Closing the window hides it; quit from the $bar icon.',
+                    };
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4, bottom: 6),
+                          child: Text('Show Spate in', style: Theme.of(context).textTheme.titleSmall),
+                        ),
+                        SegmentedButton<String>(
+                          segments: [
+                            ButtonSegment(value: 'both', label: Text(mac ? 'Menu bar and Dock' : 'Tray and taskbar')),
+                            ButtonSegment(value: 'tray', label: Text(mac ? 'Menu bar only' : 'Tray only')),
+                            ButtonSegment(value: 'dock', label: Text(mac ? 'Dock only' : 'Taskbar only')),
+                          ],
+                          selected: {presence},
+                          onSelectionChanged: (s) => widget.prefs.setPresence(s.first),
+                          showSelectedIcon: false,
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6, bottom: 4),
+                          child: Text(closeNote, style: Theme.of(context).textTheme.bodySmall),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text('Minimise to the $bar'),
+                          subtitle: Text(widget.prefs.hasTray
+                              ? 'Minimising hides the window into the $bar instead of the $dock.'
+                              : 'Needs a $bar icon: minimising goes to the $dock.'),
+                          value: widget.prefs.minimizeToTray && widget.prefs.hasTray,
+                          onChanged: widget.prefs.hasTray ? widget.prefs.setMinimizeToTray : null,
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ]),
               _section(context, 'Downloads folder', Icons.folder_outlined, [

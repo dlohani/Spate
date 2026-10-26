@@ -127,6 +127,11 @@ one manual "Load unpacked" step remains). The switch is
 `browser/extension/store-ids.env`; `scripts/package-extension.sh` builds the
 store upload and `browser/STORE.md` walks through publishing.
 
+Settings has a "Show Spate in" choice: menu bar and Dock (default), menu bar
+only (no Dock or taskbar entry; the window opens from the icon), or Dock only
+(no tray icon; on macOS the Dock icon reopens the window, on Windows and
+Linux closing the window quits since nothing is left to reopen it from).
+
 There is exactly one copy of the app per machine: `~/Applications/Spate.app`
 on macOS, `%LOCALAPPDATA%\Spate\bin` on Windows, `~/.local/share/spate/bin`
 on Linux. Opening the app while it is already running (Spotlight, Finder,

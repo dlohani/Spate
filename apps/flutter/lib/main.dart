@@ -69,7 +69,10 @@ Future<void> main(List<String> args) async {
       titleBarStyle: Platform.isMacOS ? TitleBarStyle.hidden : TitleBarStyle.normal,
     );
     windowManager.waitUntilReadyToShow(opts, () async {
-      if (background) {
+      // A background start with neither a tray icon nor (off macOS) a Dock
+      // icon would leave nothing to open the app from: show the window.
+      final nowhereToOpenFrom = !prefs.hasTray && !Platform.isMacOS;
+      if (background && !nowhereToOpenFrom) {
         // Stay in the tray until "Open Spate". On macOS the window is hidden
         // at launch by MainFlutterWindow; the Windows/Linux runners show it
         // themselves, so hide it here.
@@ -87,7 +90,10 @@ Future<void> main(List<String> args) async {
     windowManager.addListener(_Resident(prefs, controller));
     // A second launch (Spotlight, Finder, Dock) lands here as a show request.
     controller.onShowRequested = () => showWindow(controller);
-    await _setupTray(core, controller);
+    // Menu bar / tray icon and Dock / taskbar presence follow the preference,
+    // now and whenever it changes in Settings.
+    await _applyPresence(core, controller, prefs);
+    prefs.addListener(() => _applyPresence(core, controller, prefs));
   }
 
   runApp(SpateApp(controller: controller, prefs: prefs));
@@ -141,6 +147,43 @@ Future<void> showWindow(SpateController controller) async {
   controller.setVisible(true);
 }
 
+/// Whether the tray icon is currently up (presence 'both' or 'tray').
+bool _trayUp = false;
+bool _trayListening = false;
+
+/// Applies the presence preference: creates or removes the tray icon and
+/// shows or hides the Dock / taskbar entry (window_manager's skipTaskbar sets
+/// the macOS activation policy to accessory, which drops the Dock icon).
+Future<void> _applyPresence(Spate core, SpateController controller, UiPrefs prefs) async {
+  final wantTray = prefs.hasTray;
+  if (wantTray && !_trayUp) {
+    _trayUp = true;
+    await _setupTray(core, controller);
+  } else if (!wantTray && _trayUp) {
+    _trayUp = false;
+    controller.onJobsRefreshed = null;
+    try {
+      await TrayManager.instance.destroy();
+    } catch (_) {}
+  }
+  try {
+    await windowManager.setSkipTaskbar(prefs.presence == 'tray');
+  } catch (_) {}
+}
+
+/// Stops the core and exits; used by the tray menu and, with no tray, by the
+/// window's close button on Windows and Linux.
+Future<void> quitApp(Spate core) async {
+  core.stop();
+  if (_trayUp) {
+    try {
+      await TrayManager.instance.destroy();
+    } catch (_) {}
+  }
+  await windowManager.setPreventClose(false);
+  exit(0);
+}
+
 class _Resident with WindowListener {
   final UiPrefs prefs;
   final SpateController controller;
@@ -148,15 +191,25 @@ class _Resident with WindowListener {
 
   @override
   void onWindowClose() async {
+    // Dock-only mode off macOS: closing the only visible entry point quits;
+    // on macOS the Dock icon stays and reopens the window (AppDelegate).
+    if (!prefs.hasTray && !Platform.isMacOS) {
+      await quitApp(controller.core);
+      return;
+    }
     await windowManager.hide();
     controller.setVisible(false);
   }
+
+  // The Dock icon (macOS) or a second launch brought the window back.
+  @override
+  void onWindowFocus() => controller.setVisible(true);
 
   // Minimise -> into the tray (when the preference is on): the window leaves
   // the Dock/taskbar and comes back from the tray menu or a second launch.
   @override
   void onWindowMinimize() async {
-    if (!prefs.minimizeToTray) {
+    if (!prefs.minimizeToTray || !prefs.hasTray) {
       controller.setVisible(false); // minimised: nothing to paint either
       return;
     }
@@ -181,7 +234,10 @@ class _Resident with WindowListener {
 /// tooltip and as the first line of the menu everywhere.
 Future<void> _setupTray(Spate core, SpateController controller) async {
   final tray = TrayManager.instance;
-  tray.addListener(_TrayClicks());
+  if (!_trayListening) {
+    tray.addListener(_TrayClicks());
+    _trayListening = true;
+  }
   try {
     // The app icon itself, in colour, on every platform (assets/tray is
     // generated from the master by scripts/tray-icon.swift). The monochrome
@@ -245,15 +301,7 @@ class _TrayStatus {
           MenuItem.separator(),
           MenuItem(label: 'Open Spate', onClick: (_) => showWindow(controller)),
           MenuItem.separator(),
-          MenuItem(
-            label: 'Quit Spate',
-            onClick: (_) async {
-              core.stop();
-              await tray.destroy();
-              await windowManager.setPreventClose(false);
-              exit(0);
-            },
-          ),
+          MenuItem(label: 'Quit Spate', onClick: (_) => quitApp(core)),
         ],
       ),
     );
