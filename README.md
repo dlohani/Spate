@@ -1,6 +1,8 @@
-# spate
+# Spate
 
-A segmented, resumable HTTP download engine in Go. It fetches a file over
+A download manager for macOS, Linux and Windows by AMLabs: a segmented,
+resumable download engine in Go with a Flutter desktop app and a browser
+extension. MIT licensed (see `LICENSE`). It fetches a file over
 multiple parallel byte-range connections, writing each range at its offset in a
 single preallocated file, and persists per-segment progress so an interrupted
 transfer resumes cleanly.
@@ -336,3 +338,7 @@ Tests use `net/http/httptest` and need no network: segmentation math, multi-
 connection happy path with checksum, resume-after-failure, validator-changed
 restart, no-range single-connection fallback, and cancellation leaving
 resumable state.
+
+## License
+
+MIT. Copyright (c) 2026 AMLabs. See `LICENSE`.
