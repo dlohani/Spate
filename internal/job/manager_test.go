@@ -249,7 +249,7 @@ func TestCancelPendingAndClearFinished(t *testing.T) {
 	var ids []string
 	for i := 0; i < 3; i++ {
 		id, _ := m.Add(Spec{URL: srv.URL + fmt.Sprintf("/f%d", i),
-			Out: filepath.Join(dir, fmt.Sprintf("f%d.bin", i)),
+			Out:     filepath.Join(dir, fmt.Sprintf("f%d.bin", i)),
 			Options: download.Options{Conns: 2, MinSegment: 64 << 10}})
 		ids = append(ids, id)
 	}
@@ -463,5 +463,67 @@ func TestDiscardDeletesPartialAndClearFinishedDropsCancelled(t *testing.T) {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Fatalf("%s still exists after ClearFinished (err=%v)", p, err)
 		}
+	}
+}
+
+func TestVersionAdvancesOnChange(t *testing.T) {
+	m := New(1)
+	v0 := m.Version()
+	id, err := m.Add(Spec{URL: "http://x/a", Out: filepath.Join(t.TempDir(), "a")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Version() <= v0 {
+		t.Fatal("Add did not bump version")
+	}
+	v1 := m.Version()
+	if err := m.Pause(id); err != nil {
+		t.Fatal(err)
+	}
+	if m.Version() <= v1 {
+		t.Fatal("Pause did not bump version")
+	}
+}
+
+func TestRecordsRoundTrip(t *testing.T) {
+	m := New(1)
+	out := filepath.Join(t.TempDir(), "a.bin")
+	at := time.Now().Add(time.Hour).Truncate(time.Second)
+	id, err := m.Add(Spec{URL: "http://x/a", Out: out, Priority: 3, StartAt: at,
+		Options: download.Options{Conns: 2, Cookie: "s=1", Headers: map[string]string{"Referer": "http://x/"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Pause(id); err != nil {
+		t.Fatal(err)
+	}
+	recs := m.Records()
+	if len(recs) != 1 || !recs[0].Paused || recs[0].Cookie != "s=1" || recs[0].Headers["Referer"] != "http://x/" ||
+		!recs[0].StartAt.Equal(at) || recs[0].Priority != 3 || recs[0].Conns != 2 || recs[0].Out != out {
+		t.Fatalf("record lost fields: %+v", recs)
+	}
+	// Terminal jobs are not recorded.
+	if err := m.Cancel(id); err == nil {
+		// paused -> cancelled is allowed
+	}
+	if got := m.Records(); len(got) != 0 {
+		t.Fatalf("cancelled job still recorded: %+v", got)
+	}
+
+	m2 := New(1)
+	nid, err := m2.AddRecord(recs[0], download.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, ok := m2.Status(nid)
+	if !ok || st.State != Paused || st.Priority != 3 || !st.StartAt.Equal(at) || st.Out != out {
+		t.Fatalf("restored wrong: %+v", st)
+	}
+	// The restored spec carries the request customisation and resumes.
+	m2.mu.Lock()
+	j := m2.jobs[nid]
+	m2.mu.Unlock()
+	if j.Options.Cookie != "s=1" || j.Options.Headers["Referer"] != "http://x/" || !j.Options.Resume || j.Options.Conns != 2 {
+		t.Fatalf("restored options wrong: %+v", j.Options)
 	}
 }
