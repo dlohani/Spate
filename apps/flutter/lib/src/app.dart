@@ -700,7 +700,7 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         if (mac) ...[
           const SizedBox(width: 96), // unified-toolbar traffic lights end at 80pt
-          SizedBox(width: 22, height: 22, child: CustomPaint(painter: SpateGlyph(cs.primary))),
+          SizedBox(width: 22, height: 22, child: CustomPaint(painter: SpateGlyph(brandMark(Theme.of(context).brightness)))),
           const SizedBox(width: 10),
           Text('Spate', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.2)),
         ],
@@ -763,7 +763,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SizedBox(width: 44, height: 44, child: CustomPaint(painter: SpateGlyph(cs.primary.withValues(alpha: 0.55)))),
+          SizedBox(width: 44, height: 44, child: CustomPaint(painter: SpateGlyph(brandMark(Theme.of(context).brightness).withValues(alpha: 0.55)))),
           const SizedBox(height: 14),
           Text('Nothing downloading', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),

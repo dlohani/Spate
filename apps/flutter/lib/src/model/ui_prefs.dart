@@ -47,9 +47,10 @@ class UiPrefs extends ChangeNotifier {
   /// Pulse the menu-bar / tray icon while something is downloading.
   bool pulseTray = true;
 
-  /// Menu-bar icon style on macOS: the coloured app icon, or a monochrome
-  /// template glyph that follows the menu bar like Apple's own items.
-  String trayIconStyle = 'color';
+  /// Menu-bar icon style on macOS: a monochrome template glyph that follows
+  /// the menu bar like Apple's own items (the platform convention, default),
+  /// or the coloured app icon.
+  String trayIconStyle = 'mono';
   static const trayIconStyles = ['color', 'mono'];
 
   void setTrayIconStyle(String v) {

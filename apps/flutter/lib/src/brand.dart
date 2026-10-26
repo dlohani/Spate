@@ -2,9 +2,18 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// Brand colour: the chosen accent is the primary, pinned rather than
-/// derived, so the Download button and the running bar are recognisably
-/// Spate in both themes. Dark mode lifts it so it reads on near-black.
+/// The brand blue of the app icon. The mark (header, empty state) always
+/// uses it, whatever accent the user picks for controls, so the in-app mark,
+/// the Dock icon and the tray icon stay one family.
+const brandBlue = Color(0xFF2A5BEA);
+
+/// The mark's colour on the current background: the brand blue, lifted on
+/// dark so it reads on near-black.
+Color brandMark(Brightness b) => brandPrimary(brandBlue, b);
+
+/// Control colour: the chosen accent is the primary, pinned rather than
+/// derived, so the Download button and the running bar follow the accent in
+/// both themes. Dark mode lifts it so it reads on near-black.
 Color brandPrimary(Color accent, Brightness b) =>
     b == Brightness.dark ? Color.lerp(accent, Colors.white, 0.28)! : accent;
 

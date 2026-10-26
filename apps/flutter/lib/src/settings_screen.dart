@@ -360,8 +360,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Padding(padding: const EdgeInsets.only(top: 10, bottom: 6), child: Text('Menu bar icon', style: tt.titleSmall)),
               SegmentedButton<String>(
                 segments: const [
-                  ButtonSegment(value: 'color', label: Text('Colour')),
                   ButtonSegment(value: 'mono', label: Text('Monochrome, like the system items')),
+                  ButtonSegment(value: 'color', label: Text('Colour')),
                 ],
                 selected: {widget.prefs.trayIconStyle},
                 onSelectionChanged: widget.prefs.hasTray ? (sel) => widget.prefs.setTrayIconStyle(sel.first) : null,
