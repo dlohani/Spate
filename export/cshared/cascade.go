@@ -18,6 +18,7 @@ import "C"
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
 	"time"
 	"unsafe"
@@ -36,12 +37,81 @@ var (
 	reg    = map[int64]*service.Service{}
 	regMu  sync.Mutex
 	nextID int64
+
+	errMu   sync.Mutex
+	lastErr string // most recent failure reported by any export (see CascadeLastError)
 )
 
-func lookup(h C.longlong) *service.Service {
+// setErr records why the last call failed. Exports return 0, -1 or "" on
+// failure; the text is available through CascadeLastError so a shell can show
+// the reason (a corrupt settings file, an invalid URL) instead of guessing.
+func setErr(err error) {
+	errMu.Lock()
+	if err != nil {
+		lastErr = err.Error()
+	} else {
+		lastErr = ""
+	}
+	errMu.Unlock()
+}
+
+func lastErrorText() string {
+	errMu.Lock()
+	defer errMu.Unlock()
+	return lastErr
+}
+
+// CascadeLastError returns the message of the most recent failed call in this
+// library, or "" when the last call succeeded or nothing failed yet. Caller
+// frees. A failed CascadeServiceStart* reports here whether Cascade was
+// already running (ErrAlreadyRunning's text) or something else went wrong.
+//
+//export CascadeLastError
+func CascadeLastError() *C.char { return cstr(lastErrorText()) }
+
+// startJSON is CascadeServiceStartJSON without the C types (testable).
+func startJSON(spec string) int64 {
+	var in struct {
+		MaxConcurrent int    `json:"maxConcurrent"`
+		DownloadDir   string `json:"downloadDir"`
+		SettingsPath  string `json:"settingsPath"`
+		AllowMultiple bool   `json:"allowMultiple"`
+	}
+	if spec != "" {
+		if err := json.Unmarshal([]byte(spec), &in); err != nil {
+			setErr(errors.New("start: bad options JSON: " + err.Error()))
+			return 0
+		}
+	}
+	s, err := service.StartWith(service.StartOpts{
+		MaxConcurrent: in.MaxConcurrent, DownloadDir: in.DownloadDir,
+		SettingsPath: in.SettingsPath, AllowMultiple: in.AllowMultiple,
+	})
+	if err != nil {
+		setErr(err)
+		return 0
+	}
+	setErr(nil)
+	return int64(register(s))
+}
+
+func lookup(h C.longlong) *service.Service { return lookupID(int64(h)) }
+
+func lookupID(h int64) *service.Service {
 	regMu.Lock()
 	defer regMu.Unlock()
-	return reg[int64(h)]
+	return reg[h]
+}
+
+// stopID is CascadeServiceStop without the C type (testable).
+func stopID(h int64) {
+	regMu.Lock()
+	s := reg[h]
+	delete(reg, h)
+	regMu.Unlock()
+	if s != nil {
+		s.Stop()
+	}
 }
 
 func cstr(s string) *C.char { return C.CString(s) }
@@ -58,8 +128,10 @@ func CascadeServiceStart(maxConcurrent C.int, downloadDir *C.char) C.longlong {
 	}
 	s, err := service.Start(int(maxConcurrent), dir)
 	if err != nil {
+		setErr(err)
 		return 0
 	}
+	setErr(nil)
 	return register(s)
 }
 
@@ -69,25 +141,11 @@ func CascadeServiceStart(maxConcurrent C.int, downloadDir *C.char) C.longlong {
 //
 //export CascadeServiceStartJSON
 func CascadeServiceStartJSON(spec *C.char) C.longlong {
-	var in struct {
-		MaxConcurrent int    `json:"maxConcurrent"`
-		DownloadDir   string `json:"downloadDir"`
-		SettingsPath  string `json:"settingsPath"`
-		AllowMultiple bool   `json:"allowMultiple"`
-	}
+	js := ""
 	if spec != nil {
-		if err := json.Unmarshal([]byte(C.GoString(spec)), &in); err != nil {
-			return 0
-		}
+		js = C.GoString(spec)
 	}
-	s, err := service.StartWith(service.StartOpts{
-		MaxConcurrent: in.MaxConcurrent, DownloadDir: in.DownloadDir,
-		SettingsPath: in.SettingsPath, AllowMultiple: in.AllowMultiple,
-	})
-	if err != nil {
-		return 0
-	}
-	return register(s)
+	return C.longlong(startJSON(js))
 }
 
 func register(s *service.Service) C.longlong {
@@ -102,15 +160,7 @@ func register(s *service.Service) C.longlong {
 // CascadeServiceStop stops a service and releases its handle.
 //
 //export CascadeServiceStop
-func CascadeServiceStop(handle C.longlong) {
-	regMu.Lock()
-	s := reg[int64(handle)]
-	delete(reg, int64(handle))
-	regMu.Unlock()
-	if s != nil {
-		s.Stop()
-	}
-}
+func CascadeServiceStop(handle C.longlong) { stopID(int64(handle)) }
 
 // CascadeNew is kept for compatibility: a service with the default directory.
 //
@@ -153,6 +203,7 @@ func CascadeAdd(handle C.longlong, url, dir, sha256 *C.char, conns C.int) *C.cha
 	}
 	id, err := s.Add(C.GoString(url), d, sh, int(conns))
 	if err != nil {
+		setErr(err)
 		return cstr("")
 	}
 	return cstr(id)
@@ -177,6 +228,7 @@ func CascadeAddJSON(handle C.longlong, spec *C.char) *C.char {
 		StartAt  int64  `json:"startAt"`
 	}
 	if err := json.Unmarshal([]byte(C.GoString(spec)), &in); err != nil {
+		setErr(errors.New("add: bad spec JSON: " + err.Error()))
 		return cstr("")
 	}
 	o := service.AddOpts{URL: in.URL, Dir: in.Dir, SHA256: in.SHA256, Conns: in.Conns, Priority: in.Priority}
@@ -185,6 +237,7 @@ func CascadeAddJSON(handle C.longlong, spec *C.char) *C.char {
 	}
 	id, err := s.AddWith(o)
 	if err != nil {
+		setErr(err)
 		return cstr("")
 	}
 	return cstr(id)
@@ -215,6 +268,7 @@ func CascadeSettingsApply(handle C.longlong, doc *C.char) C.int {
 		return -1
 	}
 	if err := s.ApplySettings([]byte(C.GoString(doc))); err != nil {
+		setErr(err)
 		return -1
 	}
 	return 0
@@ -243,6 +297,7 @@ func act(handle C.longlong, id *C.char, f func(*service.Service, string) error) 
 		return -1
 	}
 	if err := f(s, C.GoString(id)); err != nil {
+		setErr(err)
 		return -1
 	}
 	return 0
@@ -345,6 +400,19 @@ func CascadeStatusJSON(handle C.longlong) *C.char {
 		return cstr("[]")
 	}
 	return cstr(string(b))
+}
+
+// CascadeQueueVersion returns a counter that advances whenever the queue
+// changes (a job added, removed or changing state; not progress bytes). A
+// shell that polls compares it with the last value it saw and skips fetching
+// and parsing the status list when nothing changed. 0 for a bad handle.
+//
+//export CascadeQueueVersion
+func CascadeQueueVersion(handle C.longlong) C.ulonglong {
+	if s := lookup(handle); s != nil {
+		return C.ulonglong(s.Mgr.Version())
+	}
+	return 0
 }
 
 // CascadePairPending returns 1 while a browser extension is waiting for the

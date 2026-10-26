@@ -19,8 +19,10 @@ CascadeDiscard
 CascadeClearFinished
 CascadeCancelAll
 CascadeStatusJSON
+CascadeQueueVersion
 CascadePairPending
 CascadeShowPending
 CascadeRequestShow
 CascadePairResolve
 CascadeFreeString
+CascadeLastError

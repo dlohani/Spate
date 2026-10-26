@@ -54,7 +54,7 @@ class CascadeController extends ChangeNotifier {
       'conns': conns,
       'startAt': startAt == null ? 0 : startAt.millisecondsSinceEpoch ~/ 1000,
     });
-    lastError = id == null ? 'That does not look like a downloadable link.' : null;
+    lastError = id == null ? (core.lastError ?? 'That does not look like a downloadable link.') : null;
     _tick();
     return id != null;
   }

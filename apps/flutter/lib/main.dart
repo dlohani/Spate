@@ -21,13 +21,22 @@ Future<void> main(List<String> args) async {
   // pairing; this app is a thin shell over it via the C ABI. The core refuses
   // to start a second instance, so a duplicate launch (login item + native
   // host + a manual open) asks the running instance to show its window and
-  // exits.
+  // exits. Any other start failure (a corrupt settings file, an unwritable
+  // folder) is shown, never swallowed.
   final Cascade core;
   try {
     core = Cascade.start(); // concurrency and folder come from settings
-  } on StateError {
-    Cascade.requestShow();
-    exit(0);
+  } on CascadeException catch (e) {
+    if (e.alreadyRunning) {
+      Cascade.requestShow();
+      exit(0);
+    }
+    runApp(_FatalApp(e.message));
+    return;
+  } on StateError catch (e) {
+    // libcascade itself could not be found or loaded.
+    runApp(_FatalApp(e.message));
+    return;
   }
   final controller = CascadeController(core);
   // Theme mode + accent, kept in ui.json next to the core's settings.json.
@@ -75,6 +84,46 @@ Future<void> main(List<String> args) async {
   }
 
   runApp(CascadeApp(controller: controller, prefs: prefs));
+}
+
+/// Shown instead of the app when the core cannot start: the reason from the
+/// core and where its files live, so the user can fix or remove them.
+class _FatalApp extends StatelessWidget {
+  final String message;
+  const _FatalApp(this.message);
+
+  @override
+  Widget build(BuildContext context) {
+    final cfg = Platform.environment['CASCADE_SETTINGS'] ?? 'the cascade folder in your user config directory';
+    return MaterialApp(
+      title: 'Cascade',
+      theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFFE11D48)),
+      home: Scaffold(
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Cascade could not start', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 12),
+                  SelectableText(message),
+                  const SizedBox(height: 12),
+                  Text('Settings and queue files: $cfg. Fix or remove the file named above and open Cascade again.',
+                      style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 20),
+                  FilledButton(onPressed: () => exit(1), child: const Text('Quit')),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Brings the window back from hidden or minimised state.

@@ -215,7 +215,7 @@ func (s *Service) Resolve(rawURL, filename string) string {
 // AddWith enqueues a download described by o.
 func (s *Service) AddWith(o AddOpts) (string, error) {
 	if _, err := url.ParseRequestURI(o.URL); err != nil {
-		return "", fmt.Errorf("invalid URL")
+		return "", fmt.Errorf("invalid URL %q", o.URL)
 	}
 	name := FilenameFor(o.URL)
 	dir := o.Dir

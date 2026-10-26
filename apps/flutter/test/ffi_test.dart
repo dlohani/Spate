@@ -84,10 +84,16 @@ void main() {
     }), isTrue);
     expect(core.settings()['organizeByCategory'], isTrue);
     expect(core.applySettings({'limits': {'windows': [{'from': '99:00', 'to': '01:00'}]}}), isFalse);
+    expect(core.lastError, contains('bad time'));
+    expect(core.add('not a url'), isNull);
+    expect(core.lastError, contains('invalid URL'));
+    final v = core.queueVersion;
+    expect(v, greaterThan(0));
 
     final later = DateTime.now().add(const Duration(hours: 1));
     final sid = core.addJson({'url': 'http://127.0.0.1:${server.port}/f.bin', 'conns': 1, 'startAt': later.millisecondsSinceEpoch ~/ 1000});
     expect(sid, isNotNull);
+    expect(core.queueVersion, greaterThan(v));
     final sched = core.statuses().firstWhere((s) => s.id == sid);
     expect(sched.isScheduled, isTrue);
     expect(core.startNow(sid!), isTrue);
