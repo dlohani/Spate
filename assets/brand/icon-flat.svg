@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Full-bleed variant (iOS, Windows, favicon): the OS applies its own corner mask. Same geometry as icon.svg, scaled so the square fills the canvas. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2A5BEA"/><stop offset="0.5" stop-color="#1E9ED6"/><stop offset="1" stop-color="#6A4BE6"/></linearGradient>
+    <linearGradient id="gl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.18"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="512" fill="url(#gl)"/>
+  <g transform="translate(512 512) scale(1.249) translate(-512 -512)" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M282 286 C282 420, 470 430, 500 520" stroke-width="58"/>
+    <path d="M742 286 C742 420, 554 430, 524 520" stroke-width="58"/>
+    <path d="M512 272 L512 520" stroke-width="58"/>
+    <path d="M512 500 L512 746" stroke-width="84"/>
+    <path d="M352 606 L512 766 L672 606" stroke-width="84"/>
+  </g>
+</svg>
