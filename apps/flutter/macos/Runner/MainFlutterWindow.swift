@@ -10,6 +10,8 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    // Help menu and notifications: see SpateBridge.swift.
+    SpateBridge.shared.setUp(messenger: flutterViewController.engine.binaryMessenger)
 
     // The app draws its own header as the title bar (native title hidden,
     // traffic lights kept; see main.dart). An empty unified toolbar makes the

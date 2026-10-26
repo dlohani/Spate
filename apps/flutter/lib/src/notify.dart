@@ -22,12 +22,14 @@ class Notifier {
         _handlers.remove(a['id'] as String?)?.call((a['action'] as num?)?.toInt() ?? -1);
         return null;
       });
-      return;
     }
+    // Windows and Linux use the plugin; macOS keeps it as the fallback for
+    // builds the system will not grant modern notification permission to
+    // (unsigned development builds), where its legacy API still delivers.
     try {
       await localNotifier.setup(appName: 'Spate', shortcutPolicy: ShortcutPolicy.requireCreate);
     } catch (_) {
-      _ready = false; // no notification service (some Linux sessions)
+      if (!Platform.isMacOS) _ready = false; // no notification service (some Linux sessions)
     }
   }
 
@@ -43,9 +45,10 @@ class Notifier {
     if (onAction != null) _handlers[id] = onAction;
     if (Platform.isMacOS) {
       try {
-        return await _channel.invokeMethod<bool>('notify', {'id': id, 'title': title, 'body': body, 'actions': actions}) ?? false;
-      } on PlatformException {
-        return false;
+        final ok = await _channel.invokeMethod<bool>('notify', {'id': id, 'title': title, 'body': body, 'actions': actions}) ?? false;
+        if (ok) return true;
+      } catch (_) {
+        // channel missing or refused: fall through to the legacy path
       }
     }
     final n = LocalNotification(
