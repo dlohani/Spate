@@ -344,6 +344,11 @@ connection happy path with checksum, resume-after-failure, validator-changed
 restart, no-range single-connection fallback, and cancellation leaving
 resumable state.
 
+## Support the project
+
+Spate is free and open source. If it saves you time, you can
+[buy me a coffee](https://buymeacoffee.com/dlohani).
+
 ## License
 
 MIT. Copyright (c) 2026 AMLabs. See `LICENSE`.

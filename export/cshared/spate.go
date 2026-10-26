@@ -287,6 +287,18 @@ func SpateStartNow(handle C.longlong, jobID *C.char) C.int {
 	return act(handle, jobID, func(s *service.Service, id string) error { return s.Mgr.StartNow(id) })
 }
 
+// SpateSchedule sets when a pending or paused job may start: startAt is a
+// Unix timestamp in seconds, 0 clears the schedule (0 ok, -1 error).
+//
+//export SpateSchedule
+func SpateSchedule(handle C.longlong, jobID *C.char, startAt C.longlong) C.int {
+	var at time.Time
+	if startAt > 0 {
+		at = time.Unix(int64(startAt), 0)
+	}
+	return act(handle, jobID, func(s *service.Service, id string) error { return s.Mgr.SetStartAt(id, at) })
+}
+
 // SpateCurrentLimit returns the bytes/sec cap in force (0 = unlimited).
 //
 //export SpateCurrentLimit

@@ -27,6 +27,8 @@ typedef _StrActC = Pointer<Utf8> Function(LongLong, Pointer<Utf8>);
 typedef _StrActD = Pointer<Utf8> Function(int, Pointer<Utf8>);
 typedef _HandleLongC = LongLong Function(LongLong);
 typedef _HandleLongD = int Function(int);
+typedef _ScheduleC = Int32 Function(LongLong, Pointer<Utf8>, LongLong);
+typedef _ScheduleD = int Function(int, Pointer<Utf8>, int);
 typedef _HandleULongC = UnsignedLongLong Function(LongLong);
 typedef _HandleULongD = int Function(int);
 typedef _StrC = Pointer<Utf8> Function();
@@ -81,6 +83,7 @@ class Spate {
   late final _HandleStrD _settingsJson = _lib.lookupFunction<_HandleStrC, _HandleStrD>('SpateSettingsJSON');
   late final _IdActD _settingsApply = _lib.lookupFunction<_IdActC, _IdActD>('SpateSettingsApply');
   late final _IdActD _startNow = _lib.lookupFunction<_IdActC, _IdActD>('SpateStartNow');
+  late final _ScheduleD _schedule = _lib.lookupFunction<_ScheduleC, _ScheduleD>('SpateSchedule');
   late final _HandleLongD _currentLimit = _lib.lookupFunction<_HandleLongC, _HandleLongD>('SpateCurrentLimit');
   late final _HandleIntD _showPending = _lib.lookupFunction<_HandleIntC, _HandleIntD>('SpateShowPending');
   late final _HandleULongD _queueVersion = _lib.lookupFunction<_HandleULongC, _HandleULongD>('SpateQueueVersion');
@@ -252,6 +255,16 @@ class Spate {
 
   /// Drops a pending job's scheduled start so it runs as soon as possible.
   bool startNow(String id) => _idAct(_startNow, id);
+
+  /// Sets when a pending or paused job may start; null clears the schedule.
+  bool schedule(String id, DateTime? at) {
+    final p = id.toNativeUtf8();
+    try {
+      return _schedule(_h, p, at == null ? 0 : at.millisecondsSinceEpoch ~/ 1000) == 0;
+    } finally {
+      malloc.free(p);
+    }
+  }
 
   /// Bytes/sec cap currently in force (0 = unlimited).
   int get currentLimit => _currentLimit(_h);

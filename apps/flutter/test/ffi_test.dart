@@ -106,5 +106,26 @@ void main() {
     }
     // Site rule routed it into Local/ (site rules beat categories).
     expect(File('${dir.path}/Local/f.bin').existsSync(), isTrue);
+
+    // Several scheduled downloads coexist, and a queued one can be rescheduled.
+    final t1 = DateTime.now().add(const Duration(hours: 2));
+    final t2 = DateTime.now().add(const Duration(hours: 3));
+    final a = core.addJson({'url': 'http://127.0.0.1:${server.port}/a.bin', 'startAt': t1.millisecondsSinceEpoch ~/ 1000});
+    final b = core.addJson({'url': 'http://127.0.0.1:${server.port}/b.bin', 'startAt': t1.millisecondsSinceEpoch ~/ 1000});
+    expect(a, isNotNull);
+    expect(b, isNotNull);
+    expect(core.statuses().where((s) => s.isScheduled).length, 2);
+    expect(core.schedule(b!, t2), isTrue);
+    expect(core.statuses().firstWhere((s) => s.id == b).startAt!.millisecondsSinceEpoch ~/ 1000, t2.millisecondsSinceEpoch ~/ 1000);
+    expect(core.schedule(a!, null), isTrue); // released: runs now
+    expect(core.schedule('no-such-job', t2), isFalse);
+    final deadline3 = DateTime.now().add(const Duration(seconds: 10));
+    while (DateTime.now().isBefore(deadline3)) {
+      final j = core.statuses().where((s) => s.id == a).toList();
+      if (j.isNotEmpty && j.first.state == 'done') break;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    expect(core.statuses().firstWhere((s) => s.id == a).state, 'done');
+    expect(core.statuses().firstWhere((s) => s.id == b).isScheduled, isTrue);
   });
 }
