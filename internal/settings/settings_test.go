@@ -1,7 +1,9 @@
 package settings
 
 import (
+	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -145,5 +147,36 @@ func TestRecurringKeepsWallClockAcrossDST(t *testing.T) {
 	}
 	if h := rs[1].NextAt; h.Sub(first) != time.Hour {
 		t.Fatalf("hourly next = %v, want +1h", h)
+	}
+}
+
+func TestSaveConcurrent(t *testing.T) {
+	s := Default("/dl")
+	path := filepath.Join(t.TempDir(), "settings.json")
+	var wg sync.WaitGroup
+	errs := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := s.Save(path); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent Save: %v", err)
+	}
+	if _, err := Load(path, "/dl"); err != nil {
+		t.Fatalf("saved file unreadable: %v", err)
+	}
+	fi, _ := os.Stat(path)
+	if fi.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %o, want 0600", fi.Mode().Perm())
+	}
+	if left, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "*.tmp")); len(left) != 0 {
+		t.Fatalf("temp files left behind: %v", left)
 	}
 }

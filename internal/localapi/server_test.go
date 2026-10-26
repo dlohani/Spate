@@ -328,3 +328,57 @@ func TestShowRequiresTokenAndIsOneShot(t *testing.T) {
 		t.Fatalf("show: code=%d; ShowPending must be true once then false", rr.Code)
 	}
 }
+
+// postAdd is a token-authenticated POST /add; returns status and decoded body.
+func postAdd(t *testing.T, base string, req addRequest) (int, map[string]any) {
+	t.Helper()
+	body, _ := json.Marshal(req)
+	r, _ := http.NewRequest(http.MethodPost, base+"/add", bytes.NewReader(body))
+	r.Header.Set("X-Cascade-Token", "secret-token")
+	r.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var got map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&got)
+	return resp.StatusCode, got
+}
+
+func TestAddSanitisesFilename(t *testing.T) {
+	origin := okOrigin(t)
+	mgr := job.New(1)
+	mgr.SetStartGate(func() bool { return false }) // inspect the queued path, nothing runs
+	dir := t.TempDir()
+	s := New(mgr, "secret-token", dir)
+	addr, err := s.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	base := "http://" + addr
+
+	cases := []struct{ filename, wantBase string }{
+		{"../../evil.bin", "evil.bin"},
+		{"..\\..\\evil2.bin", "evil2.bin"},
+		{"sub/dir/name.bin", "name.bin"},
+		{"..", "f.bin"}, // nothing usable: derive from the URL
+		{".", "f.bin"},
+		{"/", "f.bin"},
+	}
+	for _, c := range cases {
+		code, got := postAdd(t, base, addRequest{URL: origin.URL + "/f.bin", Filename: c.filename})
+		if code != http.StatusOK {
+			t.Fatalf("%q: status %d (%v)", c.filename, code, got)
+		}
+		st, ok := mgr.Status(got["id"].(string))
+		if !ok {
+			t.Fatalf("%q: job missing", c.filename)
+		}
+		if want := filepath.Join(dir, c.wantBase); st.Out != want {
+			t.Fatalf("filename %q: Out = %q, want %q", c.filename, st.Out, want)
+		}
+		_ = mgr.Remove(st.ID) // so the next case is not deduped onto this job
+	}
+}
