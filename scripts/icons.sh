@@ -81,7 +81,7 @@ for png in pngs: out+=png
 open(sys.argv[1],"wb").write(out); print("pulse ico:", len(out), "bytes")
 EOF2
 rm -f "$ROOT/apps/flutter/assets/tray/icon-pulse-256.png"
-echo "==> Flutter launcher icons (iOS, Android, macOS, Windows, Linux, web)"
+echo "==> Flutter launcher icons (iOS, Android, macOS, Windows, Linux)"
 cd "$ROOT/apps/flutter"
 grep -q "flutter_launcher_icons" pubspec.yaml || flutter pub add --dev flutter_launcher_icons >/dev/null
 cat > flutter_launcher_icons.yaml <<'EOF'
