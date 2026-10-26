@@ -480,7 +480,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Spate ${widget.core.version} by AMLabs', style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+        Text('Spate ${widget.core.version} by Deepak Lohani', style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
         const SizedBox(height: 2),
         Text('Free and open source under the MIT licence.', style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
         const SizedBox(height: 14),

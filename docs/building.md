@@ -318,6 +318,6 @@ and press Publish; until then nothing is public. Tag builds are obfuscated
 in the workflow so the binaries are reproducible from the tag.
 
 The Homebrew cask (`packaging/homebrew/spate.rb`) and the winget manifest
-(`packaging/winget/AMLabs.Spate.yaml`) download from that release; fill in the asset checksums after the
+(`packaging/winget/DeepakLohani.Spate.yaml`) download from that release; fill in the asset checksums after the
 first published release.
 

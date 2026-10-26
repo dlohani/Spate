@@ -218,7 +218,7 @@ do_bump() {
   printf '%s\n' "$v" > VERSION
   sed -i.bak "s/^version: .*/version: $v+1/" apps/flutter/pubspec.yaml && rm -f apps/flutter/pubspec.yaml.bak
   sed -i.bak "s/  version \"$old\"/  version \"$v\"/" packaging/homebrew/spate.rb && rm -f packaging/homebrew/spate.rb.bak
-  sed -i.bak "s/$old/$v/g" packaging/winget/AMLabs.Spate.yaml && rm -f packaging/winget/AMLabs.Spate.yaml.bak
+  sed -i.bak "s/$old/$v/g" packaging/winget/DeepakLohani.Spate.yaml && rm -f packaging/winget/DeepakLohani.Spate.yaml.bak
   scripts/package-extension.sh >/dev/null   # stamps the three manifests
   say "version $old -> $v"
   git --no-pager diff --stat | sed 's/^/    /'
