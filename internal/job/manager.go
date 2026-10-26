@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"cascade/internal/download"
@@ -126,6 +127,7 @@ type Manager struct {
 	seqNext int
 	notify  chan struct{}
 	wg      sync.WaitGroup // tracks running job goroutines
+	version atomic.Uint64  // bumped on every queue change (see Version)
 
 	startGate func() bool // optional: may queued jobs start right now?
 }
@@ -138,15 +140,94 @@ func New(maxConcurrent int) *Manager {
 	if maxConcurrent < 1 {
 		maxConcurrent = 1
 	}
-	return &Manager{
+	m := &Manager{
 		jobs:   make(map[string]*Job),
 		max:    maxConcurrent,
 		notify: make(chan struct{}, 1),
 	}
+	m.version.Store(1)
+	return m
+}
+
+// Version is a counter that advances whenever the queue changes: a job is
+// added, removed or changes state. Callers that poll (a UI, the queue
+// persister) compare it with the value they saw last and skip work when it
+// is unchanged. Progress bytes do not bump it.
+func (m *Manager) Version() uint64 { return m.version.Load() }
+
+// Record is the serialisable view of a queued job: what is needed to put it
+// back as it was after a restart. Running jobs are recorded as pending (they
+// resume from disk); terminal jobs are not recorded.
+type Record struct {
+	ID            string            `json:"id"`
+	URL           string            `json:"url"`
+	Out           string            `json:"out"`
+	Priority      int               `json:"priority,omitempty"`
+	StartAt       time.Time         `json:"startAt,omitempty"`
+	Paused        bool              `json:"paused,omitempty"`
+	Conns         int               `json:"conns,omitempty"`
+	SHA256        string            `json:"sha256,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	Cookie        string            `json:"cookie,omitempty"`
+	BasicUser     string            `json:"basicUser,omitempty"`
+	BasicPassword string            `json:"basicPassword,omitempty"`
+}
+
+// Records returns the non-terminal jobs (pending, running, paused) in
+// insertion order, as Records.
+func (m *Manager) Records() []Record {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	jobs := make([]*Job, 0, len(m.jobs))
+	for _, j := range m.jobs {
+		if !j.state.Terminal() {
+			jobs = append(jobs, j)
+		}
+	}
+	sort.Slice(jobs, func(i, k int) bool { return jobs[i].seq < jobs[k].seq })
+	out := make([]Record, 0, len(jobs))
+	for _, j := range jobs {
+		o := j.Options
+		r := Record{ID: j.ID, URL: j.URL, Out: j.outputPath(), Priority: j.Priority, StartAt: j.StartAt,
+			Paused: j.state == Paused, Conns: o.Conns, SHA256: o.SHA256, Cookie: o.Cookie,
+			BasicUser: o.BasicUser, BasicPassword: o.BasicPassword}
+		if len(o.Headers) > 0 {
+			r.Headers = make(map[string]string, len(o.Headers))
+			for k, v := range o.Headers {
+				r.Headers[k] = v
+			}
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// AddRecord re-enqueues a job from a Record. base supplies the engine options
+// the record does not carry (shared limiter, gate); the record's request
+// customisation is copied onto it and Resume is set so a partial file on disk
+// is continued. A record marked Paused is added in the Paused state.
+func (m *Manager) AddRecord(r Record, base download.Options) (string, error) {
+	base.Conns, base.SHA256, base.Cookie = r.Conns, r.SHA256, r.Cookie
+	base.BasicUser, base.BasicPassword = r.BasicUser, r.BasicPassword
+	base.Resume = true
+	if len(r.Headers) > 0 {
+		base.Headers = make(map[string]string, len(r.Headers))
+		for k, v := range r.Headers {
+			base.Headers[k] = v
+		}
+	}
+	spec := Spec{ID: r.ID, URL: r.URL, Out: r.Out, Options: base, Priority: r.Priority, StartAt: r.StartAt}
+	state := Pending
+	if r.Paused {
+		state = Paused
+	}
+	return m.add(spec, state)
 }
 
 // Add enqueues a download and returns its job ID.
-func (m *Manager) Add(s Spec) (string, error) {
+func (m *Manager) Add(s Spec) (string, error) { return m.add(s, Pending) }
+
+func (m *Manager) add(s Spec, state State) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if s.ID == "" {
@@ -155,7 +236,7 @@ func (m *Manager) Add(s Spec) (string, error) {
 	if _, exists := m.jobs[s.ID]; exists {
 		return "", fmt.Errorf("job %q already exists", s.ID)
 	}
-	j := &Job{Spec: s, seq: m.seqNext, state: Pending}
+	j := &Job{Spec: s, seq: m.seqNext, state: state}
 	m.seqNext++
 	m.jobs[s.ID] = j
 	m.signal()
@@ -498,6 +579,7 @@ func (m *Manager) launchLocked(ctx context.Context, j *Job) {
 	done := j.done
 	m.running++
 	m.wg.Add(1)
+	m.version.Add(1) // pending -> running
 
 	go func() {
 		defer m.wg.Done()
@@ -596,8 +678,9 @@ func (m *Manager) cancelAll() {
 // waitIdle blocks until all running job goroutines have finished.
 func (m *Manager) waitIdle() { m.wg.Wait() }
 
-// signal wakes the Run loop without blocking.
+// signal wakes the Run loop without blocking and marks the queue changed.
 func (m *Manager) signal() {
+	m.version.Add(1)
 	select {
 	case m.notify <- struct{}{}:
 	default:
