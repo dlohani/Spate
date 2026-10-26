@@ -464,23 +464,70 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final tt = Theme.of(context).textTheme;
     final info = widget.core.info();
     final configDir = info['configDir'] as String? ?? '';
+    // Buy Me a Coffee's own yellow, so the button reads as theirs.
+    const bmcYellow = Color(0xFFFFDD00);
+    const bmcInk = Color(0xFF0D0C22);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Spate ${widget.core.version} by AMLabs', style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
         const SizedBox(height: 2),
         Text('Free and open source under the MIT licence.', style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant)),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          children: [
-            OutlinedButton.icon(onPressed: () => _open(_supportUrl), icon: const Icon(Icons.favorite_border_rounded, size: 16), label: const Text('Support the project')),
-            OutlinedButton.icon(
-              onPressed: configDir.isEmpty ? null : () => Process.start(Platform.isMacOS ? 'open' : Platform.isWindows ? 'explorer' : 'xdg-open', [Platform.isMacOS ? '-R' : '', '$configDir/spate.log'].where((a) => a.isNotEmpty).toList()),
-              icon: const Icon(Icons.description_outlined, size: 16),
-              label: const Text('Show log file'),
-            ),
-          ],
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          decoration: BoxDecoration(
+            color: bmcYellow.withValues(alpha: Theme.of(context).brightness == Brightness.dark ? 0.10 : 0.18),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: bmcYellow.withValues(alpha: 0.55)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.coffee_rounded, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Buy me a coffee', style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Spate is built and kept up by one developer and will stay free. If it saves you time, a coffee keeps the next release coming.',
+                style: tt.bodySmall?.copyWith(color: cs.onSurface),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () => _open(_supportUrl),
+                    style: FilledButton.styleFrom(backgroundColor: bmcYellow, foregroundColor: bmcInk, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12)),
+                    icon: const Icon(Icons.coffee_rounded, size: 18),
+                    label: const Text('Buy me a coffee', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                  SelectableText(_supportUrl.replaceFirst('https://', ''), style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()])),
+                  IconButton(
+                    tooltip: 'Copy link',
+                    icon: const Icon(Icons.copy_rounded, size: 16),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      Clipboard.setData(const ClipboardData(text: _supportUrl));
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied'), duration: Duration(seconds: 2)));
+                    },
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: configDir.isEmpty ? null : () => Process.start(Platform.isMacOS ? 'open' : Platform.isWindows ? 'explorer' : 'xdg-open', [Platform.isMacOS ? '-R' : '', '$configDir/spate.log'].where((a) => a.isNotEmpty).toList()),
+          icon: const Icon(Icons.description_outlined, size: 16),
+          label: const Text('Show log file'),
         ),
       ],
     );
