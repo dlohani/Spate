@@ -23,6 +23,7 @@ import (
 	"time"
 	"unsafe"
 
+	"cascade/internal/job"
 	"cascade/internal/service"
 	"cascade/internal/version"
 )
@@ -361,20 +362,8 @@ func CascadeCancelAll(handle C.longlong) {
 	}
 }
 
-type statusJSON struct {
-	ID       string `json:"id"`
-	URL      string `json:"url"`
-	Out      string `json:"out"`
-	State    string `json:"state"`
-	Priority int    `json:"priority"`
-	Bytes    int64  `json:"bytes"`
-	Total    int64  `json:"total"`
-	Retries  int    `json:"retries"`
-	StartAt  int64  `json:"startAt,omitempty"` // Unix seconds; only for scheduled jobs
-	Error    string `json:"error,omitempty"`
-}
-
-// CascadeStatusJSON returns a JSON array of job statuses (caller frees).
+// CascadeStatusJSON returns a JSON array of job statuses (caller frees); the
+// shape is job.StatusJSON, shared with the loopback /jobs route.
 //
 //export CascadeStatusJSON
 func CascadeStatusJSON(handle C.longlong) *C.char {
@@ -382,20 +371,7 @@ func CascadeStatusJSON(handle C.longlong) *C.char {
 	if s == nil {
 		return cstr("[]")
 	}
-	sts := s.Mgr.Statuses()
-	out := make([]statusJSON, 0, len(sts))
-	for _, st := range sts {
-		j := statusJSON{ID: st.ID, URL: st.URL, Out: st.Out, State: st.State.String(),
-			Priority: st.Priority, Bytes: st.Bytes, Total: st.Total, Retries: st.Retries}
-		if !st.StartAt.IsZero() {
-			j.StartAt = st.StartAt.Unix()
-		}
-		if st.Err != nil {
-			j.Error = st.Err.Error()
-		}
-		out = append(out, j)
-	}
-	b, err := json.Marshal(out)
+	b, err := json.Marshal(job.StatusesJSON(s.Mgr.Statuses()))
 	if err != nil {
 		return cstr("[]")
 	}

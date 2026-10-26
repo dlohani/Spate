@@ -42,7 +42,8 @@ Two exports over the same core, sharing one JSON status schema:
 - **gomobile** (`mobile/`): `cascade.aar` (Android) and `Cascade.xcframework`
   (iOS) for native Kotlin/Swift shells. Same JSON schema.
 
-Status schema (both exports): `[{"id","state","priority","bytes","total","error"}]`.
+Status schema (every export, defined once as `job.StatusJSON`):
+`[{"id","url","out","state","priority","bytes","total","retries","startAt","error"}]`.
 
 ## Recommended UI: Flutter + FFI
 

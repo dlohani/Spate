@@ -54,19 +54,10 @@ func (c *Client) Pause(jobID string) error { return c.mgr.Pause(jobID) }
 func (c *Client) Resume(jobID string) error { return c.mgr.Resume(jobID) }
 
 // StatusJSON returns a JSON array of all job statuses. gomobile cannot export a
-// slice of structs, so the shape is delivered as JSON (same schema as the C-ABI
-// export): [{"id","state","priority","bytes","total","error"}].
+// slice of structs, so the shape is delivered as JSON: job.StatusJSON, the
+// same schema the C ABI and the loopback /jobs route use.
 func (c *Client) StatusJSON() string {
-	sts := c.mgr.Statuses()
-	out := make([]statusJSON, 0, len(sts))
-	for _, s := range sts {
-		sj := statusJSON{ID: s.ID, State: s.State.String(), Priority: s.Priority, Bytes: s.Bytes, Total: s.Total}
-		if s.Err != nil {
-			sj.Error = s.Err.Error()
-		}
-		out = append(out, sj)
-	}
-	data, err := json.Marshal(out)
+	data, err := json.Marshal(job.StatusesJSON(c.mgr.Statuses()))
 	if err != nil {
 		return "[]"
 	}
@@ -75,12 +66,3 @@ func (c *Client) StatusJSON() string {
 
 // Close stops the service loop.
 func (c *Client) Close() { c.cancel() }
-
-type statusJSON struct {
-	ID       string `json:"id"`
-	State    string `json:"state"`
-	Priority int    `json:"priority"`
-	Bytes    int64  `json:"bytes"`
-	Total    int64  `json:"total"`
-	Error    string `json:"error,omitempty"`
-}

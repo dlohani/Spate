@@ -1,5 +1,6 @@
-/// One download as reported by the core's status JSON:
-/// [{"id","url","out","state","priority","bytes","total","retries","error"}].
+/// One download as reported by the core's status JSON (job.StatusJSON in Go,
+/// the single definition every export uses):
+/// [{"id","url","out","state","priority","bytes","total","retries","startAt","error"}].
 class JobStatus {
   final String id;
   final String url;
