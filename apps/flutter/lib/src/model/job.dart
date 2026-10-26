@@ -1,6 +1,6 @@
 /// One download as reported by the core's status JSON (job.StatusJSON in Go,
 /// the single definition every export uses):
-/// [{"id","url","out","state","priority","bytes","total","retries","startAt","error"}].
+/// [{"id","url","out","state","priority","bytes","total","retries","startAt","finishedAt","error"}].
 class JobStatus {
   final String id;
   final String url;
@@ -11,6 +11,7 @@ class JobStatus {
   final int retries;
   final String? error;
   final DateTime? startAt; // scheduled start, when set
+  final DateTime? finishedAt; // when a finished, failed or cancelled job ended
 
   const JobStatus({
     required this.id,
@@ -22,6 +23,7 @@ class JobStatus {
     required this.retries,
     this.error,
     this.startAt,
+    this.finishedAt,
   });
 
   /// Pending and waiting for a scheduled time in the future.
@@ -38,6 +40,9 @@ class JobStatus {
         error: j['error'] as String?,
         startAt: (j['startAt'] as num?) != null && (j['startAt'] as num) > 0
             ? DateTime.fromMillisecondsSinceEpoch((j['startAt'] as num).toInt() * 1000)
+            : null,
+        finishedAt: (j['finishedAt'] as num?) != null && (j['finishedAt'] as num) > 0
+            ? DateTime.fromMillisecondsSinceEpoch((j['finishedAt'] as num).toInt() * 1000)
             : null,
       );
 

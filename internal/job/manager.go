@@ -87,6 +87,9 @@ type Job struct {
 	cancelReq   bool          // a force-cancel was requested for the current run
 	autoRetries int           // times re-queued after a transient (network) failure
 	dl          *download.Downloader
+	finishedAt  time.Time // when the job became terminal
+	finalBytes  int64     // bytes and total frozen at finish (the downloader is gone after restore)
+	finalTotal  int64
 }
 
 // outputPath is where the job's data lives on disk (the spec's Out, or the
@@ -107,32 +110,34 @@ const (
 
 // Status is an immutable snapshot of a job.
 type Status struct {
-	ID       string
-	URL      string
-	Out      string // output path
-	State    State
-	Priority int
-	Err      error
-	Bytes    int64
-	Total    int64
-	Retries  int       // automatic re-queues after transient failures
-	StartAt  time.Time // scheduled start (zero = as soon as a slot is free)
+	ID         string
+	URL        string
+	Out        string // output path
+	State      State
+	Priority   int
+	Err        error
+	Bytes      int64
+	Total      int64
+	Retries    int       // automatic re-queues after transient failures
+	StartAt    time.Time // scheduled start (zero = as soon as a slot is free)
+	FinishedAt time.Time // when the job became terminal (zero while active)
 }
 
 // StatusJSON is the one wire shape for a job status, shared by every export
 // (C ABI, gomobile, loopback /jobs) and mirrored by the Dart JobStatus model.
 // Fields are added, never renamed or removed.
 type StatusJSON struct {
-	ID       string `json:"id"`
-	URL      string `json:"url"`
-	Out      string `json:"out"`
-	State    string `json:"state"`
-	Priority int    `json:"priority"`
-	Bytes    int64  `json:"bytes"`
-	Total    int64  `json:"total"`
-	Retries  int    `json:"retries"`
-	StartAt  int64  `json:"startAt,omitempty"` // Unix seconds; only for scheduled jobs
-	Error    string `json:"error,omitempty"`
+	ID         string `json:"id"`
+	URL        string `json:"url"`
+	Out        string `json:"out"`
+	State      string `json:"state"`
+	Priority   int    `json:"priority"`
+	Bytes      int64  `json:"bytes"`
+	Total      int64  `json:"total"`
+	Retries    int    `json:"retries"`
+	StartAt    int64  `json:"startAt,omitempty"`    // Unix seconds; only for scheduled jobs
+	FinishedAt int64  `json:"finishedAt,omitempty"` // Unix seconds; only for finished jobs
+	Error      string `json:"error,omitempty"`
 }
 
 // JSON converts a Status to its wire shape.
@@ -141,6 +146,9 @@ func (s Status) JSON() StatusJSON {
 		Priority: s.Priority, Bytes: s.Bytes, Total: s.Total, Retries: s.Retries}
 	if !s.StartAt.IsZero() {
 		j.StartAt = s.StartAt.Unix()
+	}
+	if !s.FinishedAt.IsZero() {
+		j.FinishedAt = s.FinishedAt.Unix()
 	}
 	if s.Err != nil {
 		j.Error = s.Err.Error()
@@ -196,9 +204,11 @@ func New(maxConcurrent int) *Manager {
 // is unchanged. Progress bytes do not bump it.
 func (m *Manager) Version() uint64 { return m.version.Load() }
 
-// Record is the serialisable view of a queued job: what is needed to put it
-// back as it was after a restart. Running jobs are recorded as pending (they
-// resume from disk); terminal jobs are not recorded.
+// Record is the serialisable view of a job: what is needed to put it back as
+// it was after a restart. Running jobs are recorded as pending (they resume
+// from disk). Finished, failed and cancelled jobs are recorded with State set
+// and their final figures, so the list keeps a history across restarts; they
+// are never run again.
 type Record struct {
 	ID            string            `json:"id"`
 	URL           string            `json:"url"`
@@ -206,6 +216,11 @@ type Record struct {
 	Priority      int               `json:"priority,omitempty"`
 	StartAt       time.Time         `json:"startAt,omitempty"`
 	Paused        bool              `json:"paused,omitempty"`
+	State         string            `json:"state,omitempty"`      // "done", "failed", "cancelled"; "" = active
+	FinishedAt    time.Time         `json:"finishedAt,omitempty"` // terminal jobs
+	Bytes         int64             `json:"bytes,omitempty"`      // terminal jobs: final figures
+	Total         int64             `json:"total,omitempty"`
+	Error         string            `json:"error,omitempty"`
 	Conns         int               `json:"conns,omitempty"`
 	SHA256        string            `json:"sha256,omitempty"`
 	Headers       map[string]string `json:"headers,omitempty"`
@@ -214,20 +229,49 @@ type Record struct {
 	BasicPassword string            `json:"basicPassword,omitempty"`
 }
 
-// Records returns the non-terminal jobs (pending, running, paused) in
-// insertion order, as Records.
+// History limits: how many finished jobs are kept, and for how long.
+const (
+	HistoryMax = 200
+	HistoryFor = 30 * 24 * time.Hour
+)
+
+// Records returns every job in insertion order, as Records: active jobs with
+// their request customisation, terminal jobs with their final figures. Of the
+// terminal jobs only the newest HistoryMax within HistoryFor are kept.
 func (m *Manager) Records() []Record {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	jobs := make([]*Job, 0, len(m.jobs))
 	for _, j := range m.jobs {
-		if !j.state.Terminal() {
-			jobs = append(jobs, j)
-		}
+		jobs = append(jobs, j)
 	}
 	sort.Slice(jobs, func(i, k int) bool { return jobs[i].seq < jobs[k].seq })
+	cutoff := time.Now().Add(-HistoryFor)
+	terminal := 0
+	for _, j := range jobs {
+		if j.state.Terminal() && j.finishedAt.After(cutoff) {
+			terminal++
+		}
+	}
+	drop := terminal - HistoryMax // oldest terminal records to skip
 	out := make([]Record, 0, len(jobs))
 	for _, j := range jobs {
+		if j.state.Terminal() {
+			if !j.finishedAt.After(cutoff) {
+				continue
+			}
+			if drop > 0 {
+				drop--
+				continue
+			}
+			r := Record{ID: j.ID, URL: j.URL, Out: j.outputPath(), State: j.state.String(),
+				FinishedAt: j.finishedAt, Bytes: j.finalBytes, Total: j.finalTotal}
+			if j.err != nil {
+				r.Error = j.err.Error()
+			}
+			out = append(out, r)
+			continue
+		}
 		o := j.Options
 		r := Record{ID: j.ID, URL: j.URL, Out: j.outputPath(), Priority: j.Priority, StartAt: j.StartAt,
 			Paused: j.state == Paused || j.paused, Conns: o.Conns, SHA256: o.SHA256, Cookie: o.Cookie,
@@ -246,8 +290,36 @@ func (m *Manager) Records() []Record {
 // AddRecord re-enqueues a job from a Record. base supplies the engine options
 // the record does not carry (shared limiter, gate); the record's request
 // customisation is copied onto it and Resume is set so a partial file on disk
-// is continued. A record marked Paused is added in the Paused state.
+// is continued. A record marked Paused is added in the Paused state. A record
+// with a terminal State is added as history: in that state, with its final
+// figures, and it never runs.
 func (m *Manager) AddRecord(r Record, base download.Options) (string, error) {
+	if r.State != "" {
+		var st State
+		switch r.State {
+		case "done":
+			st = Done
+		case "failed":
+			st = Failed
+		case "cancelled":
+			st = Cancelled
+		default:
+			return "", fmt.Errorf("record %q: unknown state %q", r.ID, r.State)
+		}
+		spec := Spec{ID: r.ID, URL: r.URL, Out: r.Out}
+		id, err := m.add(spec, st)
+		if err != nil {
+			return "", err
+		}
+		m.mu.Lock()
+		j := m.jobs[id]
+		j.finishedAt, j.finalBytes, j.finalTotal = r.FinishedAt, r.Bytes, r.Total
+		if r.Error != "" {
+			j.err = errors.New(r.Error)
+		}
+		m.mu.Unlock()
+		return id, nil
+	}
 	base.Conns, base.SHA256, base.Cookie = r.Conns, r.SHA256, r.Cookie
 	base.BasicUser, base.BasicPassword = r.BasicUser, r.BasicPassword
 	base.Resume = true
@@ -349,6 +421,7 @@ func (m *Manager) Cancel(id string) error {
 	case Pending, Paused:
 		from := j.state
 		j.state = Cancelled
+		j.markTerminalLocked()
 		logTransition(j, from, "cancel")
 	default:
 		return fmt.Errorf("job %q is %s, cannot cancel", id, j.state)
@@ -456,6 +529,7 @@ func (m *Manager) CancelAll() {
 			}
 		case Pending, Paused:
 			j.state = Cancelled
+			j.markTerminalLocked()
 		}
 	}
 	m.signal()
@@ -582,14 +656,64 @@ func (m *Manager) Statuses() []Status {
 
 func (m *Manager) statusLocked(j *Job) Status {
 	st := Status{ID: j.ID, URL: j.URL, Out: j.Out, State: j.state, Priority: j.Priority,
-		Err: j.err, Retries: j.autoRetries, StartAt: j.StartAt}
+		Err: j.err, Retries: j.autoRetries, StartAt: j.StartAt, FinishedAt: j.finishedAt}
 	if j.dl != nil {
 		if meter := j.dl.Meter(); meter != nil {
 			st.Bytes = meter.Done()
 			st.Total = meter.Total()
 		}
 	}
+	if j.state.Terminal() && j.dl == nil {
+		st.Bytes, st.Total = j.finalBytes, j.finalTotal // restored from history
+	}
 	return st
+}
+
+// markTerminalLocked freezes a job's finish time and figures. Caller holds m.mu.
+func (j *Job) markTerminalLocked() {
+	if !j.state.Terminal() || !j.finishedAt.IsZero() {
+		return
+	}
+	j.finishedAt = time.Now()
+	if j.dl != nil {
+		if meter := j.dl.Meter(); meter != nil {
+			j.finalBytes, j.finalTotal = meter.Done(), meter.Total()
+		}
+	}
+}
+
+// PauseAll pauses every running and pending job.
+func (m *Manager) PauseAll() {
+	m.mu.Lock()
+	for _, j := range m.jobs {
+		switch j.state {
+		case Running:
+			j.paused = true
+			if j.cancel != nil {
+				j.cancel()
+			}
+		case Pending:
+			j.state = Paused
+			logTransition(j, Pending, "pause all")
+		}
+	}
+	m.mu.Unlock()
+	m.signal()
+}
+
+// ResumeAll resumes every paused job.
+func (m *Manager) ResumeAll() {
+	m.mu.Lock()
+	for _, j := range m.jobs {
+		if j.state == Paused {
+			j.Options.Resume = true
+			j.paused = false
+			j.state = Pending
+			logTransition(j, Paused, "resume all")
+		}
+	}
+	m.mu.Unlock()
+	m.signal()
 }
 
 // Run drives the queue until every job is terminal (Done or Failed), or ctx is
@@ -739,6 +863,7 @@ func (m *Manager) launchLocked(ctx context.Context, j *Job) {
 			j.err = err
 		}
 		j.cancel = nil
+		j.markTerminalLocked()
 		logTransition(j, Running, why)
 		m.mu.Unlock()
 		m.signal()
