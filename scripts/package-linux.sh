@@ -145,6 +145,10 @@ GUI
 Settings: ~/.config/cascade/settings.json. Remove: apt remove $PKG
 TXT
 
+if obf_on; then
+  "$ROOT/scripts/verify-obfuscation.sh" "$STAGE/usr/bin/cascade" "$STAGE/usr/lib/cascade/cascade-host" $( [ "$CLI_ONLY" = 0 ] && echo "$STAGE/usr/lib/cascade/libcascade.so" )
+fi
+
 SIZE_KB="$(du -sk "$STAGE" | cut -f1)"
 {
   echo "Package: $PKG"

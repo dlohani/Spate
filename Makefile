@@ -91,8 +91,13 @@ deb:
 # needs cgo and is built natively on Linux by scripts/install-linux.sh.
 host-linux:
 	@mkdir -p $(DIST)/linux-amd64 $(DIST)/linux-arm64
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $(DIST)/linux-amd64/cascade-host ./cmd/cascade-host
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GO) build -ldflags "$(LDFLAGS)" -o $(DIST)/linux-arm64/cascade-host ./cmd/cascade-host
+	@export PATH="/opt/homebrew/bin:/usr/local/go/bin:$$HOME/go/bin:$$PATH"; \
+	export OBF_ROOT="$(CURDIR)"; \
+	. $(CURDIR)/scripts/lib/obfuscate.sh; \
+	obf_require_garble; \
+	build_cmd="$$(go_build_cmd cli "$(GO)")"; \
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $$build_cmd -ldflags "$(LDFLAGS)" -o $(DIST)/linux-amd64/cascade-host ./cmd/cascade-host; \
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $$build_cmd -ldflags "$(LDFLAGS)" -o $(DIST)/linux-arm64/cascade-host ./cmd/cascade-host
 
 # Install/initialize gomobile (one-time).
 tools:

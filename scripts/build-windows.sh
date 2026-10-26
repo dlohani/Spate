@@ -50,6 +50,9 @@ DEF_LD="$DEF"; command -v cygpath >/dev/null 2>&1 && DEF_LD="$(cygpath -m "$DEF"
 echo "==> cascade-setup.exe (single-file installer embedding the binaries + extension)"
 PAY="$ROOT/cmd/cascade-setup/payload"
 rm -rf "$PAY" && mkdir -p "$PAY/bin" "$PAY/extension"
+if obf_on; then
+  "$ROOT/scripts/verify-obfuscation.sh" "$OUT/cascade.exe" "$OUT/cascade-host.exe" "$OUT/cascade.dll"
+fi
 cp "$OUT/cascade-host.exe" "$OUT/cascade.exe" "$OUT/cascade.dll" "$ROOT/browser/extension/store-ids.env" "$PAY/bin/"
 ZIP="cascade-windows-amd64.zip"
 if ui_bundle_ok "$OUT"; then
