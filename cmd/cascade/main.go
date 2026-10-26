@@ -20,8 +20,10 @@ import (
 
 	"cascade/internal/download"
 	"cascade/internal/job"
+	"cascade/internal/logx"
 	"cascade/internal/policy"
 	"cascade/internal/progress"
+	"log/slog"
 )
 
 func main() {
@@ -46,6 +48,7 @@ func run(args []string) int {
 		extract  = fs.String("extract", "", "after download, extract a .zip archive into this directory")
 		wifiOnly = fs.Bool("wifi-only", false, "only download while on Wi-Fi (macOS)")
 		battMin  = fs.Int("battery-min", 0, "only download when battery >= N%% or on AC power (macOS)")
+		verbose  = fs.Bool("v", false, "log engine decisions (retries, resume, gating) to stderr")
 	)
 	fs.Var(&headers, "H", "extra request header 'Key: Value' (repeatable)")
 	fs.Usage = func() {
@@ -62,6 +65,13 @@ func run(args []string) int {
 	if fs.NArg() > 1 && *out != "" {
 		fmt.Fprintf(os.Stderr, "cascade: -o cannot be used with multiple URLs\n")
 		return 2
+	}
+	// The core logs through slog; the CLI shows that only on request so the
+	// progress line stays clean.
+	if *verbose {
+		slog.SetDefault(logx.Stderr())
+	} else {
+		slog.SetDefault(logx.Discard())
 	}
 
 	rate, err := parseSize(*limit)

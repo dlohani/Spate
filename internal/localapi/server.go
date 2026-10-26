@@ -15,6 +15,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -204,7 +205,9 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	s.noteExtension(r)
-	if !s.PairFunc() {
+	ok := s.PairFunc()
+	slog.Info("pair request", "origin", r.Header.Get("Origin"), "allowed", ok)
+	if !ok {
 		http.Error(w, "pairing declined", http.StatusForbidden)
 		return
 	}
@@ -238,6 +241,7 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.authOK(r) {
+		slog.Warn("hand-off rejected: bad token", "origin", r.Header.Get("Origin"))
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -277,6 +281,7 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 	pctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
 	defer cancel()
 	if err := download.CheckFetchable(pctx, req.URL, opts); err != nil {
+		slog.Warn("hand-off refused: not fetchable", "url", req.URL, "err", err)
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 			"error": "not fetchable by the app: " + err.Error(),
 		})
@@ -305,6 +310,7 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 	// instead of starting a second job that would write the same file.
 	for _, st := range s.mgr.Statuses() {
 		if st.Out == out && !st.State.Terminal() {
+			slog.Info("hand-off joined existing job", "id", st.ID, "out", out)
 			writeJSON(w, http.StatusOK, map[string]any{"id": st.ID, "existing": true})
 			return
 		}
@@ -312,9 +318,11 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 
 	id, err := s.mgr.Add(job.Spec{URL: req.URL, Out: out, Options: opts})
 	if err != nil {
+		slog.Error("hand-off enqueue failed", "url", req.URL, "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	slog.Info("hand-off accepted", "id", id, "url", req.URL, "out", out, "cookies", req.Cookie != "")
 	writeJSON(w, http.StatusOK, map[string]any{"id": id})
 }
 

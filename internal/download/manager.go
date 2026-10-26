@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"net/url"
@@ -237,6 +238,7 @@ func (d *Downloader) Run(ctx context.Context) error {
 	d.validator = probe.Validator()
 
 	if ge := d.gateOpen(); ge != nil {
+		slog.Info("gate closed before start", "out", d.out, "reason", ge.Reason)
 		return ge
 	}
 
@@ -283,6 +285,7 @@ func (d *Downloader) Run(ctx context.Context) error {
 	_ = d.ctrl.Save() // final flush regardless of outcome
 
 	if ge := gateCheck(); ge != nil {
+		slog.Info("gate closed mid-download", "out", d.out, "reason", ge.Reason, "bytes", d.ctrl.BytesDone())
 		return ge // policy closed mid-download; state is saved for resume
 	}
 	if runErr != nil {
@@ -389,7 +392,11 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 		if err != nil {
 			return err
 		}
-		if existing != nil && d.canResume(existing, probe) {
+		ok, reason := false, ""
+		if existing != nil {
+			ok, reason = d.canResume(existing, probe)
+		}
+		if ok {
 			part := PartPath(d.out)
 			if _, err := os.Stat(part); err != nil {
 				// Legacy layout (before .part): the data sat at the final path.
@@ -407,6 +414,7 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 		}
 		// Stale or mismatched sidecar (or its data is gone): start fresh.
 		if existing != nil {
+			slog.Info("resume discarded", "out", d.out, "reason", reason)
 			_ = existing.Remove()
 		}
 	}
@@ -429,27 +437,28 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 	return d.ctrl.Save()
 }
 
-// canResume reports whether existing sidecar state matches the current probe.
-func (d *Downloader) canResume(existing *Control, probe ProbeResult) bool {
+// canResume reports whether existing sidecar state matches the current probe,
+// and if not, why (for the log).
+func (d *Downloader) canResume(existing *Control, probe ProbeResult) (bool, string) {
 	if existing.Total != probe.Size {
-		return false
+		return false, fmt.Sprintf("size changed %d -> %d", existing.Total, probe.Size)
 	}
 	// If either side has a validator, they must match; a changed validator means
 	// the upstream file changed and the partial data can't be trusted.
 	if probe.Validator() != "" || existing.Validator != "" {
 		if existing.Validator != probe.Validator() {
-			return false
+			return false, "validator changed (upstream file modified)"
 		}
 	}
 	// The partial data must still be there: under .part, or (legacy layout)
 	// at the final path while a sidecar exists for it.
 	if _, err := os.Stat(PartPath(d.out)); err == nil {
-		return true
+		return true, ""
 	}
 	if _, err := os.Stat(d.out); err == nil {
-		return true
+		return true, ""
 	}
-	return false
+	return false, "partial data missing"
 }
 
 // runWorkers runs a fixed pool of Conns workers. Each pulls a segment from the
