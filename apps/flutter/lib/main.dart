@@ -203,6 +203,7 @@ class _TrayStatus {
   final CascadeController controller;
   String _last = '';
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _menuAt = DateTime.fromMillisecondsSinceEpoch(0);
   _TrayStatus(this.tray, this.core, this.controller);
 
   /// Recomputes the summary at most once a second and pushes it only when
@@ -232,6 +233,11 @@ class _TrayStatus {
     _lastAt = now;
     if (Platform.isMacOS) await tray.setTitle(title.isEmpty ? '' : ' $title');
     await tray.setToolTip(title.isEmpty ? 'Cascade' : 'Cascade: $line');
+    // Rebuilding the native menu is the expensive part (it was most of the
+    // app's CPU during a long download); the title and tooltip above carry
+    // the live numbers every second, the menu's first line can lag a little.
+    if (!force && running.isNotEmpty && now.difference(_menuAt) < const Duration(seconds: 3)) return;
+    _menuAt = now;
     await tray.setContextMenu(
       Menu(
         items: [

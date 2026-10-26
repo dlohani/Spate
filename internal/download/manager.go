@@ -33,7 +33,7 @@ import (
 // Options configures a download.
 type Options struct {
 	Conns             int           // max parallel connections (default 8)
-	MinSegment        int64         // smallest initial segment size in bytes (default 1 MiB)
+	MinSegment        int64         // smallest initial segment size in bytes (default 256 KiB)
 	WindowSize        int64         // per-request window for windowed fetching (default 4 MiB)
 	WriteBuffer       int64         // bytes coalesced per WriteAt (default 512 KiB; body reads are small and unaligned)
 	StealMinRemaining int64         // min tail to justify a work-steal split (default 2*WindowSize)
@@ -70,7 +70,10 @@ func (o *Options) setDefaults() {
 		o.Conns = 8
 	}
 	if o.MinSegment <= 0 {
-		o.MinSegment = 1 << 20 // 1 MiB
+		// 256 KiB: a 2 MiB file still spreads over 8 connections, which is
+		// what makes a per-connection-capped link add up; one request per
+		// 256 KiB is negligible overhead on a fast one.
+		o.MinSegment = 256 << 10
 	}
 	if o.WindowSize <= 0 {
 		o.WindowSize = 4 << 20 // 4 MiB

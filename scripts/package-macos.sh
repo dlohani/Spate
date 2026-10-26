@@ -14,11 +14,16 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 LDFLAGS="-X cascade/internal/version.Version=$VERSION"
+. "$ROOT/scripts/lib/obfuscate.sh"
+export OBF_ROOT="$ROOT"
+obf_require_garble   # CASCADE_OBFUSCATE=1 without garble fails loud, never ships plain
 STAGE="$ROOT/dist/pkg-stage"; APPROOT="$STAGE/app"; PAYLOAD="$STAGE/payload"; RES="$STAGE/resources"; PKGS="$STAGE/pkgs"
 rm -rf "$STAGE"; mkdir -p "$APPROOT" "$PAYLOAD/bin" "$PAYLOAD/extension" "$RES" "$PKGS" "$STAGE/scripts-app" "$STAGE/scripts-support"
 
 echo "==> building components"
-(cd "$ROOT" && go build -ldflags "$LDFLAGS" -o "$PAYLOAD/bin/cascade-host" ./cmd/cascade-host)
+cmd="$(go_build_cmd cli)"
+# shellcheck disable=SC2086
+(cd "$ROOT" && $cmd -ldflags "$LDFLAGS" -o "$PAYLOAD/bin/cascade-host" ./cmd/cascade-host)
 APP="$(ls -d "$ROOT"/apps/flutter/build/macos/Build/Products/Release/*.app 2>/dev/null | head -1 || true)"
 if [ -z "$APP" ]; then
   echo "    Flutter app not built; running scripts/flutter-macos.sh build"
@@ -31,6 +36,11 @@ if [ "$BUILT" != "$VERSION" ]; then
   exit 1
 fi
 cp -R "$APP" "$APPROOT/Cascade.app"
+if obf_on; then
+  # A release must not ship a plain core by accident: check the pieces that
+  # go into the package before it is built.
+  "$ROOT/scripts/verify-obfuscation.sh" "$PAYLOAD/bin/cascade-host" "$APPROOT/Cascade.app/Contents/Frameworks/libcascade.dylib"
+fi
 cp -R "$ROOT/browser/extension/." "$PAYLOAD/extension/"
 cp "$ROOT/packaging/macos/bin/register-extension" "$ROOT/packaging/macos/bin/uninstall" "$PAYLOAD/bin/"
 chmod +x "$PAYLOAD/bin/"* 2>/dev/null || true
