@@ -1,13 +1,17 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'add_bar.dart';
+import 'brand.dart';
 import 'ffi/spate_ffi.dart';
 import 'model/job.dart';
 import 'model/ui_prefs.dart';
+import 'rows.dart';
 import 'settings_screen.dart';
 
 /// App state: polls the core twice a second and exposes the queue.
@@ -15,14 +19,22 @@ class SpateController extends ChangeNotifier {
   final Spate core;
   List<JobStatus> jobs = const [];
   final Map<String, _Rate> _rates = {};
+  final Map<String, String> _lastState = {};
   bool pairShown = false; // a pairing dialog is currently on screen
   Timer? _timer;
   String? lastError;
   int _lastVersion = -1; // core queue version at the last full refresh
   int _lastLimit = -1; // bytes/sec cap shown at the last refresh
 
+  /// Recent aggregate speed, one sample per tick while anything runs (about
+  /// 30 s at two ticks a second), for the header sparkline.
+  final List<double> speedHistory = [];
+
+  /// Selected rows (click, Shift, Cmd/Ctrl, arrows).
+  final SelectionModel selection = SelectionModel();
+
   /// Called when another launch of the app asked this instance to show its
-  /// window (the desktop shell hooks window_manager here).
+  /// window, or a pairing request arrives while the window is hidden.
   void Function()? onShowRequested;
 
   /// Called after every refresh of [jobs], visible or not: the tray summary
@@ -31,11 +43,15 @@ class SpateController extends ChangeNotifier {
   /// rasterise frames for every progress tick.
   void Function()? onJobsRefreshed;
 
-  /// Whether the window is on screen. The shell sets it on show and hide;
-  /// while false, widget listeners are not notified (see [onJobsRefreshed]).
+  /// Called once when a job turns done or failed (notifications).
+  void Function(JobStatus job)? onFinished;
+
+  /// Whether the window is on screen, and whether it has keyboard focus.
   bool visible = true;
+  bool focused = true;
 
   SpateController(this.core) {
+    selection.addListener(notifyListeners);
     _tick();
     _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _tick());
   }
@@ -44,17 +60,13 @@ class SpateController extends ChangeNotifier {
   /// unchanged (after a user action, so its result or error shows at once).
   void _tick({bool force = false}) {
     final now = DateTime.now();
-    // Idle and unchanged: no status round trip and no redraw. The queue
-    // version advances on any add, remove or state change; progress bytes do
-    // not, so a running job keeps the full refresh going for its speed and
-    // bar. Things outside the version are checked here: a pairing request,
-    // the speed cap changing with its time windows, and a scheduled job
-    // whose start time passes (its row then stops saying "Scheduled").
     final version = core.queueVersion;
     final limit = core.currentLimit;
     final running = jobs.any((j) => j.state == 'running');
     final scheduled = jobs.any((j) => j.startAt != null && j.state == 'pending');
-    if (!force && version == _lastVersion && limit == _lastLimit && !running && !scheduled && !core.pairPending) {
+    final pairing = core.pairPending;
+    if (pairing && !visible) onShowRequested?.call();
+    if (!force && version == _lastVersion && limit == _lastLimit && !running && !scheduled && !pairing) {
       if (core.showPending) onShowRequested?.call();
       return;
     }
@@ -63,9 +75,22 @@ class SpateController extends ChangeNotifier {
     final next = core.statuses();
     for (final j in next) {
       _rates.putIfAbsent(j.id, () => _Rate()).observe(j.bytes, now);
+      final prev = _lastState[j.id];
+      if (prev != null && prev != j.state && (j.state == 'done' || j.state == 'failed')) {
+        onFinished?.call(j);
+      }
+      _lastState[j.id] = j.state;
     }
-    _rates.removeWhere((id, _) => !next.any((j) => j.id == id));
+    final ids = next.map((j) => j.id).toSet();
+    _rates.removeWhere((id, _) => !ids.contains(id));
+    _lastState.removeWhere((id, _) => !ids.contains(id));
     jobs = next;
+    selection.retain(ids);
+    if (running || speedHistory.isNotEmpty) {
+      speedHistory.add(totalSpeed);
+      if (speedHistory.length > 60) speedHistory.removeAt(0);
+      if (!running && speedHistory.every((v) => v == 0)) speedHistory.clear();
+    }
     if (core.showPending) onShowRequested?.call();
     onJobsRefreshed?.call();
     if (visible || force) notifyListeners();
@@ -78,14 +103,22 @@ class SpateController extends ChangeNotifier {
     if (v) _tick(force: true);
   }
 
+  void setFocused(bool f) => focused = f;
+
   double speedOf(String id) => _rates[id]?.bps ?? 0;
   double get totalSpeed => jobs.where((j) => j.state == 'running').fold(0.0, (a, j) => a + speedOf(j.id));
 
   bool get pairPending => core.pairPending;
 
+  /// The rows a menu action applies to: the selection when [job] is in it,
+  /// else just [job].
+  List<JobStatus> targetsFor(JobStatus job) =>
+      selection.contains(job.id) && selection.count > 1 ? jobs.where((j) => selection.contains(j.id)).toList() : [job];
+
   /// Enqueues a link. An empty [dir] lets the destination rules decide
-  /// (site rule > category > base folder); [startAt] schedules the start.
-  bool add(String url, {String dir = '', int conns = 8, DateTime? startAt}) {
+  /// (site rule > category > base folder); [startAt] schedules the start;
+  /// [conns] 0 takes the Settings default.
+  bool add(String url, {String dir = '', int conns = 0, DateTime? startAt}) {
     final id = core.addJson({
       'url': url,
       'dir': dir,
@@ -95,6 +128,49 @@ class SpateController extends ChangeNotifier {
     lastError = id == null ? (core.lastError ?? 'That does not look like a downloadable link.') : null;
     _tick(force: true);
     return id != null;
+  }
+
+  /// Adds every link; returns the ones that were refused. [lastError]
+  /// summarises the outcome when any failed.
+  List<String> addMany(List<String> urls, {String dir = '', DateTime? startAt}) {
+    final failed = <String>[];
+    String? firstError;
+    for (final u in urls) {
+      if (!add(u, dir: dir, startAt: startAt)) {
+        failed.add(u);
+        firstError ??= lastError;
+      }
+    }
+    lastError = failed.isEmpty
+        ? null
+        : urls.length == 1
+            ? firstError
+            : '${urls.length - failed.length} of ${urls.length} added; ${failed.length} not downloadable: $firstError';
+    notifyListeners();
+    return failed;
+  }
+
+  /// Links found in [text] (a paste, a dropped file): http(s) and ftp(s).
+  static List<String> linksIn(String text) =>
+      RegExp(r'(?:https?|ftps?)://[^\s<>"\x27]+').allMatches(text).map((m) => m.group(0)!).toList();
+
+  /// When the download window next opens, if one is enabled and not open now.
+  DateTime? nextDownloadWindowStart() {
+    final s = core.settings();
+    final qw = s['queueWindow'] as Map<String, dynamic>?;
+    if (qw == null || qw['enabled'] != true) return null;
+    final from = (qw['from'] as String? ?? '').split(':');
+    if (from.length != 2) return null;
+    final h = int.tryParse(from[0]), m = int.tryParse(from[1]);
+    if (h == null || m == null) return null;
+    final days = ((qw['days'] as List?) ?? const []).map((e) => (e as num).toInt()).toSet();
+    final now = DateTime.now();
+    for (var d = 0; d < 8; d++) {
+      final t = DateTime(now.year, now.month, now.day + d, h, m);
+      if (!t.isAfter(now)) continue;
+      if (days.isEmpty || days.contains(t.weekday % 7)) return t;
+    }
+    return null;
   }
 
   /// Bytes/sec cap in force right now (0 = unlimited); changes with the
@@ -144,6 +220,16 @@ class SpateController extends ChangeNotifier {
     _tick(force: true);
   }
 
+  void pauseAll() {
+    core.pauseAll();
+    _tick(force: true);
+  }
+
+  void resumeAll() {
+    core.resumeAll();
+    _tick(force: true);
+  }
+
   /// Retry a failed/cancelled download: re-queue the same link into the same
   /// folder (the engine resumes from any partial file) and drop the old row.
   void retry(JobStatus j) {
@@ -176,6 +262,7 @@ class SpateController extends ChangeNotifier {
   @override
   void dispose() {
     _timer?.cancel();
+    selection.dispose();
     super.dispose();
   }
 }
@@ -198,15 +285,14 @@ class _Rate {
 }
 
 // Design tokens shared by both brightnesses.
-const _kRadius = 14.0;
-const _kMaxWidth = 900.0;
-// One motion language: short, decelerating, no slides. Reveal/hover use
-// kMotion; progress bars ease over kMotionSlow so ticks look continuous.
+const _kRadius = 12.0;
+const _kMaxWidth = 1100.0;
+// One motion language: short, decelerating, no slides.
 const kMotion = Duration(milliseconds: 220);
-const kMotionSlow = Duration(milliseconds: 420);
 const kMotionCurve = Curves.easeOutCubic;
 
 /// Date then time picker for a start time; null when the user cancelled.
+/// The time picker opens in keyboard-entry mode, which suits a desktop.
 Future<DateTime?> pickWhen(BuildContext context, DateTime? current) async {
   final now = DateTime.now();
   final initial = (current != null && current.isAfter(now)) ? current : now.add(const Duration(hours: 1));
@@ -217,7 +303,11 @@ Future<DateTime?> pickWhen(BuildContext context, DateTime? current) async {
     lastDate: now.add(const Duration(days: 365)),
   );
   if (d == null || !context.mounted) return null;
-  final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial));
+  final t = await showTimePicker(
+    context: context,
+    initialTime: TimeOfDay.fromDateTime(initial),
+    initialEntryMode: TimePickerEntryMode.input,
+  );
   if (t == null) return null;
   return DateTime(d.year, d.month, d.day, t.hour, t.minute);
 }
@@ -243,42 +333,49 @@ class SpateApp extends StatelessWidget {
   const SpateApp({super.key, required this.controller, required this.prefs});
 
   /// Light is white surfaces on a soft grey; dark is near-black surfaces.
-  /// Both are seeded from the user's accent colour.
+  /// Surfaces are derived from the accent, the primary is the accent itself.
   static ThemeData theme(Brightness b, Color seed) {
-    final cs = ColorScheme.fromSeed(seedColor: seed, brightness: b);
-    final border = b == Brightness.dark ? const Color(0xFF26282D) : const Color(0xFFE5E7EB);
+    final dark = b == Brightness.dark;
+    final primary = brandPrimary(seed, b);
+    final cs = ColorScheme.fromSeed(seedColor: seed, brightness: b).copyWith(
+      primary: primary,
+      onPrimary: dark ? const Color(0xFF0B1220) : Colors.white,
+    );
+    final border = dark ? const Color(0xFF26282D) : const Color(0xFFE2E5EB);
+    final hint = dark ? const Color(0xFF9AA3B5) : const Color(0xFF5C6475); // 4.5:1 on both grounds
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
       visualDensity: VisualDensity.comfortable,
-      // Compact window: icons one step under Material defaults (24 / 18).
       iconTheme: const IconThemeData(size: 20),
       iconButtonTheme: IconButtonThemeData(style: IconButton.styleFrom(iconSize: 18)),
-      scaffoldBackgroundColor: b == Brightness.dark ? const Color(0xFF0A0B0D) : const Color(0xFFF6F7F9),
+      scaffoldBackgroundColor: dark ? const Color(0xFF0A0B0D) : const Color(0xFFF6F7F9),
       cardTheme: CardThemeData(
         elevation: 0,
-        color: b == Brightness.dark ? const Color(0xFF141619) : Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(_kRadius),
-          side: BorderSide(color: border),
-        ),
+        color: dark ? const Color(0xFF141619) : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(_kRadius), side: BorderSide(color: border)),
         margin: EdgeInsets.zero,
+      ),
+      appBarTheme: AppBarTheme(
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        backgroundColor: dark ? const Color(0xFF0A0B0D) : const Color(0xFFF6F7F9),
+        shape: Border(bottom: BorderSide(color: border)),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: b == Brightness.dark ? const Color(0xFF0A0B0D) : const Color(0xFFF3F4F6),
+        fillColor: dark ? const Color(0xFF141619) : Colors.white,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: cs.primary, width: 1.5),
-        ),
+        hintStyle: TextStyle(color: hint),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: border)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: border)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: cs.primary, width: 1.5)),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       ),
@@ -288,8 +385,13 @@ class SpateApp extends StatelessWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       ),
+      popupMenuTheme: PopupMenuThemeData(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: border)),
+        surfaceTintColor: Colors.transparent,
+      ),
       tooltipTheme: const TooltipThemeData(waitDuration: Duration(milliseconds: 500)),
       dividerColor: border,
+      dividerTheme: DividerThemeData(color: border, space: 1, thickness: 1),
     );
   }
 
@@ -300,8 +402,6 @@ class SpateApp extends StatelessWidget {
       title: 'Spate',
       debugShowCheckedModeBanner: false,
       themeMode: prefs.mode,
-      themeAnimationDuration: kMotionSlow,
-      themeAnimationCurve: kMotionCurve,
       theme: theme(Brightness.light, prefs.seed),
       darkTheme: theme(Brightness.dark, prefs.seed),
       home: HomeScreen(controller: controller, prefs: prefs),
@@ -313,18 +413,16 @@ class HomeScreen extends StatefulWidget {
   final SpateController controller;
   final UiPrefs prefs;
   const HomeScreen({super.key, required this.controller, required this.prefs});
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _url = TextEditingController();
-  final _urlFocus = FocusNode();
-  // Empty = automatic: the destination rules in Settings pick the folder.
-  final _dir = TextEditingController();
-  final _conns = TextEditingController(text: '8');
-  bool _showOptions = false;
-  DateTime? _startAt; // set by "Schedule"; null = start now
+  final _addKey = GlobalKey<AddBarState>();
+  final _listFocus = FocusNode(debugLabel: 'downloads');
+  bool? _finishedOpen; // null = automatic (open only when nothing is active)
+  bool _dragging = false;
 
   @override
   void initState() {
@@ -335,7 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     widget.controller.removeListener(_maybePromptPairing);
-    _urlFocus.dispose();
+    _listFocus.dispose();
     super.dispose();
   }
 
@@ -361,282 +459,301 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  /// Adds every link in the field (several may be pasted at once, separated
-  /// by spaces or line breaks), all with the same folder, connections and
-  /// start time. The start time stays selected so more links can be queued
-  /// for the same slot; the X beside it clears it.
-  void _add() {
-    final urls = _url.text.split(RegExp(r'\s+')).where((u) => u.isNotEmpty).toList();
-    if (urls.isEmpty) return;
-    final c = widget.controller;
-    final failed = <String>[];
-    String? firstError;
-    for (final u in urls) {
-      final ok = c.add(u, dir: _dir.text.trim(), conns: int.tryParse(_conns.text) ?? 8, startAt: _startAt);
-      if (!ok) {
-        failed.add(u);
-        firstError ??= c.lastError;
-      }
-    }
-    if (failed.isEmpty) {
-      _url.clear();
-      c.lastError = null;
-    } else {
-      _url.text = failed.join(' '); // leave only what was refused, to fix or drop
-      c.lastError = urls.length == 1
-          ? firstError
-          : '${urls.length - failed.length} of ${urls.length} added; ${failed.length} not downloadable: $firstError';
-    }
-    setState(() {});
-  }
-
-  Future<void> _pickSchedule() async {
-    final at = await pickWhen(context, _startAt);
-    if (at == null || !mounted) return;
-    setState(() => _startAt = at);
-  }
-
   Future<void> _openSettings() async {
     await Navigator.of(context).push(fadeRoute(SettingsScreen(core: widget.controller.core, prefs: widget.prefs)));
     setState(() {});
   }
 
-  Future<void> _paste() async {
+  Future<void> _pasteAnywhere() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text?.trim() ?? '';
-    if (text.isEmpty) return;
-    _url.text = text;
-    _add();
+    final links = SpateController.linksIn(data?.text ?? '');
+    if (links.isEmpty) {
+      widget.controller.lastError = 'The clipboard has no link.';
+      setState(() {});
+      return;
+    }
+    _addKey.currentState?.add(links.join(' '));
+  }
+
+  Future<void> _dropped(DropDoneDetails d) async {
+    final links = <String>[];
+    var files = 0;
+    for (final item in d.files) {
+      final p = item.path;
+      if (RegExp(r'^(https?|ftps?)://').hasMatch(p)) {
+        links.add(p);
+        continue;
+      }
+      final lower = p.toLowerCase();
+      if (lower.endsWith('.txt') || lower.endsWith('.url') || lower.endsWith('.webloc') || lower.endsWith('.desktop')) {
+        try {
+          links.addAll(SpateController.linksIn(await File(p).readAsString()));
+          continue;
+        } catch (_) {}
+      }
+      files++;
+    }
+    if (links.isEmpty) {
+      widget.controller.lastError = files > 0
+          ? 'Nothing downloadable in what you dropped: drop links, or a text file of links.'
+          : 'Nothing downloadable in what you dropped.';
+      setState(() {});
+      return;
+    }
+    _addKey.currentState?.add(links.join(' '));
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
+    final c = widget.controller;
+    final order = sortedForList(c.jobs).map((j) => j.id).toList();
+    final k = e.logicalKey;
+    final meta = HardwareKeyboard.instance.isMetaPressed || HardwareKeyboard.instance.isControlPressed;
+    if (k == LogicalKeyboardKey.arrowDown) {
+      c.selection.move(1, order);
+    } else if (k == LogicalKeyboardKey.arrowUp) {
+      c.selection.move(-1, order);
+    } else if (k == LogicalKeyboardKey.escape) {
+      c.selection.clear();
+    } else if (meta && k == LogicalKeyboardKey.keyA) {
+      c.selection.selectAll(order);
+    } else if (k == LogicalKeyboardKey.space && c.selection.count > 0) {
+      for (final j in c.jobs.where((j) => c.selection.contains(j.id))) {
+        if (j.state == 'running' || (j.state == 'pending' && !j.isScheduled)) {
+          c.pause(j.id);
+        } else if (j.state == 'paused') {
+          c.resume(j.id);
+        }
+      }
+    } else if ((k == LogicalKeyboardKey.delete || k == LogicalKeyboardKey.backspace) && c.selection.count > 0) {
+      final targets = c.jobs.where((j) => c.selection.contains(j.id)).toList();
+      runRowAction(context, 'remove', c, targets);
+    } else {
+      return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: AnimatedBuilder(
-        animation: widget.controller,
-        builder: (context, _) {
-          final jobs = [...widget.controller.jobs]..sort((a, b) => a.id.compareTo(b.id));
-          return Column(
-            children: [
-              _header(context, jobs),
-              Expanded(
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: _kMaxWidth),
-                    child: CustomScrollView(
-                      slivers: [
-                        SliverPadding(
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-                          sliver: SliverToBoxAdapter(child: _addCard(context)),
-                        ),
-                        SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(24, 18, 24, 6),
-                          sliver: SliverToBoxAdapter(child: _sectionBar(context, jobs)),
-                        ),
-                        if (jobs.isEmpty)
-                          SliverFillRemaining(hasScrollBody: false, child: _empty(context))
-                        else
-                          SliverPadding(
-                            padding: const EdgeInsets.fromLTRB(24, 2, 24, 28),
-                            sliver: SliverList.separated(
-                              itemCount: jobs.length,
-                              separatorBuilder: (_, _) => const SizedBox(height: 10),
-                              itemBuilder: (context, i) =>
-                                  DownloadCard(key: ValueKey(jobs[i].id), job: jobs[i], controller: widget.controller),
+    final cs = Theme.of(context).colorScheme;
+    return Shortcuts(
+      shortcuts: {
+        SingleActivator(LogicalKeyboardKey.keyV, meta: Platform.isMacOS, control: !Platform.isMacOS): const _PasteIntent(),
+        SingleActivator(LogicalKeyboardKey.comma, meta: Platform.isMacOS, control: !Platform.isMacOS): const _SettingsIntent(),
+      },
+      child: Actions(
+        actions: {
+          _PasteIntent: CallbackAction<_PasteIntent>(onInvoke: (_) {
+            // In a text field, let the field paste; elsewhere paste as links.
+            if (FocusManager.instance.primaryFocus?.context?.widget is EditableText) return null;
+            _pasteAnywhere();
+            return null;
+          }),
+          _SettingsIntent: CallbackAction<_SettingsIntent>(onInvoke: (_) {
+            _openSettings();
+            return null;
+          }),
+        },
+        child: Scaffold(
+          body: DropTarget(
+            onDragEntered: (_) => setState(() => _dragging = true),
+            onDragExited: (_) => setState(() => _dragging = false),
+            onDragDone: (d) {
+              setState(() => _dragging = false);
+              _dropped(d);
+            },
+            child: Stack(
+              children: [
+                AnimatedBuilder(
+                  animation: widget.controller,
+                  builder: (context, _) {
+                    final all = sortedForList(widget.controller.jobs);
+                    final active = all.where((j) => j.isActive).toList();
+                    final finished = all.where((j) => j.isTerminal).toList();
+                    final finishedOpen = _finishedOpen ?? active.isEmpty;
+                    return Column(
+                      children: [
+                        _header(context, all),
+                        Expanded(
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: _kMaxWidth),
+                              child: Focus(
+                                focusNode: _listFocus,
+                                onKeyEvent: _onKey,
+                                child: CustomScrollView(
+                                  slivers: [
+                                    SliverPadding(
+                                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+                                      sliver: SliverToBoxAdapter(child: AddBar(key: _addKey, controller: widget.controller)),
+                                    ),
+                                    if (all.isEmpty)
+                                      SliverFillRemaining(hasScrollBody: false, child: _empty(context))
+                                    else ...[
+                                      SliverPadding(
+                                        padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+                                        sliver: SliverToBoxAdapter(child: _groupCard(context, active, finished, finishedOpen)),
+                                      ),
+                                      const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                                    ],
+                                  ],
+                                ),
+                              ),
                             ),
                           ),
+                        ),
                       ],
+                    );
+                  },
+                ),
+                if (_dragging)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: Container(
+                        color: cs.primary.withValues(alpha: 0.08),
+                        alignment: Alignment.center,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                          decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(10)),
+                          child: Text('Drop to download', style: TextStyle(color: cs.onPrimary, fontWeight: FontWeight.w600)),
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ],
-          );
-        },
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 
+  /// The list: active rows, then a collapsible Finished group, in one card.
+  Widget _groupCard(BuildContext context, List<JobStatus> active, List<JobStatus> finished, bool finishedOpen) {
+    final c = widget.controller;
+    final order = [...active, ...finished].map((j) => j.id).toList();
+    var queuePos = 0;
+    Widget row(JobStatus j) {
+      final pos = (j.state == 'pending' && !j.isScheduled) ? ++queuePos : null;
+      return DownloadRow(
+        key: ValueKey(j.id),
+        job: j,
+        controller: c,
+        selected: c.selection.contains(j.id),
+        queuePosition: pos,
+        onSelect: (shift, toggle) {
+          _listFocus.requestFocus();
+          c.selection.click(j.id, order, shift: shift, toggle: toggle);
+        },
+        onContextMenu: (pos) async {
+          if (!c.selection.contains(j.id)) c.selection.click(j.id, order);
+          final targets = c.targetsFor(j);
+          final box = Overlay.of(context).context.findRenderObject() as RenderBox;
+          final key = await showMenu<String>(
+            context: context,
+            position: RelativeRect.fromRect(pos & const Size(1, 1), Offset.zero & box.size),
+            items: rowMenuEntries(j, targets.length),
+          );
+          if (key != null && context.mounted) runRowAction(context, key, c, targets);
+        },
+      );
+    }
+
+    final children = <Widget>[];
+    for (var i = 0; i < active.length; i++) {
+      if (i > 0) children.add(const Divider(indent: 12, endIndent: 12));
+      children.add(row(active[i]));
+    }
+    if (finished.isNotEmpty) {
+      if (active.isNotEmpty) children.add(const Divider());
+      children.add(FinishedHeader(
+        count: finished.length,
+        open: finishedOpen,
+        onToggle: () => setState(() => _finishedOpen = !finishedOpen),
+        onClear: c.clearFinished,
+      ));
+      if (finishedOpen) {
+        for (var i = 0; i < finished.length; i++) {
+          children.add(const Divider(indent: 12, endIndent: 12));
+          children.add(row(finished[i]));
+        }
+      }
+    }
+    return Card(child: Column(children: children));
+  }
+
   /// The window's top row. On macOS it *is* the title bar: the native title
-  /// is hidden, the traffic lights stay (96px inset: they end at 80pt in a unified toolbar), the row is draggable and
-  /// 52px tall to match the taller title bar. Elsewhere the native bar shows
-  /// the name, so this is a slim toolbar with just status and settings.
+  /// is hidden, the traffic lights stay, the row is draggable and 52px tall.
+  /// Elsewhere the native bar shows the name, so this is a slim toolbar.
   Widget _header(BuildContext context, List<JobStatus> jobs) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final c = widget.controller;
     final active = jobs.where((j) => j.state == 'running').length;
-    final speed = widget.controller.totalSpeed;
-    final limit = widget.controller.currentLimit;
+    final queued = jobs.where((j) => j.state == 'pending').length;
+    final paused = jobs.where((j) => j.state == 'paused').length;
+    final speed = c.totalSpeed;
+    final limit = c.currentLimit;
     final mac = Platform.isMacOS;
     final row = Row(
       children: [
         if (mac) ...[
           const SizedBox(width: 96), // unified-toolbar traffic lights end at 80pt
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(color: cs.primary, borderRadius: BorderRadius.circular(7)),
-            child: const Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 15),
-          ),
+          SizedBox(width: 22, height: 22, child: CustomPaint(painter: SpateGlyph(cs.primary))),
           const SizedBox(width: 10),
           Text('Spate', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.2)),
         ],
         const Spacer(),
         if (active > 0) ...[
-          _Pill(text: '${humanBytes(speed.round())}/s', color: cs.primary),
+          Tooltip(
+            message: 'Total speed over the last 30 seconds',
+            child: _Pill(
+              text: '${humanBytes(speed.round())}/s',
+              color: cs.primary,
+              leading: SizedBox(width: 44, height: 14, child: CustomPaint(painter: Sparkline(List.of(c.speedHistory), cs.primary))),
+            ),
+          ),
           const SizedBox(width: 8),
-          _Pill(text: '$active active', color: cs.onSurfaceVariant, subtle: true),
-        ] else if (jobs.isNotEmpty)
-          _Pill(text: '${jobs.length} in list', color: cs.onSurfaceVariant, subtle: true),
+          _Pill(text: '$active downloading${queued > 0 ? ' · $queued queued' : ''}', color: cs.onSurfaceVariant, subtle: true),
+        ] else if (jobs.any((j) => j.isActive))
+          _Pill(text: [if (queued > 0) '$queued queued', if (paused > 0) '$paused paused'].join(' · '), color: cs.onSurfaceVariant, subtle: true),
         if (limit > 0) ...[
           const SizedBox(width: 8),
-          Tooltip(
-            message: 'Speed limit in force (Settings)',
-            child: _Pill(text: 'limit ${humanBytes(limit)}/s', color: cs.tertiary),
-          ),
+          Tooltip(message: 'Speed limit in force (Settings)', child: _Pill(text: 'limit ${humanBytes(limit)}/s', color: cs.tertiary)),
         ],
-        const SizedBox(width: 6),
-        IconButton(tooltip: 'Settings', icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
+        const SizedBox(width: 4),
+        PopupMenuButton<String>(
+          tooltip: 'Queue',
+          icon: const Icon(Icons.more_horiz_rounded),
+          onSelected: (k) => switch (k) {
+            'pauseall' => c.pauseAll(),
+            'resumeall' => c.resumeAll(),
+            'clear' => c.clearFinished(),
+            _ => _openSettings(),
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(value: 'pauseall', height: 36, enabled: active + queued > 0, child: const Text('Pause all')),
+            PopupMenuItem(value: 'resumeall', height: 36, enabled: paused > 0, child: const Text('Resume all')),
+            PopupMenuItem(value: 'clear', height: 36, enabled: jobs.any((j) => j.isTerminal), child: const Text('Clear finished')),
+            const PopupMenuDivider(height: 8),
+            const PopupMenuItem(value: 'settings', height: 36, child: Text('Settings…')),
+          ],
+        ),
+        IconButton(tooltip: 'Settings (Cmd-,)', icon: const Icon(Icons.settings_outlined), onPressed: _openSettings),
       ],
     );
     if (mac) {
-      // Hairline under the header so it reads as a title bar, not a gap.
       return DragToMoveArea(
         child: Container(
           height: 52,
           padding: const EdgeInsets.only(right: 12),
-          decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor)),
-          ),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Theme.of(context).dividerColor))),
           child: row,
         ),
       );
     }
-    return Padding(padding: const EdgeInsets.fromLTRB(24, 8, 12, 0), child: row);
-  }
-
-  Widget _addCard(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    final err = widget.controller.lastError;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _url,
-                    focusNode: _urlFocus,
-                    onSubmitted: (_) => _add(),
-                    // Several links pasted with line breaks become one
-                    // space-separated line; _add splits them again.
-                    inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'[\r\n]+'), replacementString: ' ')],
-                    decoration: InputDecoration(
-                      hintText: 'Paste one or more links to download',
-                      prefixIcon: const Icon(Icons.link_rounded),
-                      suffixIcon: IconButton(
-                        tooltip: 'Paste and download',
-                        icon: const Icon(Icons.content_paste_rounded, size: 18),
-                        onPressed: _paste,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                FilledButton.icon(
-                  onPressed: _add,
-                  icon: const Icon(Icons.download_rounded),
-                  label: const Text('Download'),
-                ),
-              ],
-            ),
-            AnimatedSize(
-              duration: kMotion,
-              curve: kMotionCurve,
-              alignment: Alignment.topCenter,
-              child: _showOptions
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: TextField(
-                              controller: _dir,
-                              decoration: const InputDecoration(
-                                labelText: 'Save to',
-                                hintText: 'Automatic (folder rules in Settings)',
-                                prefixIcon: Icon(Icons.folder_outlined),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          SizedBox(
-                            width: 150,
-                            child: TextField(
-                              controller: _conns,
-                              decoration: const InputDecoration(
-                                labelText: 'Connections',
-                                prefixIcon: Icon(Icons.call_split_rounded),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  : const SizedBox(width: double.infinity),
-            ),
-            Row(
-              children: [
-                TextButton.icon(
-                  onPressed: () => setState(() => _showOptions = !_showOptions),
-                  icon: Icon(_showOptions ? Icons.expand_less_rounded : Icons.tune_rounded, size: 18),
-                  label: Text(_showOptions ? 'Hide options' : 'Options'),
-                ),
-                TextButton.icon(
-                  onPressed: _pickSchedule,
-                  icon: const Icon(Icons.schedule_rounded, size: 18),
-                  label: Text(_startAt == null ? 'Schedule' : 'New links start ${_fmtWhen(_startAt!)}'),
-                ),
-                if (_startAt != null)
-                  IconButton(
-                    tooltip: 'Start immediately instead',
-                    icon: const Icon(Icons.close_rounded, size: 16),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => setState(() => _startAt = null),
-                  ),
-                const Spacer(),
-                if (err != null) Text(err, style: tt.bodySmall?.copyWith(color: cs.error)),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _sectionBar(BuildContext context, List<JobStatus> jobs) {
-    final tt = Theme.of(context).textTheme;
-    return Row(
-      children: [
-        Text('Downloads', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
-        const Spacer(),
-        TextButton.icon(
-          onPressed: jobs.any((j) => !j.isTerminal) ? widget.controller.cancelAll : null,
-          icon: const Icon(Icons.stop_circle_outlined, size: 18),
-          label: const Text('Cancel all'),
-        ),
-        TextButton.icon(
-          onPressed: jobs.any((j) => j.isTerminal) ? widget.controller.clearFinished : null,
-          icon: const Icon(Icons.playlist_remove_rounded, size: 18),
-          label: const Text('Clear finished'),
-        ),
-      ],
-    );
+    return Padding(padding: const EdgeInsets.fromLTRB(20, 8, 12, 0), child: row);
   }
 
   Widget _empty(BuildContext context) {
@@ -646,17 +763,12 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(color: cs.primary.withValues(alpha: 0.08), shape: BoxShape.circle),
-            child: Icon(Icons.download_outlined, size: 26, color: cs.primary),
-          ),
+          SizedBox(width: 44, height: 44, child: CustomPaint(painter: SpateGlyph(cs.primary.withValues(alpha: 0.55)))),
           const SizedBox(height: 14),
           Text('Nothing downloading', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text(
-            'Downloads you start in the browser show up here.\nOr paste a link above.',
+            'Downloads you start in the browser show up here.\nPaste links above, drop them on the window, or press ${Platform.isMacOS ? 'Cmd' : 'Ctrl'}-V.',
             textAlign: TextAlign.center,
             style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           ),
@@ -666,279 +778,39 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// "14:30" for today, "Tue 14:30" within a week, else "2026-10-03 14:30".
-String _fmtWhen(DateTime t) {
-  String two(int n) => n.toString().padLeft(2, '0');
-  final now = DateTime.now();
-  final hm = '${two(t.hour)}:${two(t.minute)}';
-  final sameDay = t.year == now.year && t.month == now.month && t.day == now.day;
-  if (sameDay) return hm;
-  if (t.difference(now).inDays < 6) {
-    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    return '${names[t.weekday - 1]} $hm';
-  }
-  return '${t.year}-${two(t.month)}-${two(t.day)} $hm';
+class _PasteIntent extends Intent {
+  const _PasteIntent();
+}
+
+class _SettingsIntent extends Intent {
+  const _SettingsIntent();
 }
 
 class _Pill extends StatelessWidget {
   final String text;
   final Color color;
   final bool subtle;
-  const _Pill({required this.text, required this.color, this.subtle = false});
+  final Widget? leading;
+  const _Pill({required this.text, required this.color, this.subtle = false, this.leading});
   @override
   Widget build(BuildContext context) => AnimatedContainer(
     duration: kMotion,
     curve: kMotionCurve,
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: subtle ? 0.10 : 0.12),
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: AnimatedDefaultTextStyle(
-      duration: kMotion,
-      curve: kMotionCurve,
-      style: Theme.of(context).textTheme.labelSmall!.copyWith(color: color, fontWeight: FontWeight.w600),
-      child: Text(text),
-    ),
-  );
-}
-
-class DownloadCard extends StatefulWidget {
-  final JobStatus job;
-  final SpateController controller;
-  const DownloadCard({super.key, required this.job, required this.controller});
-  @override
-  State<DownloadCard> createState() => _DownloadCardState();
-}
-
-class _DownloadCardState extends State<DownloadCard> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final job = widget.job;
-    final c = widget.controller;
-    final cs = Theme.of(context).colorScheme;
-    final tt = Theme.of(context).textTheme;
-    final bps = c.speedOf(job.id);
-    final (Color color, String label) = switch (job.state) {
-      'done' => (const Color(0xFF16A34A), 'Completed'),
-      'failed' => (cs.error, 'Failed'),
-      'paused' => (cs.outline, 'Paused'),
-      'cancelled' => (cs.outline, 'Cancelled'),
-      'pending' when job.isScheduled => (cs.tertiary, 'Scheduled'),
-      'pending' => (cs.onSurfaceVariant, 'Queued'),
-      _ => (cs.primary, 'Downloading'),
-    };
-    final details = <String>[
-      if (job.host.isNotEmpty) job.host,
-      if (job.isScheduled) 'starts ${_fmtWhen(job.startAt!)}',
-      if (job.state == 'running') '${humanBytes(bps.round())}/s',
-      if (job.state == 'running' && job.total > 0 && bps > 0) '${humanEta((job.total - job.bytes) / bps)} left',
-      if (job.state == 'running' && job.retries > 0) 'retry ${job.retries}',
-      if (job.state == 'failed' && job.error != null) job.error!,
-    ].join('  ·  ');
-    final right = job.total > 0 ? '${humanBytes(job.bytes)} / ${humanBytes(job.total)}' : humanBytes(job.bytes);
-    final pct = job.total > 0 ? '${(job.fraction * 100).toStringAsFixed(0)}%' : '';
-
-    // New rows rise in once (keyed by job id), then hover only lifts the shadow.
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
-      duration: kMotion,
-      curve: kMotionCurve,
-      builder: (context, v, child) => Opacity(
-        opacity: v,
-        child: Transform.translate(offset: Offset(0, (1 - v) * 6), child: child),
-      ),
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
-        child: AnimatedContainer(
-          duration: kMotion,
-          curve: kMotionCurve,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(_kRadius),
-            boxShadow: _hover
-                ? [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 14, offset: const Offset(0, 4))]
-                : const [],
-          ),
-          child: Card(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    job.filename,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                _Pill(text: label, color: color),
-                              ],
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              details,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      ..._actions(context),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        // The bar animates for most of every 500 ms tick, so
-                        // it gets its own repaint boundary (the card and the
-                        // list around it do not re-rasterise) and draws its
-                        // rounded corners itself instead of through a clip
-                        // layer, which the renderer would back with an
-                        // offscreen surface per row.
-                        child: RepaintBoundary(
-                          child: TweenAnimationBuilder<double>(
-                            tween: Tween(end: job.fraction),
-                            duration: kMotionSlow,
-                            curve: kMotionCurve,
-                            builder: (_, v, _) => LinearProgressIndicator(
-                              value: job.total > 0 ? v : (job.state == 'running' ? null : 0),
-                              minHeight: 6,
-                              borderRadius: BorderRadius.circular(4),
-                              color: color,
-                              backgroundColor: cs.surfaceContainerHighest,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 190,
-                        child: Text(
-                          '$right${pct.isEmpty ? '' : '  ·  $pct'}',
-                          textAlign: TextAlign.right,
-                          style: tt.labelSmall?.copyWith(
-                            color: cs.onSurfaceVariant,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _actions(BuildContext context) {
-    final job = widget.job;
-    final c = widget.controller;
-    IconButton btn(IconData icon, String tip, VoidCallback? onTap) =>
-        IconButton(tooltip: tip, icon: Icon(icon, size: 18), onPressed: onTap, visualDensity: VisualDensity.compact);
-    final primary = switch (job.state) {
-      'pending' when job.isScheduled => btn(Icons.play_arrow_rounded, 'Start now', () => c.startNow(job.id)),
-      'running' || 'pending' => btn(Icons.pause_rounded, 'Pause', () => c.pause(job.id)),
-      'paused' => btn(Icons.play_arrow_rounded, 'Resume', () => c.resume(job.id)),
-      'done' => btn(
-        Icons.folder_open_rounded,
-        Platform.isMacOS ? 'Show in Finder' : 'Show in folder',
-        () => c.reveal(job.out),
-      ),
-      _ => btn(Icons.refresh_rounded, 'Retry', () => c.retry(job)),
-    };
-    final more = PopupMenuButton<String>(
-      tooltip: 'More',
-      icon: const Icon(Icons.more_horiz_rounded, size: 18),
-      onSelected: (k) {
-        switch (k) {
-          case 'copy':
-            Clipboard.setData(ClipboardData(text: job.url));
-          case 'startnow':
-            c.startNow(job.id);
-          case 'schedule':
-            pickWhen(context, job.startAt).then((at) {
-              if (at != null) c.schedule(job.id, at);
-            });
-          case 'open':
-            c.openFile(job.out);
-          case 'reveal':
-            c.reveal(job.out);
-          case 'cancel':
-            c.cancel(job.id);
-          case 'remove':
-            c.remove(job.id);
-        }
-      },
-      itemBuilder: (_) => [
-        const PopupMenuItem(
-          value: 'copy',
-          child: ListTile(dense: true, leading: Icon(Icons.link_rounded), title: Text('Copy link')),
-        ),
-        if (job.isScheduled)
-          const PopupMenuItem(
-            value: 'startnow',
-            child: ListTile(dense: true, leading: Icon(Icons.play_arrow_rounded), title: Text('Start now')),
-          ),
-        if (job.state == 'pending' || job.state == 'paused')
-          PopupMenuItem(
-            value: 'schedule',
-            child: ListTile(
-              dense: true,
-              leading: const Icon(Icons.schedule_rounded),
-              title: Text(job.isScheduled ? 'Reschedule' : 'Schedule'),
-            ),
-          ),
-        if (job.state == 'done')
-          const PopupMenuItem(
-            value: 'open',
-            child: ListTile(dense: true, leading: Icon(Icons.open_in_new_rounded), title: Text('Open file')),
-          ),
-        if (job.state == 'done')
-          PopupMenuItem(
-            value: 'reveal',
-            child: ListTile(
-              dense: true,
-              leading: const Icon(Icons.folder_open_rounded),
-              title: Text(Platform.isMacOS ? 'Show in Finder' : 'Show in folder'),
-            ),
-          ),
-        if (!job.isTerminal)
-          const PopupMenuItem(
-            value: 'cancel',
-            child: ListTile(dense: true, leading: Icon(Icons.close_rounded), title: Text('Cancel')),
-          ),
-        const PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'remove',
-          child: ListTile(
-            dense: true,
-            leading: const Icon(Icons.delete_outline_rounded),
-            title: Text(job.state == 'done' ? 'Remove from list' : 'Remove and delete partial file'),
+    decoration: BoxDecoration(color: color.withValues(alpha: subtle ? 0.10 : 0.12), borderRadius: BorderRadius.circular(999)),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (leading != null) ...[leading!, const SizedBox(width: 8)],
+        Text(
+          text,
+          style: Theme.of(context).textTheme.labelSmall!.copyWith(
+            color: color,
+            fontWeight: FontWeight.w600,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
       ],
-    );
-    return [primary, more];
-  }
+    ),
+  );
 }

@@ -73,12 +73,3 @@ func (m *Meter) Snapshot() (done int64, bps float64, eta time.Duration) {
 	}
 	return done, bps, eta
 }
-
-// Average returns the mean bytes/sec over the whole transfer so far.
-func (m *Meter) Average() float64 {
-	elapsed := time.Since(m.start).Seconds()
-	if elapsed <= 0 {
-		return 0
-	}
-	return float64(m.done.Load()) / elapsed
-}

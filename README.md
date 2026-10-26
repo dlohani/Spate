@@ -38,11 +38,30 @@ Implemented (headless engine + CLI):
 - Wi-Fi-only and battery-aware gating (macOS and Linux providers; Windows
   reports unsupported).
 
-Also implemented: the Flutter desktop app (macOS, Windows, Linux; tray,
-single instance, settings), the browser extension (Chromium family, Firefox,
-Safari) with its native-messaging host, a persisted queue (`queue.json`) that
-restores paused, scheduled and in-flight downloads with their cookies after a
-restart, and an engine log (`spate.log`).
+The desktop app (macOS, Windows, Linux) is a thin shell over that engine:
+
+- A dense queue: running, queued, scheduled, paused, then a collapsible
+  Finished history that survives restarts (last 200, 30 days). Rows select
+  with click, Shift and Cmd/Ctrl; arrows move, Space pauses and resumes,
+  Delete removes; right-click for the row menu. Failed rows open to show the
+  full error with Retry.
+- Paste one or many links, drop them (or a text file of links) on the window,
+  or press Cmd-V anywhere; a folder picker and a schedule menu (tonight,
+  tomorrow morning, when the download window opens, custom) inside the field.
+- System notifications when a download finishes or fails while the window is
+  hidden, with Open and Show in Finder.
+- Menu bar / tray icon with a live "2 · 43%" summary, Pause all and Resume
+  all; show the app in the menu bar and Dock, menu bar only, or Dock only.
+- Settings apply as you change them: folders with Browse buttons, category
+  and per-site rules, speed limit presets with time windows, a download
+  window, recurring downloads.
+- The browser extension (Chromium family, Firefox, Safari) with its
+  native-messaging host, a persisted queue (`queue.json`) that restores
+  paused, scheduled and in-flight downloads with their cookies, and an engine
+  log (`spate.log`).
+
+![Spate on macOS, light](docs/ui-light.png)
+![Spate on macOS, dark](docs/ui-dark.png)
 
 Not implemented yet: a floating download button for non-DRM streaming media;
 native `.rar`/`.7z` extraction; a headless daemon separate from the UI.

@@ -75,6 +75,8 @@ class Spate {
   late final _IdActD _discard = _lib.lookupFunction<_IdActC, _IdActD>('SpateDiscard');
   late final _HandleIntD _clearFinished = _lib.lookupFunction<_HandleIntC, _HandleIntD>('SpateClearFinished');
   late final _HandleVoidD _cancelAll = _lib.lookupFunction<_HandleVoidC, _HandleVoidD>('SpateCancelAll');
+  late final _HandleVoidD _pauseAll = _lib.lookupFunction<_HandleVoidC, _HandleVoidD>('SpatePauseAll');
+  late final _HandleVoidD _resumeAll = _lib.lookupFunction<_HandleVoidC, _HandleVoidD>('SpateResumeAll');
   late final _HandleStrD _status = _lib.lookupFunction<_HandleStrC, _HandleStrD>('SpateStatusJSON');
   late final _HandleIntD _pairPending = _lib.lookupFunction<_HandleIntC, _HandleIntD>('SpatePairPending');
   late final _ResolveD _pairResolve = _lib.lookupFunction<_ResolveC, _ResolveD>('SpatePairResolve');
@@ -226,6 +228,8 @@ class Spate {
   bool discard(String id) => _idAct(_discard, id);
   int clearFinished() => _clearFinished(_h);
   void cancelAll() => _cancelAll(_h);
+  void pauseAll() => _pauseAll(_h);
+  void resumeAll() => _resumeAll(_h);
 
   List<JobStatus> statuses() {
     final raw = jsonDecode(_take(_status(_h))) as List<dynamic>;
