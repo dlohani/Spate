@@ -283,7 +283,10 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name := req.Filename
+	// The extension sends a bare file name, but the server does not rely on
+	// it: directories and traversal are stripped here so a hand-off can only
+	// ever name a file inside the resolved folder.
+	name := safeBase(req.Filename)
 	if name == "" {
 		name = filenameFor(req.URL)
 	}
@@ -367,6 +370,19 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// safeBase reduces a client-supplied file name to a single path element:
+// both separator styles are honoured, "..", "." and empty collapse to "" so
+// the caller falls back to a name derived from the URL.
+func safeBase(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = path.Base(path.Clean("/" + name))
+	switch name {
+	case "/", ".", "..", "":
+		return ""
+	}
+	return name
 }
 
 func filenameFor(rawURL string) string {

@@ -136,7 +136,9 @@ func Load(path, downloadDir string) (*Settings, error) {
 	return s, nil
 }
 
-// Save writes the settings atomically.
+// Save writes the settings atomically: a uniquely named temp file beside the
+// target (so concurrent saves cannot rename each other's half-written file),
+// mode 0600, then rename.
 func (s *Settings) Save(path string) error {
 	s.mu.Lock()
 	b, err := json.MarshalIndent(s, "", "  ")
@@ -147,11 +149,26 @@ func (s *Settings) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "settings-*.tmp")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	name := tmp.Name()
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return os.Rename(name, path)
 }
 
 // JSON returns the settings document.
