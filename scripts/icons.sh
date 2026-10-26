@@ -9,7 +9,7 @@
 #   assets/brand/icon-fg-1024.png   glyph only (Android adaptive foreground)
 #   assets/brand/spate.ico        multi-size Windows icon (exe, installer)
 #   apps/flutter/{ios,android,macos,windows,linux}  via flutter_launcher_icons
-#   apps/flutter/web/favicon.png + icons
+
 #   browser/extension/icons/{16,32,48,128}.png (+ manifest "icons")
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
