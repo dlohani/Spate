@@ -119,6 +119,45 @@ type Status struct {
 	StartAt  time.Time // scheduled start (zero = as soon as a slot is free)
 }
 
+// StatusJSON is the one wire shape for a job status, shared by every export
+// (C ABI, gomobile, loopback /jobs) and mirrored by the Dart JobStatus model.
+// Fields are added, never renamed or removed.
+type StatusJSON struct {
+	ID       string `json:"id"`
+	URL      string `json:"url"`
+	Out      string `json:"out"`
+	State    string `json:"state"`
+	Priority int    `json:"priority"`
+	Bytes    int64  `json:"bytes"`
+	Total    int64  `json:"total"`
+	Retries  int    `json:"retries"`
+	StartAt  int64  `json:"startAt,omitempty"` // Unix seconds; only for scheduled jobs
+	Error    string `json:"error,omitempty"`
+}
+
+// JSON converts a Status to its wire shape.
+func (s Status) JSON() StatusJSON {
+	j := StatusJSON{ID: s.ID, URL: s.URL, Out: s.Out, State: s.State.String(),
+		Priority: s.Priority, Bytes: s.Bytes, Total: s.Total, Retries: s.Retries}
+	if !s.StartAt.IsZero() {
+		j.StartAt = s.StartAt.Unix()
+	}
+	if s.Err != nil {
+		j.Error = s.Err.Error()
+	}
+	return j
+}
+
+// StatusesJSON converts a status list to wire shapes (never nil, so it
+// marshals as [] rather than null).
+func StatusesJSON(sts []Status) []StatusJSON {
+	out := make([]StatusJSON, 0, len(sts))
+	for _, s := range sts {
+		out = append(out, s.JSON())
+	}
+	return out
+}
+
 // Manager runs a set of jobs with bounded concurrency.
 type Manager struct {
 	mu      sync.Mutex

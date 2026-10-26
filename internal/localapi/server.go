@@ -326,17 +326,6 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": id})
 }
 
-type jobJSON struct {
-	ID      string `json:"id"`
-	URL     string `json:"url"`
-	Out     string `json:"out"`
-	State   string `json:"state"`
-	Bytes   int64  `json:"bytes"`
-	Total   int64  `json:"total"`
-	Retries int    `json:"retries"`
-	Error   string `json:"error,omitempty"`
-}
-
 // handleJobs returns the queue with per-job state and last error (token-guarded),
 // so failures are visible to the extension's Options page and to diagnostics.
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
@@ -353,17 +342,7 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.noteExtension(r)
-	sts := s.mgr.Statuses()
-	out := make([]jobJSON, 0, len(sts))
-	for _, st := range sts {
-		j := jobJSON{ID: st.ID, URL: st.URL, Out: st.Out, State: st.State.String(),
-			Bytes: st.Bytes, Total: st.Total, Retries: st.Retries}
-		if st.Err != nil {
-			j.Error = st.Err.Error()
-		}
-		out = append(out, j)
-	}
-	writeJSON(w, http.StatusOK, out)
+	writeJSON(w, http.StatusOK, job.StatusesJSON(s.mgr.Statuses()))
 }
 
 func (s *Server) authOK(r *http.Request) bool {
