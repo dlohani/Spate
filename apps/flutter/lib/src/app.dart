@@ -25,6 +25,16 @@ class CascadeController extends ChangeNotifier {
   /// window (the desktop shell hooks window_manager here).
   void Function()? onShowRequested;
 
+  /// Called after every refresh of [jobs], visible or not: the tray summary
+  /// hooks here. Widgets listen through [addListener], which is only notified
+  /// while the window is visible, so a hidden window does not rebuild and
+  /// rasterise frames for every progress tick.
+  void Function()? onJobsRefreshed;
+
+  /// Whether the window is on screen. The shell sets it on show and hide;
+  /// while false, widget listeners are not notified (see [onJobsRefreshed]).
+  bool visible = true;
+
   CascadeController(this.core) {
     _tick();
     _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _tick());
@@ -57,7 +67,15 @@ class CascadeController extends ChangeNotifier {
     _rates.removeWhere((id, _) => !next.any((j) => j.id == id));
     jobs = next;
     if (core.showPending) onShowRequested?.call();
-    notifyListeners();
+    onJobsRefreshed?.call();
+    if (visible || force) notifyListeners();
+  }
+
+  /// The shell calls this when the window becomes visible so the first frame
+  /// shows the current queue rather than the one from before it was hidden.
+  void setVisible(bool v) {
+    visible = v;
+    if (v) _tick(force: true);
   }
 
   double speedOf(String id) => _rates[id]?.bps ?? 0;

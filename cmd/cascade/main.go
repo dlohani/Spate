@@ -49,6 +49,7 @@ func run(args []string) int {
 		wifiOnly = fs.Bool("wifi-only", false, "only download while on Wi-Fi (macOS, Linux)")
 		battMin  = fs.Int("battery-min", 0, "only download when battery >= N%% or on AC power (macOS, Linux)")
 		verbose  = fs.Bool("v", false, "log engine decisions (retries, resume, gating) to stderr")
+		wbuf     = fs.String("wbuf", "", "write buffer per connection, e.g. 1M (default 512K; tuning)")
 	)
 	fs.Var(&headers, "H", "extra request header 'Key: Value' (repeatable)")
 	fs.Usage = func() {
@@ -79,6 +80,11 @@ func run(args []string) int {
 		fmt.Fprintf(os.Stderr, "cascade: invalid --limit: %v\n", err)
 		return 2
 	}
+	wb, err := parseSize(*wbuf)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cascade: invalid --wbuf: %v\n", err)
+		return 2
+	}
 	hdrMap, err := headers.toMap()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "cascade: invalid -H: %v\n", err)
@@ -96,6 +102,7 @@ func run(args []string) int {
 
 	opts := download.Options{
 		Conns:         *conns,
+		WriteBuffer:   wb,
 		Retries:       *retries,
 		RateLimit:     rate,
 		SHA256:        *sha,

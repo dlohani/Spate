@@ -9,6 +9,7 @@
 package download
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ type Options struct {
 	Conns             int           // max parallel connections (default 8)
 	MinSegment        int64         // smallest initial segment size in bytes (default 1 MiB)
 	WindowSize        int64         // per-request window for windowed fetching (default 4 MiB)
+	WriteBuffer       int64         // bytes coalesced per WriteAt (default 512 KiB; body reads are small and unaligned)
 	StealMinRemaining int64         // min tail to justify a work-steal split (default 2*WindowSize)
 	Retries           int           // per-window extra attempts; 0 = keep retrying for RetryFor
 	RetryFor          time.Duration // how long a window keeps retrying when Retries == 0 (default 15m)
@@ -72,6 +74,12 @@ func (o *Options) setDefaults() {
 	}
 	if o.WindowSize <= 0 {
 		o.WindowSize = 4 << 20 // 4 MiB
+	}
+	if o.WriteBuffer <= 0 {
+		o.WriteBuffer = 512 << 10 // 512 KiB: same kernel cost as 1 MiB, half the memory per connection
+	}
+	if o.WriteBuffer > o.WindowSize {
+		o.WriteBuffer = o.WindowSize
 	}
 	// A steal must leave the victim's in-flight window untouched, so the split
 	// point is guaranteed to sit beyond it: require at least two windows.
@@ -318,6 +326,7 @@ func (d *Downloader) Run(ctx context.Context) error {
 	if err := d.file.Sync(); err != nil {
 		return err
 	}
+	releaseCache(d.file)
 	if err := verifySHA256(PartPath(d.out), d.opts.SHA256); err != nil {
 		return err
 	}
@@ -432,6 +441,7 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 			if err != nil {
 				return fmt.Errorf("resume: reopen output: %w", err)
 			}
+			bypassCache(f)
 			d.file = f
 			d.ctrl = existing
 			return nil
@@ -455,6 +465,7 @@ func (d *Downloader) prepare(ctx context.Context, probe ProbeResult) error {
 		f.Close()
 		return fmt.Errorf("preallocate %d bytes: %w", probe.Size, err)
 	}
+	bypassCache(f)
 	d.file = f
 	segs := PlanSegments(probe.Size, d.opts.Conns, d.opts.MinSegment)
 	d.ctrl = NewControl(d.out, probe.FinalURL, probe.Size, probe.Validator(), segs)
@@ -512,6 +523,9 @@ func (d *Downloader) runWorkers(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			// One write buffer per worker for the whole run: body reads land
+			// in it and reach the file in aligned WriteBuffer-sized pieces.
+			wbuf := make([]byte, d.opts.WriteBuffer)
 			for {
 				if ctx.Err() != nil {
 					fail(ctx.Err())
@@ -521,7 +535,7 @@ func (d *Downloader) runWorkers(ctx context.Context) error {
 				if !ok {
 					return // no more work worth doing
 				}
-				err := d.fetchPiece(ctx, idx)
+				err := d.fetchPiece(ctx, idx, wbuf)
 				d.ctrl.finish(idx)
 				if err != nil {
 					fail(err)
@@ -577,8 +591,10 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 		return err
 	}
 	defer f.Close()
+	bypassCache(f)
 
 	d.setMeter(progress.New(size))
+	bw := bufio.NewWriterSize(f, int(d.opts.WriteBuffer))
 	buf := make([]byte, chunkSize)
 	for {
 		n, rerr := body.Read(buf)
@@ -586,7 +602,7 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 			if werr := d.limiter.Wait(ctx, n); werr != nil {
 				return werr
 			}
-			if _, werr := f.Write(buf[:n]); werr != nil {
+			if _, werr := bw.Write(buf[:n]); werr != nil {
 				return werr
 			}
 			d.meter.Add(int64(n))
@@ -598,9 +614,13 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 			return rerr
 		}
 	}
+	if err := bw.Flush(); err != nil {
+		return err
+	}
 	if err := f.Sync(); err != nil {
 		return err
 	}
+	releaseCache(f)
 	if err := verifySHA256(PartPath(d.out), d.opts.SHA256); err != nil {
 		return err
 	}
