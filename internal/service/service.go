@@ -366,7 +366,7 @@ func ResumeOrphans(mgr *job.Manager, dir string, limiter *download.Limiter) int 
 		if err != nil || ctrl == nil || ctrl.URL == "" {
 			continue
 		}
-		if _, err := os.Stat(out); err != nil {
+		if !hasPartial(out) {
 			continue
 		}
 		if _, err := mgr.Add(job.Spec{URL: ctrl.URL, Out: out, Options: download.Options{Resume: true, SharedLimiter: limiter}}); err == nil {
@@ -374,6 +374,16 @@ func ResumeOrphans(mgr *job.Manager, dir string, limiter *download.Limiter) int 
 		}
 	}
 	return n
+}
+
+// hasPartial reports whether partial data exists for out: the .part file, or
+// (legacy layout) the output path itself.
+func hasPartial(out string) bool {
+	if _, err := os.Stat(download.PartPath(out)); err == nil {
+		return true
+	}
+	_, err := os.Stat(out)
+	return err == nil
 }
 
 // FilenameFor derives a file name from a URL path, defaulting to download.bin.

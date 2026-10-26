@@ -442,7 +442,7 @@ func TestDiscardDeletesPartialAndClearFinishedDropsCancelled(t *testing.T) {
 	if _, ok := m.Status(a); ok {
 		t.Fatal("job still listed after Discard")
 	}
-	for _, p := range []string{filepath.Join(dir, "a.bin"), filepath.Join(dir, "a.bin.cascade")} {
+	for _, p := range []string{filepath.Join(dir, "a.bin"), filepath.Join(dir, "a.bin.part"), filepath.Join(dir, "a.bin.cascade")} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Fatalf("%s still exists after Discard (err=%v)", p, err)
 		}
@@ -453,13 +453,13 @@ func TestDiscardDeletesPartialAndClearFinishedDropsCancelled(t *testing.T) {
 		t.Fatalf("Cancel: %v", err)
 	}
 	waitFor(t, 5*time.Second, func() bool { st, _ := m.Status(b); return st.State == Cancelled })
-	if _, err := os.Stat(filepath.Join(dir, "b.bin")); err != nil {
+	if _, err := os.Stat(download.PartPath(filepath.Join(dir, "b.bin"))); err != nil {
 		t.Fatalf("partial should survive Cancel: %v", err)
 	}
 	if n := m.ClearFinished(); n != 1 {
 		t.Fatalf("ClearFinished = %d, want 1", n)
 	}
-	for _, p := range []string{filepath.Join(dir, "b.bin"), filepath.Join(dir, "b.bin.cascade")} {
+	for _, p := range []string{filepath.Join(dir, "b.bin"), filepath.Join(dir, "b.bin.part"), filepath.Join(dir, "b.bin.cascade")} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Fatalf("%s still exists after ClearFinished (err=%v)", p, err)
 		}

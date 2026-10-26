@@ -133,11 +133,12 @@ func (c *Control) BytesDone() int64 {
 	return t
 }
 
-// RemovePartial deletes a download's output file and its resume sidecar.
-// Missing files are not an error. Used when a job is discarded from a queue.
+// RemovePartial deletes a download's partial data (the .part file, or a
+// legacy partial at the output path) and its resume sidecar. Missing files
+// are not an error. Used when a job is discarded from a queue.
 func RemovePartial(outPath string) error {
 	var first error
-	for _, p := range []string{outPath, controlPath(outPath)} {
+	for _, p := range []string{PartPath(outPath), outPath, controlPath(outPath)} {
 		if err := os.Remove(p); err != nil && !os.IsNotExist(err) && first == nil {
 			first = err
 		}
