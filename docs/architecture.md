@@ -62,8 +62,8 @@ Do not reuse one implementation; use each OS's idiom:
 - **iOS:** background `URLSession` with `allowsCellularAccess=false` and
   `BGTaskScheduler`; the OS enforces network/power policy.
 - **Desktop:** the engine's `download.GateFunc` with the `internal/policy`
-  provider (macOS implemented via `pmset`/`route`/`networksetup`; Linux/Windows
-  providers are TODO).
+  provider (macOS via `pmset`/`route`/`networksetup`; Linux via `ip route`,
+  `nmcli` and `/sys/class/power_supply`; Windows provider is TODO).
 
 The engine already treats a closed gate as resumable (returns `*GateError`; the
 job manager re-queues), so native gating just needs to open/close the gate.

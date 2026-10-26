@@ -33,8 +33,8 @@ Implemented (headless engine + CLI):
 - Job manager: queue, priority, scheduled start, multiple downloads in parallel,
   per-job pause/resume.
 - Post-download `.zip` extraction (with zip-slip protection).
-- Wi-Fi-only and battery-aware gating (macOS provider; other OSes report
-  unsupported).
+- Wi-Fi-only and battery-aware gating (macOS and Linux providers; Windows
+  reports unsupported).
 
 Not implemented yet: desktop GUI; the browser extension with a floating download
 button for non-DRM streaming media; native `.rar`/`.7z` extraction.
@@ -228,8 +228,9 @@ Flags:
     -insecure          skip TLS certificate verification
     -extract <dir>     after download, extract a .zip into <dir>
     -max-concurrent N  simultaneous downloads when several URLs are given (default 2)
-    -wifi-only         only download while on Wi-Fi (macOS)
-    -battery-min N     only download when battery >= N%% or on AC power (macOS)
+    -wifi-only         only download while on Wi-Fi (macOS, Linux)
+    -battery-min N     only download when battery >= N% or on AC power (macOS, Linux)
+    -v                 log engine decisions (retries, resume, gating) to stderr
 
 Examples:
 
