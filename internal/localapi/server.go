@@ -52,9 +52,8 @@ type Server struct {
 	ResolveDir func(rawURL, filename string) string
 
 	mu          sync.Mutex
-	lastExt     time.Time // last contact from a browser extension (heartbeat)
-	pairBusy    bool      // a pairing prompt is already showing
-	showPending bool      // a second launch asked this instance to show its window
+	pairBusy    bool // a pairing prompt is already showing
+	showPending bool // a second launch asked this instance to show its window
 }
 
 // ShowPending reports (and clears) a request from another launch of the app
@@ -75,14 +74,6 @@ func New(mgr *job.Manager, token, defaultDir string) *Server {
 
 // Addr returns the listening address (valid after Start).
 func (s *Server) Addr() string { return s.addr }
-
-// LastExtensionContact returns when a browser extension last checked in (zero
-// if never). The app shows this as a "connected" indicator.
-func (s *Server) LastExtensionContact() time.Time {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.lastExt
-}
 
 // Start binds 127.0.0.1 (DefaultPort, then two fallbacks the extension also
 // probes) and serves in the background. It returns the chosen address.
@@ -141,20 +132,11 @@ func originOK(r *http.Request) bool {
 		strings.HasPrefix(o, "safari-web-extension://")
 }
 
-func (s *Server) noteExtension(r *http.Request) {
-	if r.Header.Get("X-Spate-Client") == "extension" || r.URL.Query().Get("client") == "extension" {
-		s.mu.Lock()
-		s.lastExt = time.Now()
-		s.mu.Unlock()
-	}
-}
-
 func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
 	cors(w)
 	if r.Method == http.MethodOptions {
 		return
 	}
-	s.noteExtension(r)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "app": "spate", "version": version.Version})
 }
 
@@ -205,7 +187,6 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}()
 
-	s.noteExtension(r)
 	ok := s.PairFunc()
 	slog.Info("pair request", "origin", r.Header.Get("Origin"), "allowed", ok)
 	if !ok {
@@ -246,7 +227,6 @@ func (s *Server) handleAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	s.noteExtension(r)
 
 	var req addRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -342,7 +322,6 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	s.noteExtension(r)
 	writeJSON(w, http.StatusOK, job.StatusesJSON(s.mgr.Statuses()))
 }
 

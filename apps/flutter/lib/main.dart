@@ -4,6 +4,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:local_notifier/local_notifier.dart';
 import 'package:tray_manager/src/menu.dart' show Menu, MenuItem;
 import 'package:tray_manager/src/tray_listener.dart' show TrayListener;
 import 'package:tray_manager/src/tray_manager.dart' show TrayManager;
@@ -11,7 +12,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'src/app.dart';
 import 'src/ffi/spate_ffi.dart';
-import 'src/model/job.dart' show humanBytes;
+import 'src/model/job.dart';
 import 'src/model/ui_prefs.dart';
 
 Future<void> main(List<String> args) async {
@@ -56,11 +57,11 @@ Future<void> main(List<String> args) async {
   if (desktop) {
     await windowManager.ensureInitialized();
     // Open compact (the minimum size unless the user resized it last time);
-    // the layout scales up to 900px wide when the window is stretched.
+    // the layout scales up to 1100px wide when the window is stretched and
+    // the window may grow to the screen.
     final opts = WindowOptions(
       size: prefs.windowSize ?? kMinWindowSize,
       minimumSize: kMinWindowSize,
-      maximumSize: kMaxWindowSize,
       center: true,
       title: 'Spate',
       // macOS: the app's header row is the title bar (one "Spate", not a
@@ -88,15 +89,50 @@ Future<void> main(List<String> args) async {
     // capture keep running. Quit from the menu-bar/tray icon.
     await windowManager.setPreventClose(true);
     windowManager.addListener(_Resident(prefs, controller));
-    // A second launch (Spotlight, Finder, Dock) lands here as a show request.
+    // A second launch (Spotlight, Finder, Dock), or a pairing request while
+    // hidden, lands here as a show request.
     controller.onShowRequested = () => showWindow(controller);
     // Menu bar / tray icon and Dock / taskbar presence follow the preference,
     // now and whenever it changes in Settings.
     await _applyPresence(core, controller, prefs);
     prefs.addListener(() => _applyPresence(core, controller, prefs));
+    await _setupNotifications(controller, prefs);
   }
 
   runApp(SpateApp(controller: controller, prefs: prefs));
+}
+
+/// System notifications when a download finishes or fails while the window
+/// is hidden or in the background (the only feedback channel for a resident
+/// app). Open and Show in folder on the finished one, Retry on the failed.
+Future<void> _setupNotifications(SpateController controller, UiPrefs prefs) async {
+  try {
+    await localNotifier.setup(appName: 'Spate', shortcutPolicy: ShortcutPolicy.requireCreate);
+  } catch (_) {
+    return; // no notification service (some Linux sessions): nothing to hook
+  }
+  controller.onFinished = (job) {
+    if (!prefs.notify) return;
+    if (controller.visible && controller.focused) return; // the user is looking at it
+    final done = job.state == 'done';
+    final n = LocalNotification(
+      identifier: job.id,
+      title: done ? 'Download finished' : 'Download failed',
+      body: done ? '${job.filename}${job.total > 0 ? ' · ${humanBytes(job.total)}' : ''}' : '${job.filename}\n${job.error ?? ''}',
+      actions: done
+          ? [LocalNotificationAction(text: 'Open'), LocalNotificationAction(text: Platform.isMacOS ? 'Show in Finder' : 'Show in folder')]
+          : [LocalNotificationAction(text: 'Retry')],
+    );
+    n.onClick = () => showWindow(controller);
+    n.onClickAction = (i) {
+      if (done) {
+        i == 0 ? controller.openFile(job.out) : controller.reveal(job.out);
+      } else {
+        controller.retry(job);
+      }
+    };
+    n.show();
+  };
 }
 
 /// Shown instead of the app when the core cannot start: the reason from the
@@ -125,8 +161,7 @@ class _FatalApp extends StatelessWidget {
                   const SizedBox(height: 12),
                   SelectableText(message),
                   const SizedBox(height: 12),
-                  Text('Settings and queue files: $cfg. Fix or remove the file named above and open Spate again.',
-                      style: Theme.of(context).textTheme.bodySmall),
+                  Text('Settings and queue files: $cfg. Fix or remove the file named above and open Spate again.', style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 20),
                   FilledButton(onPressed: () => exit(1), child: const Text('Quit')),
                 ],
@@ -203,7 +238,13 @@ class _Resident with WindowListener {
 
   // The Dock icon (macOS) or a second launch brought the window back.
   @override
-  void onWindowFocus() => controller.setVisible(true);
+  void onWindowFocus() {
+    controller.setFocused(true);
+    controller.setVisible(true);
+  }
+
+  @override
+  void onWindowBlur() => controller.setFocused(false);
 
   // Minimise -> into the tray (when the preference is on): the window leaves
   // the Dock/taskbar and comes back from the tray menu or a second launch.
@@ -229,9 +270,10 @@ class _Resident with WindowListener {
   }
 }
 
-/// Menu-bar / tray icon: the app icon, plus a live summary
-/// while downloading: "2 · 43%" beside the icon on macOS, the same in the
-/// tooltip and as the first line of the menu everywhere.
+/// Menu-bar / tray icon: the Spate glyph (a template image on macOS, so it
+/// follows the menu bar's light or dark style; the colour icon elsewhere),
+/// plus a live summary while downloading: "2 · 43%" beside the icon on
+/// macOS, the same in the tooltip and as the first line of the menu.
 Future<void> _setupTray(Spate core, SpateController controller) async {
   final tray = TrayManager.instance;
   if (!_trayListening) {
@@ -239,12 +281,11 @@ Future<void> _setupTray(Spate core, SpateController controller) async {
     _trayListening = true;
   }
   try {
-    // The app icon itself, in colour, on every platform (assets/tray is
-    // generated from the master by scripts/tray-icon.swift). The monochrome
-    // template variant (icon.png) is kept for anyone who prefers the macOS
-    // convention.
-    final icon = Platform.isWindows ? 'assets/tray/icon.ico' : 'assets/tray/icon-color.png';
-    await tray.setIcon(icon);
+    if (Platform.isMacOS) {
+      await tray.setIcon('assets/tray/icon.png', isTemplate: true);
+    } else {
+      await tray.setIcon(Platform.isWindows ? 'assets/tray/icon.ico' : 'assets/tray/icon-color.png');
+    }
     final status = _TrayStatus(tray, core, controller);
     await status.apply(force: true);
     controller.onJobsRefreshed = status.apply; // runs hidden or shown
@@ -270,6 +311,7 @@ class _TrayStatus {
     final jobs = controller.jobs;
     final running = jobs.where((j) => j.state == 'running').toList();
     final queued = jobs.where((j) => j.state == 'pending').length;
+    final paused = jobs.where((j) => j.state == 'paused').length;
     var title = '';
     var line = queued > 0 ? '$queued queued' : 'Nothing downloading';
     if (running.isNotEmpty) {
@@ -283,7 +325,7 @@ class _TrayStatus {
       title = pct == null ? '$n' : '$n · $pct%';
       line = '$n downloading${pct == null ? '' : ' · $pct%'} · $speed${queued > 0 ? ' · $queued queued' : ''}';
     }
-    final key = '$title|$line';
+    final key = '$title|$line|$paused';
     if (!force && key == _last) return;
     _last = key;
     _lastAt = now;
@@ -300,6 +342,9 @@ class _TrayStatus {
           MenuItem(label: line, disabled: true),
           MenuItem.separator(),
           MenuItem(label: 'Open Spate', onClick: (_) => showWindow(controller)),
+          MenuItem.separator(),
+          MenuItem(label: 'Pause all', disabled: running.isEmpty && queued == 0, onClick: (_) => controller.pauseAll()),
+          MenuItem(label: 'Resume all', disabled: paused == 0, onClick: (_) => controller.resumeAll()),
           MenuItem.separator(),
           MenuItem(label: 'Quit Spate', onClick: (_) => quitApp(core)),
         ],

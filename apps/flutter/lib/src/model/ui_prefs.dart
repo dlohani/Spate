@@ -18,10 +18,6 @@ const accentColors = <String, Color>{
 /// Smallest window the layout is designed for; also the default size.
 const kMinWindowSize = Size(600, 440);
 
-/// Largest window: a download list does not benefit from a full screen, and
-/// the layout is designed for a utility-sized window.
-const kMaxWindowSize = Size(1100, 800);
-
 /// UI-only preferences (theme mode, accent, last window size). Stored as
 /// ui.json next to the core's settings.json so they survive reinstalls like
 /// everything else; the core never reads them.
@@ -44,6 +40,17 @@ class UiPrefs extends ChangeNotifier {
   /// With no tray icon there is nothing to minimise into.
   bool get hasTray => presence != 'dock';
 
+  /// System notification when a download finishes or fails while the window
+  /// is hidden or in the background.
+  bool notify = true;
+
+  void setNotify(bool v) {
+    if (v == notify) return;
+    notify = v;
+    _save();
+    notifyListeners();
+  }
+
   void setPresence(String p) {
     if (!presences.contains(p) || p == presence) return;
     presence = p;
@@ -61,7 +68,6 @@ class UiPrefs extends ChangeNotifier {
   /// Saved without notifying: the window itself already has the size.
   void setWindowSize(Size s) {
     if (s.width < kMinWindowSize.width || s.height < kMinWindowSize.height) return;
-    if (s.width > kMaxWindowSize.width || s.height > kMaxWindowSize.height) return;
     if (windowSize == s) return;
     windowSize = s;
     _save();
@@ -100,14 +106,10 @@ class UiPrefs extends ChangeNotifier {
       minimizeToTray = j['minimizeToTray'] as bool? ?? true;
       final p = j['presence'] as String?;
       if (p != null && presences.contains(p)) presence = p;
+      notify = j['notify'] as bool? ?? true;
       final w = (j['windowW'] as num?)?.toDouble();
       final h = (j['windowH'] as num?)?.toDouble();
-      if (w != null &&
-          h != null &&
-          w >= kMinWindowSize.width &&
-          h >= kMinWindowSize.height &&
-          w <= kMaxWindowSize.width &&
-          h <= kMaxWindowSize.height) {
+      if (w != null && h != null && w >= kMinWindowSize.width && h >= kMinWindowSize.height) {
         windowSize = Size(w, h);
       }
     } catch (_) {
@@ -124,6 +126,7 @@ class UiPrefs extends ChangeNotifier {
           'accent': accent,
           'minimizeToTray': minimizeToTray,
           'presence': presence,
+          'notify': notify,
           if (windowSize != null) 'windowW': windowSize!.width,
           if (windowSize != null) 'windowH': windowSize!.height,
         }),

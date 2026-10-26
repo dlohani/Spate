@@ -26,9 +26,6 @@ type Segment struct {
 // Length returns the total size of the segment's range.
 func (s Segment) Length() int64 { return s.End - s.Start + 1 }
 
-// Remaining returns bytes still to fetch for this segment.
-func (s Segment) Remaining() int64 { return s.Length() - s.Done }
-
 // Complete reports whether the whole range has been written.
 func (s Segment) Complete() bool { return s.Done >= s.Length() }
 

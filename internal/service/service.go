@@ -260,9 +260,13 @@ func (s *Service) AddWith(o AddOpts) (string, error) {
 	if dir == "" {
 		dir = s.Resolve(o.URL, name)
 	}
+	conns := o.Conns
+	if conns <= 0 {
+		conns = s.Settings.Snapshot().DefaultConns
+	}
 	return s.Mgr.Add(job.Spec{
 		URL: o.URL, Out: filepath.Join(dir, name), Priority: o.Priority, StartAt: o.StartAt,
-		Options: download.Options{Conns: o.Conns, SHA256: o.SHA256, Resume: true, SharedLimiter: s.limiter},
+		Options: download.Options{Conns: conns, SHA256: o.SHA256, Resume: true, SharedLimiter: s.limiter},
 	})
 }
 

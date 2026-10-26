@@ -33,7 +33,7 @@ edges, and they are where parity and cost problems come from.
   each platform must support.
 
 What already holds and must be kept: the Go core has no third-party modules;
-the Flutter shell has four pinned packages; the loopback API binds 127.0.0.1
+the Flutter shell has seven pinned packages (window, tray, ffi, notifications, folder picker, drag-and-drop); the loopback API binds 127.0.0.1
 only, guards writes with a 0600 token compared in constant time, rejects
 web-page origins and reduces a hand-off's file name to one path element;
 settings, the queue (`queue.json`, versioned) and sidecars are written

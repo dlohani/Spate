@@ -12,7 +12,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -80,9 +79,14 @@ type Settings struct {
 	QueueWindow        QueueWindow `json:"queueWindow"`
 	Recurring          []Recurring `json:"recurring"`
 	MaxConcurrent      int         `json:"maxConcurrent"`
+	DefaultConns       int         `json:"defaultConns"` // connections per download when a request does not say
 
 	mu sync.Mutex `json:"-"`
 }
+
+// DefaultConnsValue is the connections per download for a fresh install and
+// for a document that predates the field.
+const DefaultConnsValue = 8
 
 // DefaultCategories is the starting set; users can edit it.
 func DefaultCategories() []Category {
@@ -104,6 +108,7 @@ func Default(downloadDir string) *Settings {
 		OrganizeByCategory: false,
 		Categories:         DefaultCategories(),
 		MaxConcurrent:      3,
+		DefaultConns:       DefaultConnsValue,
 	}
 }
 
@@ -135,6 +140,9 @@ func Load(path, downloadDir string) (*Settings, error) {
 	}
 	if s.MaxConcurrent <= 0 {
 		s.MaxConcurrent = 3
+	}
+	if s.DefaultConns <= 0 {
+		s.DefaultConns = DefaultConnsValue
 	}
 	return s, nil
 }
@@ -220,8 +228,14 @@ func (s *Settings) Apply(b []byte) error {
 	if in.MaxConcurrent <= 0 {
 		in.MaxConcurrent = s.MaxConcurrent
 	}
+	if in.DefaultConns <= 0 {
+		in.DefaultConns = s.DefaultConns
+	}
+	if in.DefaultConns > 32 {
+		return fmt.Errorf("settings: connections per download %d is above the maximum of 32", in.DefaultConns)
+	}
 	s.DownloadDir, s.OrganizeByCategory, s.Categories, s.SiteRules = in.DownloadDir, in.OrganizeByCategory, in.Categories, in.SiteRules
-	s.Limits, s.QueueWindow, s.Recurring, s.MaxConcurrent = in.Limits, in.QueueWindow, in.Recurring, in.MaxConcurrent
+	s.Limits, s.QueueWindow, s.Recurring, s.MaxConcurrent, s.DefaultConns = in.Limits, in.QueueWindow, in.Recurring, in.MaxConcurrent, in.DefaultConns
 	return nil
 }
 
@@ -246,16 +260,6 @@ func (s *Settings) Resolve(rawURL, filename string) string {
 		}
 	}
 	return base
-}
-
-// CategoryName returns the matching category for a filename ("" if none).
-func (s *Settings) CategoryName(filename string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if c := s.categoryFor(filename); c != nil {
-		return c.Name
-	}
-	return ""
 }
 
 func (s *Settings) categoryFor(filename string) *Category {
@@ -346,6 +350,7 @@ func (s *Settings) Snapshot() Settings {
 		QueueWindow:   s.QueueWindow,
 		Recurring:     append([]Recurring(nil), s.Recurring...),
 		MaxConcurrent: s.MaxConcurrent,
+		DefaultConns:  s.DefaultConns,
 	}
 }
 
@@ -434,16 +439,4 @@ func parseHM(s string) (int, error) {
 		return 0, fmt.Errorf("settings: bad time %q (want HH:MM)", s)
 	}
 	return h*60 + m, nil
-}
-
-// SortedCategoryNames is a helper for UIs.
-func (s *Settings) SortedCategoryNames() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	names := make([]string, 0, len(s.Categories))
-	for _, c := range s.Categories {
-		names = append(names, c.Name)
-	}
-	sort.Strings(names)
-	return names
 }
