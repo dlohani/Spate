@@ -1,8 +1,8 @@
 // Package mobile is a gomobile-friendly facade over the download core, for
 // building native Android (.aar) and iOS (.xcframework) bindings:
 //
-//	gomobile bind -target=android -o cascade.aar        ./mobile
-//	gomobile bind -target=ios     -o Cascade.xcframework ./mobile
+//	gomobile bind -target=android -o spate.aar        ./mobile
+//	gomobile bind -target=ios     -o Spate.xcframework ./mobile
 //
 // The exported surface is restricted to gomobile-safe types (string, int, int64,
 // bool, error, and pointers to structs defined here). Structured queries are
@@ -15,8 +15,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"cascade/internal/download"
-	"cascade/internal/job"
+	"spate/internal/download"
+	"spate/internal/job"
 )
 
 // Client is a long-lived download service. Construct it with NewClient.

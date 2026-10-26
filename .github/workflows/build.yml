@@ -47,7 +47,7 @@ jobs:
       - name: build
         run: ./build mac extension --no-test
         env:
-          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+          SPATE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -84,7 +84,7 @@ jobs:
       - name: build
         run: ./build linux --no-test
         env:
-          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+          SPATE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
       - uses: actions/upload-artifact@v4
         with: { name: linux, path: "dist/linux/*" }
       - uses: actions/upload-artifact@v4
@@ -119,17 +119,17 @@ jobs:
           gcc --version | head -1
           makensis -VERSION
           7z | head -2
-      - name: Flutter Windows UI (builds cascade.dll natively when absent)
+      - name: Flutter Windows UI (builds spate.dll natively when absent)
         shell: pwsh
         env:
-          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+          SPATE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
         run: powershell -ExecutionPolicy Bypass -File scripts\flutter-windows.ps1 -CopyTo (Get-Location).Path
       - name: what the Flutter build changed in the tree (a dirty tree taints the label)
         run: git status --porcelain && git diff --stat
       - name: package
         env:
           CC: gcc
-          CASCADE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
+          SPATE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
         run: ./build windows --no-test
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: "dist/windows/*" }

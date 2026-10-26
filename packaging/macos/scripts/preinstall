@@ -1,11 +1,11 @@
 #!/bin/bash
-# Cascade .pkg preinstall (runs before files are written): refuse a downgrade
+# Spate .pkg preinstall (runs before files are written): refuse a downgrade
 # and stop any running instance so the swap is clean. The Distribution's
 # installation-check already explains a downgrade in the Installer UI; this
 # also covers `installer -pkg` from the command line.
 set -u
 NEW="@VERSION@"
-plist="$HOME/Applications/Cascade.app/Contents/Info.plist"
+plist="$HOME/Applications/Spate.app/Contents/Info.plist"
 if [ -f "$plist" ]; then
   have="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist" 2>/dev/null || true)"
   build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist" 2>/dev/null || true)"
@@ -13,15 +13,15 @@ if [ -f "$plist" ]; then
   if [ -n "$have" ] && ! { [ "$have" = "1.0.0" ] && [ "$build" = "1" ]; }; then
     newer="$(printf '%s\n%s\n' "$have" "$NEW" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)"
     if [ "$newer" = "$have" ] && [ "$have" != "$NEW" ]; then
-      echo "Cascade $have is installed; $NEW is older. Downgrades are not supported." >&2
+      echo "Spate $have is installed; $NEW is older. Downgrades are not supported." >&2
       exit 1
     fi
   fi
 fi
-launchctl bootout "gui/$(id -u)/dev.d3xt3r.cascade" >/dev/null 2>&1 || true
+launchctl bootout "gui/$(id -u)/com.amlabs.spate" >/dev/null 2>&1 || true
 # Match the process name exactly (-x): a -f pattern would also kill any shell
 # whose command line mentions the path.
-pkill -x cascade_app >/dev/null 2>&1 || true
-pkill -x cascade-mac >/dev/null 2>&1 || true
+pkill -x spate_app >/dev/null 2>&1 || true
+pkill -x spate-mac >/dev/null 2>&1 || true
 sleep 1
 exit 0

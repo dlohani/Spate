@@ -9,7 +9,7 @@ import (
 )
 
 func TestLastErrorAfterFailedStart(t *testing.T) {
-	t.Setenv("CASCADE_TOKEN", "test-token")
+	t.Setenv("SPATE_TOKEN", "test-token")
 	dir := t.TempDir()
 	sp := filepath.Join(dir, "settings.json")
 	if err := os.WriteFile(sp, []byte("{"), 0o600); err != nil {

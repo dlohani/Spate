@@ -1,10 +1,10 @@
 #!/bin/sh
-# Cascade .deb postinst: register the browser native-messaging host
+# Spate .deb postinst: register the browser native-messaging host
 # system-wide (Chrome, Chromium, Edge) and refresh desktop caches.
 set -e
-HOST=/usr/lib/cascade/cascade-host
-EXT=/usr/share/cascade/extension
-NAME=com.cascade.host
+HOST=/usr/lib/spate/spate-host
+EXT=/usr/share/spate/extension
+NAME=com.amlabs.spate.host
 DEVID=kamlaafhjnegfjdbnfajbanjfkemefga
 CHROME_WEBSTORE_ID="@CHROME_WEBSTORE_ID@"
 EDGE_ADDONS_ID="@EDGE_ADDONS_ID@"
@@ -13,7 +13,7 @@ EDGE_ADDONS_ID="@EDGE_ADDONS_ID@"
 ID="$(printf '%s' "$EXT" | sha256sum | cut -c1-32 | tr '0123456789abcdef' 'abcdefghijklmnop')"
 manifest="{
   \"name\": \"$NAME\",
-  \"description\": \"Cascade download manager native host\",
+  \"description\": \"Spate download manager native host\",
   \"path\": \"$HOST\",
   \"type\": \"stdio\",
   \"allowed_origins\": [\"chrome-extension://$ID/\", \"chrome-extension://$DEVID/\"${CHROME_WEBSTORE_ID:+, \"chrome-extension://$CHROME_WEBSTORE_ID/\"}${EDGE_ADDONS_ID:+, \"chrome-extension://$EDGE_ADDONS_ID/\"}]
@@ -27,22 +27,22 @@ for d in /etc/opt/chrome/native-messaging-hosts \
 done
 # Firefox (system-wide): fixed add-on ID, keyed by allowed_extensions.
 mkdir -p /usr/lib/mozilla/native-messaging-hosts
-printf '{\n  "name": "%s",\n  "description": "Cascade download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["cascade@d3xt3r.dev"]\n}\n' "$NAME" "$HOST" > "/usr/lib/mozilla/native-messaging-hosts/$NAME.json"
+printf '{\n  "name": "%s",\n  "description": "Spate download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["spate@amlabs.dev"]\n}\n' "$NAME" "$HOST" > "/usr/lib/mozilla/native-messaging-hosts/$NAME.json"
 chmod 0644 "/usr/lib/mozilla/native-messaging-hosts/$NAME.json"
 if command -v update-desktop-database >/dev/null 2>&1; then update-desktop-database -q /usr/share/applications || true; fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then gtk-update-icon-cache -q -f /usr/share/icons/hicolor || true; fi
 # Published extension: system-wide registration makes Chrome/Chromium install
 # it for every user on next start (Linux needs no prompt). Brave, Vivaldi and
-# Edge are registered per user by cascade-register.
+# Edge are registered per user by spate-register.
 if [ -n "$CHROME_WEBSTORE_ID" ]; then
   for d in /usr/share/google-chrome/extensions /usr/share/chromium/extensions; do
     mkdir -p "$d"
     printf '{ "external_update_url": "https://clients2.google.com/service/update2/crx" }\n' > "$d/$CHROME_WEBSTORE_ID.json"
   done
-  echo "cascade: Chrome/Chromium install the Cascade extension from the store on next start."
-  echo "cascade: Brave, Vivaldi, Edge or another extension ID: run cascade-register [ID] as your user."
+  echo "spate: Chrome/Chromium install the Spate extension from the store on next start."
+  echo "spate: Brave, Vivaldi, Edge or another extension ID: run spate-register [ID] as your user."
 else
-  echo "cascade: load $EXT in chrome://extensions (Developer mode -> Load unpacked)."
-  echo "cascade: Brave, Vivaldi or another extension ID: run cascade-register [ID] as your user."
+  echo "spate: load $EXT in chrome://extensions (Developer mode -> Load unpacked)."
+  echo "spate: Brave, Vivaldi or another extension ID: run spate-register [ID] as your user."
 fi
 exit 0

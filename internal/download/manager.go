@@ -26,8 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"cascade/internal/httpc"
-	"cascade/internal/progress"
+	"spate/internal/httpc"
+	"spate/internal/progress"
 )
 
 // Options configures a download.
@@ -42,7 +42,7 @@ type Options struct {
 	RateLimit         int64         // this download's cap in bytes/sec, 0 = unlimited
 	SharedLimiter     *Limiter      // if set, a limiter shared across downloads (global cap); overrides RateLimit
 	SHA256            string        // optional expected hex digest to verify on completion
-	Resume            bool          // reuse an existing .cascade sidecar if valid
+	Resume            bool          // reuse an existing .spate sidecar if valid
 	ExtractTo         string        // if set, extract a downloaded archive into this dir
 
 	// Request customization.
@@ -245,7 +245,7 @@ func (d *Downloader) finalize() error {
 }
 
 // Run executes the download to completion or returns an error. On error or
-// cancellation the partial file and its .cascade sidecar are left in place so a
+// cancellation the partial file and its .spate sidecar are left in place so a
 // later Run with Resume can continue.
 func (d *Downloader) Run(ctx context.Context) error {
 	client, err := httpc.New(httpc.Config{

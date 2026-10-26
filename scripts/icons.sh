@@ -7,7 +7,7 @@
 #   assets/brand/icon-1024.png      master (rounded square, transparent margin)
 #   assets/brand/icon-flat-1024.png opaque full-bleed (iOS, favicon)
 #   assets/brand/icon-fg-1024.png   glyph only (Android adaptive foreground)
-#   assets/brand/cascade.ico        multi-size Windows icon (exe, installer)
+#   assets/brand/spate.ico        multi-size Windows icon (exe, installer)
 #   apps/flutter/{ios,android,macos,windows,linux}  via flutter_launcher_icons
 #   apps/flutter/web/favicon.png + icons
 #   browser/extension/icons/{16,32,48,128}.png (+ manifest "icons")
@@ -17,7 +17,7 @@ export PATH="/opt/homebrew/bin:$PATH"
 BRAND="$ROOT/assets/brand"; mkdir -p "$BRAND"
 
 echo "==> master icon (Swift, SF Symbol arrow on a blue rounded square)"
-cat > /tmp/cascade-icon.swift <<'EOF'
+cat > /tmp/spate-icon.swift <<'EOF'
 import AppKit
 let out = CommandLine.arguments[1]; let mode = CommandLine.arguments[2]   // full | flat | fg
 let S: CGFloat = 1024
@@ -41,9 +41,9 @@ tinted.draw(in: NSRect(x: (S - sz.width)/2, y: (S - sz.height)/2, width: sz.widt
 NSGraphicsContext.restoreGraphicsState()
 try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: out))
 EOF
-swift /tmp/cascade-icon.swift "$BRAND/icon-1024.png" full
-swift /tmp/cascade-icon.swift "$BRAND/icon-flat-1024.png" flat
-swift /tmp/cascade-icon.swift "$BRAND/icon-fg-1024.png" fg
+swift /tmp/spate-icon.swift "$BRAND/icon-1024.png" full
+swift /tmp/spate-icon.swift "$BRAND/icon-flat-1024.png" flat
+swift /tmp/spate-icon.swift "$BRAND/icon-fg-1024.png" fg
 
 echo "==> browser extension icons"
 mkdir -p "$ROOT/browser/extension/icons"
@@ -52,11 +52,11 @@ for s in 16 32 48 128; do sips -z $s $s "$BRAND/icon-1024.png" --out "$ROOT/brow
 echo "==> tray / menu-bar icons (macOS template, Linux colour, Windows .ico)"
 
 swift "$ROOT/scripts/tray-icon.swift" "$BRAND/icon-1024.png" "$ROOT/apps/flutter/assets/tray" 2>/dev/null
-cp "$BRAND/cascade.ico" "$ROOT/apps/flutter/assets/tray/icon.ico"
+cp "$BRAND/spate.ico" "$ROOT/apps/flutter/assets/tray/icon.ico"
 
 echo "==> Linux hicolor icons (.deb)"
 mkdir -p "$BRAND/linux"
-for s in 64 128 256 512; do sips -z $s $s "$BRAND/icon-1024.png" --out "$BRAND/linux/cascade-$s.png" >/dev/null; done
+for s in 64 128 256 512; do sips -z $s $s "$BRAND/icon-1024.png" --out "$BRAND/linux/spate-$s.png" >/dev/null; done
 /Library/Frameworks/Python.framework/Versions/3.14/bin/python3 - "$ROOT/browser/extension/manifest.json" <<'EOF'
 import json,sys
 p=sys.argv[1]; d=json.load(open(p))
@@ -66,10 +66,10 @@ json.dump(d,open(p,"w"),indent=2); open(p,"a").write("\n"); print("manifest icon
 EOF
 
 echo "==> Windows .ico (16..256, PNG-in-ICO) + Go resource for the exe icon"
-for s in 16 32 48 256; do sips -z $s $s "$BRAND/icon-flat-1024.png" --out "/tmp/cascade-ico-$s.png" >/dev/null; done
-/Library/Frameworks/Python.framework/Versions/3.14/bin/python3 - "$BRAND/cascade.ico" <<'EOF'
+for s in 16 32 48 256; do sips -z $s $s "$BRAND/icon-flat-1024.png" --out "/tmp/spate-ico-$s.png" >/dev/null; done
+/Library/Frameworks/Python.framework/Versions/3.14/bin/python3 - "$BRAND/spate.ico" <<'EOF'
 import struct,sys
-sizes=[16,32,48,256]; pngs=[open(f"/tmp/cascade-ico-{s}.png","rb").read() for s in sizes]
+sizes=[16,32,48,256]; pngs=[open(f"/tmp/spate-ico-{s}.png","rb").read() for s in sizes]
 out=bytearray(struct.pack("<HHH",0,1,len(sizes))); off=6+16*len(sizes)
 for s,png in zip(sizes,pngs):
     out+=struct.pack("<BBBBHHII", s%256, s%256, 0, 0, 1, 32, len(png), off); off+=len(png)

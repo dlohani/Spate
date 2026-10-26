@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests for the release gate in ./build (require_release): a release needs a
-# clean tree, HEAD on tag v$VERSION and no CASCADE_ALLOW_NO_UI. Runs ./build in
+# clean tree, HEAD on tag v$VERSION and no SPATE_ALLOW_NO_UI. Runs ./build in
 # a throwaway repo holding only what the version target needs. Each check
 # prints "  not ok: <what>" on failure.
 set -u
@@ -10,7 +10,7 @@ rc=0
 check() { # DESCRIPTION EXPECTED_STATUS ACTUAL_STATUS
   if [ "$2" != "$3" ]; then echo "  not ok: $1 (want $2, got $3)"; rc=1; fi
 }
-unset CASCADE_ALLOW_NO_UI
+unset SPATE_ALLOW_NO_UI
 
 # Hermetic garble: the release path requires garble, so every case runs with a
 # stub on PATH. Refusals below are therefore due to the gate alone, never to a
@@ -40,7 +40,7 @@ git tag -d v0.3.9 >/dev/null
 git tag "v$VERSION"
 gate; check "clean HEAD on tag v$VERSION is allowed" 0 $?
 nogarble; check "clean tagged HEAD without garble is refused" 2 $?
-( export CASCADE_ALLOW_NO_UI=1; gate ); check "CASCADE_ALLOW_NO_UI=1 is refused even when tagged" 2 $?
+( export SPATE_ALLOW_NO_UI=1; gate ); check "SPATE_ALLOW_NO_UI=1 is refused even when tagged" 2 $?
 : > untracked.txt
 gate; check "an untracked file is refused" 2 $?
 exit $rc

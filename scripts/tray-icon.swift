@@ -2,7 +2,7 @@
 //   template: the icon's silhouette (rounded square with the arrow cut out) in
 //   black + alpha, for macOS menu bar template rendering.
 //   color: the icon as is, for Linux/Windows panels.
-// usage: swift cascade-tray-icon.swift <master.png> <out-dir>
+// usage: swift spate-tray-icon.swift <master.png> <out-dir>
 import AppKit
 let args = CommandLine.arguments
 let master = NSImage(contentsOfFile: args[1])!

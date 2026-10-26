@@ -1,4 +1,4 @@
-// Package settings holds Cascade's persisted user preferences: where downloads
+// Package settings holds Spate's persisted user preferences: where downloads
 // go (base folder, category and per-site destination rules), bandwidth limits
 // with time windows, the queue's download window, and recurring downloads.
 // It is pure policy: the service applies it to the engine and queue.
@@ -111,7 +111,7 @@ func Path() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "cascade", "settings.json"), nil
+	return filepath.Join(dir, "spate", "settings.json"), nil
 }
 
 // Load reads the settings file, returning Default(downloadDir) if absent.

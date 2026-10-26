@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"cascade/internal/job"
+	"spate/internal/job"
 )
 
 func TestSettingsRulesAndPersistence(t *testing.T) {
-	t.Setenv("CASCADE_TOKEN", "test-token")
-	t.Setenv("CASCADE_ALLOW_MULTIPLE", "1")
+	t.Setenv("SPATE_TOKEN", "test-token")
+	t.Setenv("SPATE_ALLOW_MULTIPLE", "1")
 	dir := t.TempDir()
-	t.Setenv("CASCADE_SETTINGS", filepath.Join(dir, "settings.json"))
+	t.Setenv("SPATE_SETTINGS", filepath.Join(dir, "settings.json"))
 
 	data := make([]byte, 64<<10)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,10 +76,10 @@ func TestSettingsRulesAndPersistence(t *testing.T) {
 }
 
 func TestStartAddAndPair(t *testing.T) {
-	t.Setenv("CASCADE_TOKEN", "test-token")
-	t.Setenv("CASCADE_ALLOW_MULTIPLE", "1") // a real Cascade may be running on this machine
+	t.Setenv("SPATE_TOKEN", "test-token")
+	t.Setenv("SPATE_ALLOW_MULTIPLE", "1") // a real Spate may be running on this machine
 	dir := t.TempDir()
-	t.Setenv("CASCADE_SETTINGS", filepath.Join(dir, "settings.json"))
+	t.Setenv("SPATE_SETTINGS", filepath.Join(dir, "settings.json"))
 
 	data := make([]byte, 512<<10)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

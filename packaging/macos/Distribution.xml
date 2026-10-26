@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="1">
-  <title>Cascade</title>
+  <title>Spate</title>
   <welcome file="welcome.txt" mime-type="text/plain"/>
   <conclusion file="conclusion.txt" mime-type="text/plain"/>
   <options customize="never" require-scripts="true" hostArchitectures="arm64,x86_64"/>
@@ -14,7 +14,7 @@
   <installation-check script="checkVersion()"/>
   <script><![CDATA[
     function installedVersion() {
-      var plist = system.files.plistAtPath(system.env.HOME + '/Applications/Cascade.app/Contents/Info.plist');
+      var plist = system.files.plistAtPath(system.env.HOME + '/Applications/Spate.app/Contents/Info.plist');
       if (!plist) return null;
       var v = plist.CFBundleShortVersionString;
       if (!v || (v == '1.0.0' && plist.CFBundleVersion == '1')) return null;
@@ -26,13 +26,13 @@
       var c = system.compareVersions(have, '@VERSION@');
       if (c > 0) {
         my.result.type = 'Fatal';
-        my.result.title = 'A newer Cascade is installed';
-        my.result.message = 'Cascade ' + have + ' is installed and this package is @VERSION@. Downgrades are not supported. To go back anyway, run ~/Library/Application Support/cascade/bin/uninstall first.';
+        my.result.title = 'A newer Spate is installed';
+        my.result.message = 'Spate ' + have + ' is installed and this package is @VERSION@. Downgrades are not supported. To go back anyway, run ~/Library/Application Support/spate/bin/uninstall first.';
         return false;
       }
       if (c == 0) {
         my.result.type = 'Warn';
-        my.result.title = 'Cascade @VERSION@ is already installed';
+        my.result.title = 'Spate @VERSION@ is already installed';
         my.result.message = 'Continuing reinstalls it. Settings, the browser pairing and downloads are kept.';
         return false;
       }
@@ -48,11 +48,11 @@
   </choices-outline>
   <choice id="default"/>
   <choice id="app" visible="false">
-    <pkg-ref id="dev.d3xt3r.cascade.app"/>
+    <pkg-ref id="com.amlabs.spate.app"/>
   </choice>
   <choice id="support" visible="false">
-    <pkg-ref id="dev.d3xt3r.cascade"/>
+    <pkg-ref id="com.amlabs.spate"/>
   </choice>
-  <pkg-ref id="dev.d3xt3r.cascade.app" version="@VERSION@" onConclusion="none">cascade-app.pkg</pkg-ref>
-  <pkg-ref id="dev.d3xt3r.cascade" version="@VERSION@" onConclusion="none">cascade-support.pkg</pkg-ref>
+  <pkg-ref id="com.amlabs.spate.app" version="@VERSION@" onConclusion="none">spate-app.pkg</pkg-ref>
+  <pkg-ref id="com.amlabs.spate" version="@VERSION@" onConclusion="none">spate-support.pkg</pkg-ref>
 </installer-gui-script>

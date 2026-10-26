@@ -1,11 +1,11 @@
 # Build output
-/cascade
+/spate
 /dist/
 *.exe
 
 # Download artifacts / resume sidecars
-*.cascade
-*.cascade.tmp
+*.spate
+*.spate.tmp
 
 # OS cruft
 .DS_Store
@@ -13,5 +13,5 @@
 # editor / assistant tool caches
 .serena/
 
-# populated by scripts/build-windows.sh; embedded into cascade-setup.exe
-/cmd/cascade-setup/payload/
+# populated by scripts/build-windows.sh; embedded into spate-setup.exe
+/cmd/spate-setup/payload/

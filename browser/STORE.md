@@ -6,7 +6,7 @@ the browser then installs it from the store on its next start (Linux: silent;
 Windows and macOS: Chrome shows a one-click "Enable extension" bubble). This
 is how IDM, JDownloader and antivirus vendors ship their browser pieces.
 
-Every Cascade installer already contains that registration code. It is
+Every Spate installer already contains that registration code. It is
 switched on by `browser/extension/store-ids.env`:
 
     CHROME_WEBSTORE_ID=<id from the Chrome Web Store>   # Chrome, Brave, Vivaldi, Chromium
@@ -16,7 +16,7 @@ Until those are set, installers print the "Load unpacked" instructions.
 
 ## Steps
 
-1. `scripts/package-extension.sh` -> `dist/cascade-extension-<version>.zip`
+1. `scripts/package-extension.sh` -> `dist/spate-extension-<version>.zip`
    (sets the manifest version from `VERSION`; each upload needs a new one).
 2. Chrome Web Store: https://chrome.google.com/webstore/devconsole
    (developer account, one-time fee). New item -> upload the zip -> fill the
@@ -24,7 +24,7 @@ Until those are set, installers print the "Load unpacked" instructions.
    ID is the 32-letter string in the item's URL.
 3. Edge Add-ons (optional): https://partner.microsoft.com/dashboard, same zip.
 4. Put the IDs in `store-ids.env`, bump `VERSION`, rebuild the installers.
-   From then on: install Cascade -> restart the browser -> the extension is
+   From then on: install Spate -> restart the browser -> the extension is
    there (Windows/macOS: click "Enable").
 
 Later versions: upload a new zip; browsers update from the store on their own,
@@ -32,13 +32,13 @@ nothing changes in the installers.
 
 ## Listing text
 
-- Name: Cascade Download Capture
-- Summary: Sends downloads from the browser to the Cascade download manager.
-- Description: When a download starts, Cascade offers to take it over (once
+- Name: Spate Download Capture
+- Summary: Sends downloads from the browser to the Spate download manager.
+- Description: When a download starts, Spate offers to take it over (once
   per site, remembered) and downloads it with several connections, resume and
-  scheduling. Requires the Cascade desktop app.
+  scheduling. Requires the Spate desktop app.
 - Category: Productivity / Tools. Language: English.
-- Privacy: no data leaves the machine. The extension talks only to the Cascade
+- Privacy: no data leaves the machine. The extension talks only to the Spate
   app on 127.0.0.1 (loopback) and passes the download URL, referrer and the
   cookies of that site so the app can fetch the same file. No analytics.
 - Permission justifications (the store asks for each):
@@ -46,7 +46,7 @@ nothing changes in the installers.
   - cookies: session-bound links need the site's cookies to be fetchable.
   - storage: the per-site "remember my choice" rules and the mode setting.
   - alarms: heartbeat to the app while the service worker is asleep.
-  - nativeMessaging: to launch the Cascade app when it is not running.
+  - nativeMessaging: to launch the Spate app when it is not running.
   - host_permissions `<all_urls>`: downloads can start on any site; the
     extension reads the cookies for the download's own host only.
 - Assets: 128x128 icon (`browser/extension/icons/128.png`), at least one
@@ -55,8 +55,8 @@ nothing changes in the installers.
 ## Firefox
 
 Same code, `manifest.firefox.json` (MV2 event page, fixed add-on ID
-`cascade@d3xt3r.dev`). `scripts/package-extension.sh` produces
-`dist/cascade-extension-firefox-<version>.zip` and the unpacked
+`spate@amlabs.dev`). `scripts/package-extension.sh` produces
+`dist/spate-extension-firefox-<version>.zip` and the unpacked
 `dist/firefox-extension/` (about:debugging -> This Firefox -> Load Temporary
 Add-on -> manifest.json; lasts until Firefox restarts).
 
@@ -85,16 +85,16 @@ next installer.
 
 Safari has no `downloads` API, so a download cannot be intercepted after it
 starts. The Safari build (`manifest.safari.json`) therefore captures
-through the right-click "Download with Cascade" on links and through
+through the right-click "Download with Spate" on links and through
 `capture.js`, which intercepts clicks on links that are clearly files
 (download attribute, or archive/installer/media/document extensions) and
 hands them to the app before Safari navigates; if the app is not running or
 refuses, the click proceeds normally.
 
 Safari extensions ship inside a macOS app: `scripts/safari-extension.sh`
-wraps the extension with Xcode's converter, builds "Cascade for Safari.app"
+wraps the extension with Xcode's converter, builds "Spate for Safari.app"
 ad hoc signed and installs it to ~/Applications. Enable it in Safari ->
 Settings -> Extensions; for an ad hoc build Safari also needs Develop ->
 "Allow Unsigned Extensions" (Develop menu: Settings -> Advanced). Shipping
 it to other Macs needs a Developer ID signature and notarization
-(`CASCADE_SIGN_IDENTITY`), or the Mac App Store.
+(`SPATE_SIGN_IDENTITY`), or the Mac App Store.

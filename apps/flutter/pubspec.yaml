@@ -1,4 +1,4 @@
-name: cascade_app
+name: spate_app
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -34,7 +34,7 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  # dart:ffi helpers (Utf8 marshalling) for the libcascade C ABI binding.
+  # dart:ffi helpers (Utf8 marshalling) for the libspate C ABI binding.
   ffi: ^2.1.0
   window_manager: ^0.5.2
   tray_manager: ^0.7.0

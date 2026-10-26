@@ -1,16 +1,16 @@
 #!/bin/sh
-# Register the Cascade browser native-messaging host for the current user's
+# Register the Spate browser native-messaging host for the current user's
 # browsers (Chromium, Chrome, Brave, Edge, Vivaldi, snap Chromium), optionally
 # authorizing extra extension IDs (from the extension's Options page).
 #
-#   cascade-register [EXTENSION_ID ...]
+#   spate-register [EXTENSION_ID ...]
 #
 # The .deb already registers Chrome, Chromium and Edge system-wide; use this
 # for the other browsers or when the extension was loaded from another path.
 set -u
-HOST=/usr/lib/cascade/cascade-host
-EXT=/usr/share/cascade/extension
-NAME=com.cascade.host
+HOST=/usr/lib/spate/spate-host
+EXT=/usr/share/spate/extension
+NAME=com.amlabs.spate.host
 CHROME_WEBSTORE_ID="@CHROME_WEBSTORE_ID@"
 EDGE_ADDONS_ID="@EDGE_ADDONS_ID@"
 ID="$(printf '%s' "$EXT" | sha256sum | cut -c1-32 | tr '0123456789abcdef' 'abcdefghijklmnop')"
@@ -20,7 +20,7 @@ origins="\"chrome-extension://$ID/\", \"chrome-extension://kamlaafhjnegfjdbnfajb
 for id in "$@"; do origins="$origins, \"chrome-extension://$id/\""; done
 manifest="{
   \"name\": \"$NAME\",
-  \"description\": \"Cascade download manager native host\",
+  \"description\": \"Spate download manager native host\",
   \"path\": \"$HOST\",
   \"type\": \"stdio\",
   \"allowed_origins\": [$origins]
@@ -43,7 +43,7 @@ for dir in \
 done
 if [ -d "$HOME/.mozilla" ]; then
   mkdir -p "$HOME/.mozilla/native-messaging-hosts"
-  printf '{\n  "name": "%s",\n  "description": "Cascade download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["cascade@d3xt3r.dev"]\n}\n' "$NAME" "$HOST" > "$HOME/.mozilla/native-messaging-hosts/$NAME.json"
+  printf '{\n  "name": "%s",\n  "description": "Spate download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["spate@amlabs.dev"]\n}\n' "$NAME" "$HOST" > "$HOME/.mozilla/native-messaging-hosts/$NAME.json"
   echo "registered: $HOME/.mozilla/native-messaging-hosts/$NAME.json (Firefox)"
   n=$((n + 1))
 fi

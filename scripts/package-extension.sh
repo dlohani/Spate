@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Package the browser extension for every browser family:
 #
-#   dist/cascade-extension-<version>.zip          Chrome Web Store / Edge Add-ons upload
-#   dist/cascade-extension-firefox-<version>.zip  addons.mozilla.org upload (unlisted signing)
+#   dist/spate-extension-<version>.zip          Chrome Web Store / Edge Add-ons upload
+#   dist/spate-extension-firefox-<version>.zip  addons.mozilla.org upload (unlisted signing)
 #   dist/firefox-extension/                       unpacked, for about:debugging "Load Temporary Add-on"
 #   dist/safari-extension/                        source for scripts/safari-extension.sh (Xcode)
 #
@@ -40,13 +40,13 @@ common() { # dest-dir manifest-file [extra-file...]
 
 echo "==> chrome (also Edge, Brave, Vivaldi, Chromium)"
 common "$DIST/chrome-extension" manifest.json
-OUT="$DIST/cascade-extension-$VERSION.zip"; rm -f "$OUT"
+OUT="$DIST/spate-extension-$VERSION.zip"; rm -f "$OUT"
 (cd "$DIST/chrome-extension" && zip -qr "$OUT" .)
 shasum -a 256 "$OUT" | tee "$OUT.sha256"
 
 echo "==> firefox"
 common "$DIST/firefox-extension" manifest.firefox.json
-OUT="$DIST/cascade-extension-firefox-$VERSION.zip"; rm -f "$OUT"
+OUT="$DIST/spate-extension-firefox-$VERSION.zip"; rm -f "$OUT"
 (cd "$DIST/firefox-extension" && zip -qr "$OUT" .)
 shasum -a 256 "$OUT" | tee "$OUT.sha256"
 echo "    unpacked: $DIST/firefox-extension (about:debugging -> This Firefox -> Load Temporary Add-on -> manifest.json)"

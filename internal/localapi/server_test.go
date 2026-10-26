@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"cascade/internal/job"
+	"spate/internal/job"
 )
 
 // Every test binds the same fixed ports, so a keep-alive connection pooled by
@@ -59,7 +59,7 @@ func TestAddRequiresTokenAndEnqueues(t *testing.T) {
 
 	// With token: 200 + id.
 	req, _ := http.NewRequest(http.MethodPost, base+"/add", bytes.NewReader(body))
-	req.Header.Set("X-Cascade-Token", "secret-token")
+	req.Header.Set("X-Spate-Token", "secret-token")
 	req.Header.Set("Content-Type", "application/json")
 	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
@@ -110,7 +110,7 @@ func TestWebOriginRejectedExtensionAllowed(t *testing.T) {
 	do := func(origin string) int {
 		req, _ := http.NewRequest(http.MethodPost, "http://"+s.Addr()+"/add", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Cascade-Token", "tok")
+		req.Header.Set("X-Spate-Token", "tok")
 		if origin != "" {
 			req.Header.Set("Origin", origin)
 		}
@@ -140,7 +140,7 @@ func TestPairAllowDeclineAndHeartbeat(t *testing.T) {
 	defer s.Close()
 	get := func(path, origin string) (int, string) {
 		req, _ := http.NewRequest(http.MethodGet, "http://"+s.Addr()+path, nil)
-		req.Header.Set("X-Cascade-Client", "extension")
+		req.Header.Set("X-Spate-Client", "extension")
 		if origin != "" {
 			req.Header.Set("Origin", origin)
 		}
@@ -192,7 +192,7 @@ func TestAddDedupesSameOutputPath(t *testing.T) {
 		body := []byte(`{"url":"` + origin.URL + `/big.iso","filename":"big.iso"}`)
 		req, _ := http.NewRequest(http.MethodPost, "http://"+s.Addr()+"/add", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Cascade-Token", "tok")
+		req.Header.Set("X-Spate-Token", "tok")
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -225,7 +225,7 @@ func TestJobsListsQueueWithState(t *testing.T) {
 	get := func(token string) (int, []map[string]any) {
 		req, _ := http.NewRequest(http.MethodGet, "http://"+s.Addr()+"/jobs", nil)
 		if token != "" {
-			req.Header.Set("X-Cascade-Token", token)
+			req.Header.Set("X-Spate-Token", token)
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -266,7 +266,7 @@ func TestAddRefusesUnfetchableURL(t *testing.T) {
 	body := []byte(`{"url":"` + origin.URL + `/file.bin","filename":"file.bin"}`)
 	req, _ := http.NewRequest(http.MethodPost, "http://"+s.Addr()+"/add", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Cascade-Token", "tok")
+	req.Header.Set("X-Spate-Token", "tok")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -297,7 +297,7 @@ func TestPing(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(b), "cascade") {
+	if !strings.Contains(string(b), "spate") {
 		t.Fatalf("ping body = %q", b)
 	}
 }
@@ -313,7 +313,7 @@ func TestShowRequiresTokenAndIsOneShot(t *testing.T) {
 	// Web page origin: refused even with the token.
 	rr = httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/show", nil)
-	req.Header.Set("X-Cascade-Token", "tok")
+	req.Header.Set("X-Spate-Token", "tok")
 	req.Header.Set("Origin", "https://example.com")
 	s.handleShow(rr, req)
 	if rr.Code != http.StatusForbidden || s.ShowPending() {
@@ -322,7 +322,7 @@ func TestShowRequiresTokenAndIsOneShot(t *testing.T) {
 	// Local caller with the token: pending exactly once.
 	rr = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/show", nil)
-	req.Header.Set("X-Cascade-Token", "tok")
+	req.Header.Set("X-Spate-Token", "tok")
 	s.handleShow(rr, req)
 	if rr.Code != http.StatusOK || !s.ShowPending() || s.ShowPending() {
 		t.Fatalf("show: code=%d; ShowPending must be true once then false", rr.Code)
@@ -334,7 +334,7 @@ func postAdd(t *testing.T, base string, req addRequest) (int, map[string]any) {
 	t.Helper()
 	body, _ := json.Marshal(req)
 	r, _ := http.NewRequest(http.MethodPost, base+"/add", bytes.NewReader(body))
-	r.Header.Set("X-Cascade-Token", "secret-token")
+	r.Header.Set("X-Spate-Token", "secret-token")
 	r.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(r)
 	if err != nil {

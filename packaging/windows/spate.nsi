@@ -1,7 +1,7 @@
-; Cascade Windows installer (NSIS, Modern UI). Per-user, no administrator rights.
+; Spate Windows installer (NSIS, Modern UI). Per-user, no administrator rights.
 ; Built by scripts/package-windows.sh (makensis) from the cross-compiled
 ; binaries in dist/windows-amd64. Pages: Welcome -> Directory -> Install ->
-; Finish (Start Cascade). Registers the browser native-messaging host, adds a
+; Finish (Start Spate). Registers the browser native-messaging host, adds a
 ; hidden autostart, an Add/Remove Programs entry and an uninstaller.
 Unicode true
 !include "MUI2.nsh"
@@ -13,8 +13,8 @@ ${StrRep}
 !ifndef VERSION
   !define VERSION "0.0.0"
 !endif
-!define APPNAME "Cascade"
-!define HOSTNAME "com.cascade.host"
+!define APPNAME "Spate"
+!define HOSTNAME "com.amlabs.spate.host"
 !define DEVEXTID "kamlaafhjnegfjdbnfajbanjfkemefga"
 ; Store IDs (from browser/extension/store-ids.env via package-windows.sh).
 ; When set, browsers install the extension from the store by themselves.
@@ -37,26 +37,26 @@ ${StrRep}
 !endif
 
 Name "${APPNAME}"
-OutFile "..\..\dist\Cascade-Setup-${VERSION}.exe"
-InstallDir "$LOCALAPPDATA\Cascade"
+OutFile "..\..\dist\Spate-Setup-${VERSION}.exe"
+InstallDir "$LOCALAPPDATA\Spate"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
 !define MUI_ABORTWARNING
-!define MUI_ICON "..\..\assets\brand\cascade.ico"
-!define MUI_UNICON "..\..\assets\brand\cascade.ico"
-!define MUI_WELCOMEPAGE_TEXT "Cascade takes over downloads from your browser: parallel connections, resume, a queue, and a tray app that starts at login.$\r$\n$\r$\nThis installs for the current user only (no administrator rights) and registers the browser integration for Chrome, Chromium, Edge and Brave.$\r$\n$\r$\nOne manual step remains afterwards: loading the Cascade extension in the browser (the final page shows where it is)."
+!define MUI_ICON "..\..\assets\brand\spate.ico"
+!define MUI_UNICON "..\..\assets\brand\spate.ico"
+!define MUI_WELCOMEPAGE_TEXT "Spate takes over downloads from your browser: parallel connections, resume, a queue, and a tray app that starts at login.$\r$\n$\r$\nThis installs for the current user only (no administrator rights) and registers the browser integration for Chrome, Chromium, Edge and Brave.$\r$\n$\r$\nOne manual step remains afterwards: loading the Spate extension in the browser (the final page shows where it is)."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_TITLE "Cascade is installed"
+!define MUI_FINISHPAGE_TITLE "Spate is installed"
 !if "${CHROME_WEBSTORE_ID}" != ""
-!define MUI_FINISHPAGE_TEXT "Last step: restart your browser. It installs the Cascade extension from the store by itself; click Enable when it asks.$\r$\n$\r$\nThen download anything. Cascade asks once how to handle downloads."
+!define MUI_FINISHPAGE_TEXT "Last step: restart your browser. It installs the Spate extension from the store by itself; click Enable when it asks.$\r$\n$\r$\nThen download anything. Spate asks once how to handle downloads."
 !else
-!define MUI_FINISHPAGE_TEXT "Last step, in your browser:$\r$\n  1. Open chrome://extensions and turn on Developer mode.$\r$\n  2. Click Load unpacked and choose:$\r$\n     $INSTDIR\extension$\r$\n  3. Download anything. Cascade asks once how to handle downloads.$\r$\n$\r$\nIf the extension's Options page shows a different Extension ID, run:$\r$\n  $INSTDIR\bin\register-extension.cmd <ID>"
+!define MUI_FINISHPAGE_TEXT "Last step, in your browser:$\r$\n  1. Open chrome://extensions and turn on Developer mode.$\r$\n  2. Click Load unpacked and choose:$\r$\n     $INSTDIR\extension$\r$\n  3. Download anything. Spate asks once how to handle downloads.$\r$\n$\r$\nIf the extension's Options page shows a different Extension ID, run:$\r$\n  $INSTDIR\bin\register-extension.cmd <ID>"
 !endif
 !define MUI_FINISHPAGE_RUN
-!define MUI_FINISHPAGE_RUN_TEXT "Start Cascade"
+!define MUI_FINISHPAGE_RUN_TEXT "Start Spate"
 !define MUI_FINISHPAGE_RUN_FUNCTION "LaunchApp"
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -80,10 +80,10 @@ Function .onInit
   StrCmp $1 0 same
   Goto done
 newer:
-  MessageBox MB_ICONSTOP|MB_OK "Cascade $0 is already installed, which is newer than ${VERSION}. Downgrades are not supported.$\r$\n$\r$\nUninstall it from Settings > Apps first if you really want the older version." /SD IDOK
+  MessageBox MB_ICONSTOP|MB_OK "Spate $0 is already installed, which is newer than ${VERSION}. Downgrades are not supported.$\r$\n$\r$\nUninstall it from Settings > Apps first if you really want the older version." /SD IDOK
   Abort
 same:
-  MessageBox MB_ICONQUESTION|MB_YESNO "Cascade ${VERSION} is already installed. Reinstall it? (Settings and downloads are kept.)" /SD IDYES IDYES done
+  MessageBox MB_ICONQUESTION|MB_YESNO "Spate ${VERSION} is already installed. Reinstall it? (Settings and downloads are kept.)" /SD IDYES IDYES done
   Abort
 done:
 FunctionEnd
@@ -92,40 +92,40 @@ FunctionEnd
 ; manifest authorizes the dev ID plus any ID passed to register-extension.cmd.
 Function WriteHostManifest
   ; JSON needs backslashes escaped
-  ${StrRep} $0 "$INSTDIR\bin\cascade-host.exe" "\" "\\"
+  ${StrRep} $0 "$INSTDIR\bin\spate-host.exe" "\" "\\"
   FileOpen $1 "$INSTDIR\bin\${HOSTNAME}.json" w
-  FileWrite $1 '{$\r$\n  "name": "${HOSTNAME}",$\r$\n  "description": "Cascade download manager native host",$\r$\n  "path": "$0",$\r$\n  "type": "stdio",$\r$\n  "allowed_origins": [${ORIGINS_ALL}]$\r$\n}$\r$\n'
+  FileWrite $1 '{$\r$\n  "name": "${HOSTNAME}",$\r$\n  "description": "Spate download manager native host",$\r$\n  "path": "$0",$\r$\n  "type": "stdio",$\r$\n  "allowed_origins": [${ORIGINS_ALL}]$\r$\n}$\r$\n'
   FileClose $1
 FunctionEnd
 
 ; Firefox: fixed add-on ID; its manifest uses allowed_extensions.
 Function WriteFirefoxManifest
-  ${StrRep} $0 "$INSTDIR\bin\cascade-host.exe" "\" "\\"
+  ${StrRep} $0 "$INSTDIR\bin\spate-host.exe" "\" "\\"
   FileOpen $1 "$INSTDIR\bin\${HOSTNAME}.firefox.json" w
-  FileWrite $1 '{$\r$\n  "name": "${HOSTNAME}",$\r$\n  "description": "Cascade download manager native host",$\r$\n  "path": "$0",$\r$\n  "type": "stdio",$\r$\n  "allowed_extensions": ["cascade@d3xt3r.dev"]$\r$\n}$\r$\n'
+  FileWrite $1 '{$\r$\n  "name": "${HOSTNAME}",$\r$\n  "description": "Spate download manager native host",$\r$\n  "path": "$0",$\r$\n  "type": "stdio",$\r$\n  "allowed_extensions": ["spate@amlabs.dev"]$\r$\n}$\r$\n'
   FileClose $1
 FunctionEnd
 
-Section "Cascade" SecMain
+Section "Spate" SecMain
   ; Windows will not overwrite a running executable: stop the app first.
-  ExecWait 'taskkill /IM cascade_app.exe /F'
-  ExecWait 'taskkill /IM cascade-gui.exe /F'   ; UI of installs before 0.4.0
+  ExecWait 'taskkill /IM spate_app.exe /F'
+  ExecWait 'taskkill /IM spate-gui.exe /F'   ; UI of installs before 0.4.0
   Sleep 500
-  Delete "$INSTDIR\bin\cascade-gui.exe"
+  Delete "$INSTDIR\bin\spate-gui.exe"
   SetOutPath "$INSTDIR\bin"
-  File "..\..\dist\windows-amd64\cascade-host.exe"
-  File "..\..\dist\windows-amd64\cascade.exe"
-  File "..\..\dist\windows-amd64\cascade.dll"
+  File "..\..\dist\windows-amd64\spate-host.exe"
+  File "..\..\dist\windows-amd64\spate.exe"
+  File "..\..\dist\windows-amd64\spate.dll"
   File "register-extension.cmd"
   File "..\..\browser\extension\store-ids.env"
   ; Flutter UI, built on Windows (scripts\flutter-windows.ps1) and placed in
-  ; dist\windows-amd64\cascade_app before packaging.
-  SetOutPath "$INSTDIR\bin\cascade_app"
-  File /r "..\..\dist\windows-amd64\cascade_app\*.*"
+  ; dist\windows-amd64\spate_app before packaging.
+  SetOutPath "$INSTDIR\bin\spate_app"
+  File /r "..\..\dist\windows-amd64\spate_app\*.*"
   SetOutPath "$INSTDIR\extension"
   File /r "..\..\browser\extension\*.*"
 
-  StrCpy $AppExe "$INSTDIR\bin\cascade_app\cascade_app.exe"
+  StrCpy $AppExe "$INSTDIR\bin\spate_app\spate_app.exe"
 
   Call WriteHostManifest
   Call WriteFirefoxManifest
@@ -164,7 +164,7 @@ Section "Cascade" SecMain
 SectionEnd
 
 Section "Uninstall"
-  ExecWait 'taskkill /IM cascade_app.exe /F' ; ignore result
+  ExecWait 'taskkill /IM spate_app.exe /F' ; ignore result
   DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\${HOSTNAME}"
   DeleteRegKey HKCU "Software\Chromium\NativeMessagingHosts\${HOSTNAME}"
   DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\${HOSTNAME}"

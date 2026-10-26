@@ -1,13 +1,13 @@
-// Exercises the real libcascade through dart:ffi (no Flutter/Xcode needed):
+// Exercises the real libspate through dart:ffi (no Flutter/Xcode needed):
 // run `make lib` at the repo root first, then `flutter test` or `dart test`.
 import 'dart:io';
 
-import 'package:cascade_app/src/ffi/cascade_ffi.dart';
+import 'package:spate_app/src/ffi/spate_ffi.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('service starts, downloads a local file, reports status, stops', () async {
-    final dir = Directory.systemTemp.createTempSync('cascade-ffi-');
+    final dir = Directory.systemTemp.createTempSync('spate-ffi-');
     // A tiny local origin the core can fetch (byte ranges via HttpServer).
     final data = List<int>.generate(300 * 1024, (i) => i % 251);
     final server = await HttpServer.bind('127.0.0.1', 0);
@@ -36,7 +36,7 @@ void main() {
 
     // Own settings file + no single-instance guard: the test must never touch
     // the user's config or fail because the desktop app is running.
-    final core = Cascade.start(
+    final core = Spate.start(
       maxConcurrent: 2,
       downloadDir: dir.path,
       settingsPath: '${dir.path}/settings.json',

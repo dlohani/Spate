@@ -1,6 +1,6 @@
 // Prompt shown when a download starts and the mode is "ask". The browser's own
 // download keeps running while this is open, so "Use the browser" (or closing
-// the window) loses nothing; only "Download with Cascade" hands it off.
+// the window) loses nothing; only "Download with Spate" hands it off.
 const params = new URLSearchParams(location.search);
 const id = Number(params.get("d"));
 
@@ -9,7 +9,7 @@ const id = Number(params.get("d"));
   const item = stored["pending:" + id];
   if (!item) {
     document.getElementById("file").textContent = "This download is no longer pending.";
-    document.getElementById("cascade").disabled = true;
+    document.getElementById("spate").disabled = true;
     return;
   }
   document.getElementById("file").textContent = item.filename || item.url;
@@ -23,6 +23,6 @@ const id = Number(params.get("d"));
     await chrome.runtime.sendMessage({ type: "choice", id, choice, scope, item });
     window.close();
   };
-  document.getElementById("cascade").addEventListener("click", () => decide("cascade"));
+  document.getElementById("spate").addEventListener("click", () => decide("spate"));
   document.getElementById("browser").addEventListener("click", () => decide("browser"));
 })();

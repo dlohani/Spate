@@ -6,7 +6,7 @@ import 'package:ffi/ffi.dart';
 
 import '../model/job.dart';
 
-// C ABI (see export/cshared/cascade.go and dist/libcascade.h).
+// C ABI (see export/cshared/spate.go and dist/libspate.h).
 typedef _StartC = LongLong Function(Pointer<Utf8>);
 typedef _StartD = int Function(Pointer<Utf8>);
 typedef _HandleVoidC = Void Function(LongLong);
@@ -33,22 +33,22 @@ typedef _StrC = Pointer<Utf8> Function();
 typedef _StrD = Pointer<Utf8> Function();
 
 /// A failure reported by the core, with the reason it gave.
-class CascadeException implements Exception {
+class SpateException implements Exception {
   final String message;
-  const CascadeException(this.message);
+  const SpateException(this.message);
 
   /// True when the core refused to start because another instance answers
   /// on the capture ports (the shell should hand over to it and exit).
   bool get alreadyRunning => message.contains('already running');
 
   @override
-  String toString() => 'CascadeException: $message';
+  String toString() => 'SpateException: $message';
 }
 
-/// Reads and frees CascadeLastError from an opened library.
+/// Reads and frees SpateLastError from an opened library.
 String _lastErrorOf(DynamicLibrary lib) {
-  final f = lib.lookupFunction<_StrC, _StrD>('CascadeLastError');
-  final free = lib.lookupFunction<_FreeC, _FreeD>('CascadeFreeString');
+  final f = lib.lookupFunction<_StrC, _StrD>('SpateLastError');
+  final free = lib.lookupFunction<_FreeC, _FreeD>('SpateFreeString');
   final p = f();
   try {
     return p.toDartString();
@@ -57,46 +57,46 @@ String _lastErrorOf(DynamicLibrary lib) {
   }
 }
 
-/// Thin, synchronous binding to libcascade. One instance == one running
+/// Thin, synchronous binding to libspate. One instance == one running
 /// service (engine + queue + browser-capture endpoint).
-class Cascade {
+class Spate {
   final DynamicLibrary _lib;
   final int _h;
 
-  late final _HandleVoidD _stop = _lib.lookupFunction<_HandleVoidC, _HandleVoidD>('CascadeServiceStop');
-  late final _HandleStrD _info = _lib.lookupFunction<_HandleStrC, _HandleStrD>('CascadeInfoJSON');
-  late final _AddD _add = _lib.lookupFunction<_AddC, _AddD>('CascadeAdd');
-  late final _IdActD _pause = _lib.lookupFunction<_IdActC, _IdActD>('CascadePause');
-  late final _IdActD _resume = _lib.lookupFunction<_IdActC, _IdActD>('CascadeResume');
-  late final _IdActD _cancel = _lib.lookupFunction<_IdActC, _IdActD>('CascadeCancel');
-  late final _IdActD _remove = _lib.lookupFunction<_IdActC, _IdActD>('CascadeRemove');
-  late final _IdActD _discard = _lib.lookupFunction<_IdActC, _IdActD>('CascadeDiscard');
-  late final _HandleIntD _clearFinished = _lib.lookupFunction<_HandleIntC, _HandleIntD>('CascadeClearFinished');
-  late final _HandleVoidD _cancelAll = _lib.lookupFunction<_HandleVoidC, _HandleVoidD>('CascadeCancelAll');
-  late final _HandleStrD _status = _lib.lookupFunction<_HandleStrC, _HandleStrD>('CascadeStatusJSON');
-  late final _HandleIntD _pairPending = _lib.lookupFunction<_HandleIntC, _HandleIntD>('CascadePairPending');
-  late final _ResolveD _pairResolve = _lib.lookupFunction<_ResolveC, _ResolveD>('CascadePairResolve');
-  late final _FreeD _free = _lib.lookupFunction<_FreeC, _FreeD>('CascadeFreeString');
-  late final _StrActD _addJson = _lib.lookupFunction<_StrActC, _StrActD>('CascadeAddJSON');
-  late final _HandleStrD _settingsJson = _lib.lookupFunction<_HandleStrC, _HandleStrD>('CascadeSettingsJSON');
-  late final _IdActD _settingsApply = _lib.lookupFunction<_IdActC, _IdActD>('CascadeSettingsApply');
-  late final _IdActD _startNow = _lib.lookupFunction<_IdActC, _IdActD>('CascadeStartNow');
-  late final _HandleLongD _currentLimit = _lib.lookupFunction<_HandleLongC, _HandleLongD>('CascadeCurrentLimit');
-  late final _HandleIntD _showPending = _lib.lookupFunction<_HandleIntC, _HandleIntD>('CascadeShowPending');
-  late final _HandleULongD _queueVersion = _lib.lookupFunction<_HandleULongC, _HandleULongD>('CascadeQueueVersion');
+  late final _HandleVoidD _stop = _lib.lookupFunction<_HandleVoidC, _HandleVoidD>('SpateServiceStop');
+  late final _HandleStrD _info = _lib.lookupFunction<_HandleStrC, _HandleStrD>('SpateInfoJSON');
+  late final _AddD _add = _lib.lookupFunction<_AddC, _AddD>('SpateAdd');
+  late final _IdActD _pause = _lib.lookupFunction<_IdActC, _IdActD>('SpatePause');
+  late final _IdActD _resume = _lib.lookupFunction<_IdActC, _IdActD>('SpateResume');
+  late final _IdActD _cancel = _lib.lookupFunction<_IdActC, _IdActD>('SpateCancel');
+  late final _IdActD _remove = _lib.lookupFunction<_IdActC, _IdActD>('SpateRemove');
+  late final _IdActD _discard = _lib.lookupFunction<_IdActC, _IdActD>('SpateDiscard');
+  late final _HandleIntD _clearFinished = _lib.lookupFunction<_HandleIntC, _HandleIntD>('SpateClearFinished');
+  late final _HandleVoidD _cancelAll = _lib.lookupFunction<_HandleVoidC, _HandleVoidD>('SpateCancelAll');
+  late final _HandleStrD _status = _lib.lookupFunction<_HandleStrC, _HandleStrD>('SpateStatusJSON');
+  late final _HandleIntD _pairPending = _lib.lookupFunction<_HandleIntC, _HandleIntD>('SpatePairPending');
+  late final _ResolveD _pairResolve = _lib.lookupFunction<_ResolveC, _ResolveD>('SpatePairResolve');
+  late final _FreeD _free = _lib.lookupFunction<_FreeC, _FreeD>('SpateFreeString');
+  late final _StrActD _addJson = _lib.lookupFunction<_StrActC, _StrActD>('SpateAddJSON');
+  late final _HandleStrD _settingsJson = _lib.lookupFunction<_HandleStrC, _HandleStrD>('SpateSettingsJSON');
+  late final _IdActD _settingsApply = _lib.lookupFunction<_IdActC, _IdActD>('SpateSettingsApply');
+  late final _IdActD _startNow = _lib.lookupFunction<_IdActC, _IdActD>('SpateStartNow');
+  late final _HandleLongD _currentLimit = _lib.lookupFunction<_HandleLongC, _HandleLongD>('SpateCurrentLimit');
+  late final _HandleIntD _showPending = _lib.lookupFunction<_HandleIntC, _HandleIntD>('SpateShowPending');
+  late final _HandleULongD _queueVersion = _lib.lookupFunction<_HandleULongC, _HandleULongD>('SpateQueueVersion');
   late final Pointer<Utf8> Function() _version =
-      _lib.lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>('CascadeVersion');
+      _lib.lookupFunction<Pointer<Utf8> Function(), Pointer<Utf8> Function()>('SpateVersion');
 
   /// The core's version, stamped from the repo's VERSION file at build time.
   String get version => _take(_version());
 
-  Cascade._(this._lib, this._h);
+  Spate._(this._lib, this._h);
 
   /// Starts the service. [downloadDir] empty selects the platform default;
   /// [maxConcurrent] 0 takes the value from settings. [settingsPath] points
   /// the core at a settings file other than the per-user one, and
   /// [allowMultiple] skips the single-instance guard (both for tests).
-  factory Cascade.start({
+  factory Spate.start({
     int maxConcurrent = 0,
     String downloadDir = '',
     String settingsPath = '',
@@ -104,7 +104,7 @@ class Cascade {
     String? libraryPath,
   }) {
     final lib = DynamicLibrary.open(libraryPath ?? locateLibrary());
-    final start = lib.lookupFunction<_StartC, _StartD>('CascadeServiceStartJSON');
+    final start = lib.lookupFunction<_StartC, _StartD>('SpateServiceStartJSON');
     final spec = jsonEncode({
       'maxConcurrent': maxConcurrent,
       'downloadDir': downloadDir,
@@ -115,9 +115,9 @@ class Cascade {
       final h = start(spec);
       if (h == 0) {
         final why = _lastErrorOf(lib);
-        throw CascadeException(why.isEmpty ? 'CascadeServiceStart failed' : why);
+        throw SpateException(why.isEmpty ? 'SpateServiceStart failed' : why);
       }
-      return Cascade._(lib, h);
+      return Spate._(lib, h);
     } finally {
       malloc.free(spec);
     }
@@ -136,11 +136,11 @@ class Cascade {
   int get queueVersion => _queueVersion(_h);
 
   /// Asks an already running instance to show its window (a second launch
-  /// calls this after [Cascade.start] fails, then exits). True if one answered.
+  /// calls this after [Spate.start] fails, then exits). True if one answered.
   static bool requestShow({String? libraryPath}) {
     try {
       final lib = DynamicLibrary.open(libraryPath ?? locateLibrary());
-      final f = lib.lookupFunction<Int32 Function(), int Function()>('CascadeRequestShow');
+      final f = lib.lookupFunction<Int32 Function(), int Function()>('SpateRequestShow');
       return f() != 0;
     } catch (_) {
       return false;
@@ -150,16 +150,16 @@ class Cascade {
   /// True once when another launch asked this instance to show its window.
   bool get showPending => _showPending(_h) != 0;
 
-  /// Finds libcascade for this platform: an explicit CASCADE_LIB path, the app
+  /// Finds libspate for this platform: an explicit SPATE_LIB path, the app
   /// bundle's Frameworks folder, or the repo's dist/ folder during development.
   static String locateLibrary() {
-    final env = Platform.environment['CASCADE_LIB'];
+    final env = Platform.environment['SPATE_LIB'];
     if (env != null && env.isNotEmpty) return env;
     final name = Platform.isMacOS
-        ? 'libcascade.dylib'
+        ? 'libspate.dylib'
         : Platform.isWindows
-            ? 'cascade.dll'
-            : 'libcascade.so';
+            ? 'spate.dll'
+            : 'libspate.so';
     final exeDir = File(Platform.resolvedExecutable).parent.path;
     final candidates = <String>[
       '$exeDir/../Frameworks/$name', // macOS .app bundle
@@ -171,7 +171,7 @@ class Cascade {
     for (final c in candidates) {
       if (File(c).existsSync()) return File(c).absolute.path;
     }
-    throw StateError('libcascade not found; set CASCADE_LIB or run `make lib`');
+    throw StateError('libspate not found; set SPATE_LIB or run `make lib`');
   }
 
   String _take(Pointer<Utf8> p) {

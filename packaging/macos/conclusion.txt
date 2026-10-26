@@ -1,12 +1,12 @@
-Cascade is installed and running in your menu bar (also in Spotlight and Launchpad as "Cascade").
+Spate is installed and running in your menu bar (also in Spotlight and Launchpad as "Spate").
 
-Browser integration: the installer registered Cascade with the Chromium-family browsers on this Mac (Chrome, Chromium, Brave, Edge, Vivaldi).
-  - If the Cascade extension is published in the browser's store, restart the browser: it installs the extension by itself and asks once to enable it.
-  - Otherwise load it once by hand: chrome://extensions -> "Developer mode" -> "Load unpacked" -> ~/Library/Application Support/cascade/extension
+Browser integration: the installer registered Spate with the Chromium-family browsers on this Mac (Chrome, Chromium, Brave, Edge, Vivaldi).
+  - If the Spate extension is published in the browser's store, restart the browser: it installs the extension by itself and asks once to enable it.
+  - Otherwise load it once by hand: chrome://extensions -> "Developer mode" -> "Load unpacked" -> ~/Library/Application Support/spate/extension
 
-Then download anything. Cascade asks once how to handle downloads and remembers your answer.
+Then download anything. Spate asks once how to handle downloads and remembers your answer.
 
 If the extension's Options page shows a different Extension ID than expected, run:
-  ~/Library/Application Support/cascade/bin/register-extension <ID>
+  ~/Library/Application Support/spate/bin/register-extension <ID>
 
-To uninstall: ~/Library/Application Support/cascade/bin/uninstall
+To uninstall: ~/Library/Application Support/spate/bin/uninstall

@@ -1,6 +1,6 @@
 // Package localapi exposes a loopback HTTP endpoint that a browser extension
 // (or any local helper) posts download requests to, so downloads started in a
-// browser are handed to cascade automatically without copy/paste.
+// browser are handed to spate automatically without copy/paste.
 //
 // Security model: binds to 127.0.0.1 only; /add requires a shared token; and
 // requests carrying a web Origin are rejected (only browser-extension origins
@@ -26,9 +26,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"cascade/internal/download"
-	"cascade/internal/job"
-	"cascade/internal/version"
+	"spate/internal/download"
+	"spate/internal/job"
+	"spate/internal/version"
 )
 
 // DefaultPort is the loopback port the extension targets first.
@@ -123,7 +123,7 @@ func (s *Server) Close() error {
 func cors(w http.ResponseWriter) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Cascade-Token, X-Cascade-Client")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Spate-Token, X-Spate-Client")
 	// Chrome Private Network Access: a browser-context fetch to loopback is
 	// preflighted and requires this header.
 	w.Header().Set("Access-Control-Allow-Private-Network", "true")
@@ -142,7 +142,7 @@ func originOK(r *http.Request) bool {
 }
 
 func (s *Server) noteExtension(r *http.Request) {
-	if r.Header.Get("X-Cascade-Client") == "extension" || r.URL.Query().Get("client") == "extension" {
+	if r.Header.Get("X-Spate-Client") == "extension" || r.URL.Query().Get("client") == "extension" {
 		s.mu.Lock()
 		s.lastExt = time.Now()
 		s.mu.Unlock()
@@ -155,7 +155,7 @@ func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.noteExtension(r)
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "app": "cascade", "version": version.Version})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "app": "spate", "version": version.Version})
 }
 
 // handleShow is called by a second launch of the app (which then exits): the
@@ -166,7 +166,7 @@ func (s *Server) handleShow(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions {
 		return
 	}
-	if !originOK(r) || r.Header.Get("X-Cascade-Token") != s.token {
+	if !originOK(r) || r.Header.Get("X-Spate-Token") != s.token {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -347,7 +347,7 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authOK(r *http.Request) bool {
-	got := r.Header.Get("X-Cascade-Token")
+	got := r.Header.Get("X-Spate-Token")
 	if got == "" {
 		got = r.URL.Query().Get("token")
 	}

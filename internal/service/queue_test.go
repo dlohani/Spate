@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"cascade/internal/download"
-	"cascade/internal/job"
+	"spate/internal/download"
+	"spate/internal/job"
 )
 
 func startTest(t *testing.T, dir string) *Service {
 	t.Helper()
-	t.Setenv("CASCADE_TOKEN", "test-token")
+	t.Setenv("SPATE_TOKEN", "test-token")
 	s, err := StartWith(StartOpts{MaxConcurrent: 1, DownloadDir: dir,
 		SettingsPath: filepath.Join(dir, "settings.json"), AllowMultiple: true})
 	if err != nil {
@@ -44,13 +44,13 @@ func TestQueueSurvivesRestart(t *testing.T) {
 		t.Fatalf("queue.json not written: %v", err)
 	}
 	// The core logged what it did, beside settings.json.
-	logb, err := os.ReadFile(filepath.Join(dir, "cascade.log"))
+	logb, err := os.ReadFile(filepath.Join(dir, "spate.log"))
 	if err != nil {
-		t.Fatalf("cascade.log not written: %v", err)
+		t.Fatalf("spate.log not written: %v", err)
 	}
 	for _, want := range []string{"msg=started", "msg=\"job added\"", "msg=stopped"} {
 		if !strings.Contains(string(logb), want) {
-			t.Fatalf("cascade.log lacks %s:\n%s", want, logb)
+			t.Fatalf("spate.log lacks %s:\n%s", want, logb)
 		}
 	}
 

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"cascade/internal/job"
+	"spate/internal/job"
 )
 
 // queueFileVersion is the on-disk format version of queue.json. A file from

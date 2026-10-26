@@ -1,6 +1,6 @@
 // Safari only (manifest.safari.json). Safari has no downloads API, so a
 // download cannot be intercepted after it starts; instead, clicks on links
-// that are clearly files are handed to Cascade before the navigation. If the
+// that are clearly files are handed to Spate before the navigation. If the
 // app declines (not running, refused), the click falls back to the browser.
 //
 // "Clearly a file": the link has a download attribute, or its path ends in a

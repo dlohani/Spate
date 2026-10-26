@@ -10,12 +10,12 @@ EDGE_UPDATE_URL="https://edge.microsoft.com/extensionwebstorebase/v1/crx"
 DEV_EXT_ID="kamlaafhjnegfjdbnfajbanjfkemefga"
 # Firefox uses a fixed add-on ID (browser_specific_settings.gecko.id), so its
 # native host manifest needs no derived or store IDs.
-FIREFOX_EXT_ID="cascade@d3xt3r.dev"
+FIREFOX_EXT_ID="spate@amlabs.dev"
 
 # firefox_host_manifest HOST_PATH: Firefox's variant of the native host
 # manifest (allowed_extensions instead of allowed_origins).
 firefox_host_manifest() {
-  printf '{\n  "name": "com.cascade.host",\n  "description": "Cascade download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["%s"]\n}\n' "$1" "$FIREFOX_EXT_ID"
+  printf '{\n  "name": "com.amlabs.spate.host",\n  "description": "Spate download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["%s"]\n}\n' "$1" "$FIREFOX_EXT_ID"
 }
 
 # register_firefox_host_macos HOST_PATH: per-user registration when Firefox
@@ -24,16 +24,16 @@ register_firefox_host_macos() {
   local AS="$HOME/Library/Application Support"
   { [ -d "$AS/Firefox" ] || [ -d "/Applications/Firefox.app" ] || [ -d "$HOME/Applications/Firefox.app" ]; } || return 0
   mkdir -p "$AS/Mozilla/NativeMessagingHosts"
-  firefox_host_manifest "$1" > "$AS/Mozilla/NativeMessagingHosts/com.cascade.host.json"
-  echo "    $AS/Mozilla/NativeMessagingHosts/com.cascade.host.json (Firefox)"
+  firefox_host_manifest "$1" > "$AS/Mozilla/NativeMessagingHosts/com.amlabs.spate.host.json"
+  echo "    $AS/Mozilla/NativeMessagingHosts/com.amlabs.spate.host.json (Firefox)"
 }
 
 # register_firefox_host_linux HOST_PATH: per-user registration.
 register_firefox_host_linux() {
   { [ -d "$HOME/.mozilla" ] || command -v firefox >/dev/null 2>&1; } || return 0
   mkdir -p "$HOME/.mozilla/native-messaging-hosts"
-  firefox_host_manifest "$1" > "$HOME/.mozilla/native-messaging-hosts/com.cascade.host.json"
-  echo "    $HOME/.mozilla/native-messaging-hosts/com.cascade.host.json (Firefox)"
+  firefox_host_manifest "$1" > "$HOME/.mozilla/native-messaging-hosts/com.amlabs.spate.host.json"
+  echo "    $HOME/.mozilla/native-messaging-hosts/com.amlabs.spate.host.json (Firefox)"
 }
 
 # load_store_ids ROOT: sets CHROME_WEBSTORE_ID / EDGE_ADDONS_ID (may be empty).
@@ -116,7 +116,7 @@ register_store_extension_linux() {
 # the extension is published.
 extension_next_step() {
   if [ -n "${CHROME_WEBSTORE_ID:-}" ]; then
-    echo "    Restart the browser: it installs the Cascade extension from the store"
+    echo "    Restart the browser: it installs the Spate extension from the store"
     echo "    (Windows/macOS show a one-time 'Enable extension' prompt)."
   else
     echo "    Load the extension: chrome://extensions -> Developer mode -> Load unpacked -> $1"

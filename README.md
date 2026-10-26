@@ -1,4 +1,4 @@
-# cascade
+# spate
 
 A segmented, resumable HTTP download engine in Go. It fetches a file over
 multiple parallel byte-range connections, writing each range at its offset in a
@@ -7,7 +7,7 @@ transfer resumes cleanly.
 
 ## What it does (and does not) do
 
-cascade makes full use of the bandwidth your connection provides and defeats
+spate makes full use of the bandwidth your connection provides and defeats
 **per-connection / server-side** throttling (a server that caps each TCP
 connection): N connections aggregate up to what your link allows.
 
@@ -40,7 +40,7 @@ Also implemented: the Flutter desktop app (macOS, Windows, Linux; tray,
 single instance, settings), the browser extension (Chromium family, Firefox,
 Safari) with its native-messaging host, a persisted queue (`queue.json`) that
 restores paused, scheduled and in-flight downloads with their cookies after a
-restart, and an engine log (`cascade.log`).
+restart, and an engine log (`spate.log`).
 
 Not implemented yet: a floating download button for non-DRM streaming media;
 native `.rar`/`.7z` extraction; a headless daemon separate from the UI.
@@ -50,11 +50,11 @@ native `.rar`/`.7z` extraction; a headless daemon separate from the UI.
 One front door, always from the working tree (uncommitted changes included),
 version-stamped artifacts in `dist/`:
 
-    ./build mac [--install]     Cascade-<v>.pkg, Cascade-<v>-macos.zip
-    ./build windows             cascade-setup.exe, Cascade-Setup-<v>.exe (NSIS), zip
-    ./build linux [--cli-only]  cascade_<v>_<arch>.deb (full on Linux; CLI-only elsewhere)
-    ./build android             libcascade .aar + Cascade-<v>.apk (needs Android SDK)
-    ./build ios                 Cascade-<v>.xcframework + unsigned iOS app
+    ./build mac [--install]     Spate-<v>.pkg, Spate-<v>-macos.zip
+    ./build windows             spate-setup.exe, Spate-Setup-<v>.exe (NSIS), zip
+    ./build linux [--cli-only]  spate_<v>_<arch>.deb (full on Linux; CLI-only elsewhere)
+    ./build android             libspate .aar + Spate-<v>.apk (needs Android SDK)
+    ./build ios                 Spate-<v>.xcframework + unsigned iOS app
     ./build extension           Chrome/Firefox zips, Safari source and app
     ./build all                 everything this host can build
     ./build version | bump x.y.z | clean
@@ -67,7 +67,7 @@ comparing plain `x.y.z`. Missing toolchains (mingw, makensis, Android SDK,
 gomobile) are reported in one line and that piece is skipped.
 
 Two things are never skipped silently. A Windows build without the Flutter
-UI at `dist/windows-amd64/cascade_app` fails; set `CASCADE_ALLOW_NO_UI=1`
+UI at `dist/windows-amd64/spate_app` fails; set `SPATE_ALLOW_NO_UI=1`
 for a CLI-only artifact, which is then named `...-cli-only.zip` and whose
 setup refuses to install unless run with `--no-ui`. And `./build release
 <target...>` refuses unless the tree is clean and HEAD is on a tag, so a
@@ -75,21 +75,21 @@ release-labelled artifact always comes from a known commit. Script tests:
 `scripts/test/run.sh`.
 
 Release builds are obfuscated (Go core via garble, Dart names, minimal C
-exports): `./build release` turns on `CASCADE_OBFUSCATE=1` and needs
+exports): `./build release` turns on `SPATE_OBFUSCATE=1` and needs
 `garble`; set the variable yourself to try it on a dev build. See
 [Release obfuscation](docs/delivery.md#release-obfuscation) for what it does,
 the size cost, and the symbol maps to keep.
 
-Just the CLI: `go build -o cascade ./cmd/cascade` (Go 1.22+, standard library
+Just the CLI: `go build -o spate ./cmd/spate` (Go 1.22+, standard library
 only).
 
 ## Installers
 
 | Platform | Build | Result |
 |---|---|---|
-| macOS | `scripts/package-macos.sh` | `dist/Cascade-<ver>.pkg`: per-user installer (Welcome → Install → Finish, no admin password). Installs `~/Applications/Cascade.app` plus the host, extension and helpers under `~/Library/Application Support/cascade`; postinstall registers the browser host, adds the login item, starts the app. `bin/uninstall` reverses it. |
-| Windows | `scripts/package-windows.sh` | `dist/Cascade-Setup-<ver>.exe`: NSIS installer (Welcome → Directory → Install → Finish), per-user, registers the host in the registry, autostart, Add/Remove Programs entry, uninstaller. Silent: `/S`. `cascade-setup.exe` (from `scripts/build-windows.sh`) is the single-file dev equivalent. |
-| Package managers | `packaging/homebrew/cascade.rb`, `packaging/winget/` | Homebrew cask and winget manifest templates; they need the installers published at a URL (GitHub release) first. |
+| macOS | `scripts/package-macos.sh` | `dist/Spate-<ver>.pkg`: per-user installer (Welcome → Install → Finish, no admin password). Installs `~/Applications/Spate.app` plus the host, extension and helpers under `~/Library/Application Support/spate`; postinstall registers the browser host, adds the login item, starts the app. `bin/uninstall` reverses it. |
+| Windows | `scripts/package-windows.sh` | `dist/Spate-Setup-<ver>.exe`: NSIS installer (Welcome → Directory → Install → Finish), per-user, registers the host in the registry, autostart, Add/Remove Programs entry, uninstaller. Silent: `/S`. `spate-setup.exe` (from `scripts/build-windows.sh`) is the single-file dev equivalent. |
+| Package managers | `packaging/homebrew/spate.rb`, `packaging/winget/` | Homebrew cask and winget manifest templates; they need the installers published at a URL (GitHub release) first. |
 
 Every installer and script is version-aware. `VERSION` is the single source
 of truth: it is stamped into the Go binaries (`internal/version`, shown by
@@ -102,15 +102,15 @@ and into the Windows Add/Remove Programs entry. On install:
 - older version installed: upgrades in place, stopping the running app first
   so the browser's native host cannot keep an old copy alive;
 - newer version installed: refused with a message (macOS Installer, NSIS,
-  `cascade-setup.exe`, and the install scripts alike). Override only
-  deliberately: `CASCADE_FORCE=1` for the scripts, `--force` for
-  `cascade-setup.exe`, or uninstall first.
+  `spate-setup.exe`, and the install scripts alike). Override only
+  deliberately: `SPATE_FORCE=1` for the scripts, `--force` for
+  `spate-setup.exe`, or uninstall first.
 
 Browsers: Chrome, Chromium, Brave, Vivaldi and Edge (one MV3 extension),
 Firefox (same code, `manifest.firefox.json`; AMO-signed `.xpi` for permanent
 installs) and Safari (`manifest.safari.json` wrapped by
 `scripts/safari-extension.sh`; Safari has no downloads API, so capture there
-is the right-click "Download with Cascade" and click interception of file
+is the right-click "Download with Spate" and click interception of file
 links). `scripts/package-extension.sh` builds all three; `browser/STORE.md`
 has the details.
 
@@ -125,15 +125,15 @@ one manual "Load unpacked" step remains). The switch is
 `browser/extension/store-ids.env`; `scripts/package-extension.sh` builds the
 store upload and `browser/STORE.md` walks through publishing.
 
-There is exactly one copy of the app per machine: `~/Applications/Cascade.app`
-on macOS, `%LOCALAPPDATA%\Cascade\bin` on Windows, `~/.local/share/cascade/bin`
+There is exactly one copy of the app per machine: `~/Applications/Spate.app`
+on macOS, `%LOCALAPPDATA%\Spate\bin` on Windows, `~/.local/share/spate/bin`
 on Linux. Opening the app while it is already running (Spotlight, Finder,
 Dock, Start menu) raises the running instance's window instead of starting a
 second one.
 
 Both installers are unsigned (Gatekeeper: right-click → Open; SmartScreen:
 "Run anyway"). Signing/notarization is a release step: set
-`CASCADE_SIGN_IDENTITY` for macOS. One manual step remains everywhere: loading
+`SPATE_SIGN_IDENTITY` for macOS. One manual step remains everywhere: loading
 the browser extension (Chrome only allows silent installs from the Web Store);
 the installers' final page shows the folder.
 
@@ -142,15 +142,15 @@ the installers' final page shows the folder.
     scripts/flutter-macos.sh build   # Flutter UI with the Go core bundled
     scripts/install-macos.sh         # host, app, browser registration, login item
 
-Installs the resident app as `~/Applications/Cascade.app` and the browser
-native-messaging host into `~/Library/Application Support/cascade/bin/`,
+Installs the resident app as `~/Applications/Spate.app` and the browser
+native-messaging host into `~/Library/Application Support/spate/bin/`,
 registers the host with the Chromium-family browsers on the machine, and adds
-a per-user LaunchAgent so Cascade starts **hidden at login** (menu-bar icon
-only; `CASCADE_NO_LOGIN=1` skips it, `launchctl bootout
-gui/$UID/dev.d3xt3r.cascade` removes it). Re-running it upgrades or
-reinstalls; a downgrade is refused unless `CASCADE_FORCE=1`. Then load
+a per-user LaunchAgent so Spate starts **hidden at login** (menu-bar icon
+only; `SPATE_NO_LOGIN=1` skips it, `launchctl bootout
+gui/$UID/com.amlabs.spate` removes it). Re-running it upgrades or
+reinstalls; a downgrade is refused unless `SPATE_FORCE=1`. Then load
 `browser/extension` in the browser (`chrome://extensions` → Load unpacked). From
-then on a download started in the browser launches Cascade if it isn't running
+then on a download started in the browser launches Spate if it isn't running
 and is handed to it, with no copy/paste and no token setup. Closing the window
 hides it; quit from the menu-bar icon. The core refuses to start a second
 instance, so login item, native host and manual launches never stack up. See
@@ -160,29 +160,29 @@ instance, so login item, native host and manual launches never stack up. See
 
 Debian/Ubuntu package (run on the Linux machine; needs Go, gcc and Flutter):
 
-    scripts/package-linux.sh          # -> dist/cascade_<ver>_<arch>.deb
-    sudo apt install ./dist/cascade_<ver>_<arch>.deb
+    scripts/package-linux.sh          # -> dist/spate_<ver>_<arch>.deb
+    sudo apt install ./dist/spate_<ver>_<arch>.deb
 
-The package installs `/usr/bin/cascade` (CLI), the app under
-`/usr/lib/cascade/`, the extension under `/usr/share/cascade/extension`, an
+The package installs `/usr/bin/spate` (CLI), the app under
+`/usr/lib/spate/`, the extension under `/usr/share/spate/extension`, an
 application-menu entry, autostart at login (hidden, tray only) and icons.
 Its postinst registers the native host system-wide for Chrome, Chromium and
-Edge; `cascade-register [ID]` adds per-user registration for Brave, Vivaldi,
+Edge; `spate-register [ID]` adds per-user registration for Brave, Vivaldi,
 snap Chromium, or another extension ID. `apt install` of the same version
 reinstalls, a newer version upgrades (running instances are stopped first),
-an older one is refused unless `CASCADE_FORCE=1`; settings and downloads are
-kept. `apt remove cascade` reverses it.
+an older one is refused unless `SPATE_FORCE=1`; settings and downloads are
+kept. `apt remove spate` reverses it.
 
 On a non-Linux host (or with `--cli-only`) the same script produces
-`cascade-cli_<ver>_<arch>.deb`: the command-line downloader and native host
+`spate-cli_<ver>_<arch>.deb`: the command-line downloader and native host
 only, pure Go, for servers and containers.
 
 Per-user developer install without a package (after `flutter build linux`):
 
     scripts/install-linux.sh
 
-It builds `libcascade.so` and the host, installs the Flutter bundle under
-`~/.local/share/cascade/bin/`, registers the host for the user's browsers and
+It builds `libspate.so` and the host, installs the Flutter bundle under
+`~/.local/share/spate/bin/`, registers the host for the user's browsers and
 adds menu and autostart entries. Either way a tray icon needs a desktop with
 AppIndicator support (KDE, or GNOME with the extension); without one the app
 still works from its window. Prepared and syntax-checked here; the desktop
@@ -196,10 +196,10 @@ design (layers, the media-capture analysis for TikTok/IG/YouTube, per-OS gating)
 
 | Target | Artifact | Command |
 |---|---|---|
-| Desktop CLI | `dist/cascade` | `make cli` |
-| Desktop / Flutter FFI | `libcascade.{dylib,so}` / `cascade.dll` + header | `make lib` |
-| Android | `cascade.aar` | `make android` (needs Android SDK/NDK) |
-| iOS | `Cascade.xcframework` | `make ios` (needs Xcode) |
+| Desktop CLI | `dist/spate` | `make cli` |
+| Desktop / Flutter FFI | `libspate.{dylib,so}` / `spate.dll` + header | `make lib` |
+| Android | `spate.aar` | `make android` (needs Android SDK/NDK) |
+| iOS | `Spate.xcframework` | `make ios` (needs Xcode) |
 
 - `export/cshared` is the C ABI (for Flutter `dart:ffi` and native C). It
   exposes the whole app service (`internal/service`: engine, queue, browser
@@ -210,20 +210,20 @@ design (layers, the media-capture analysis for TikTok/IG/YouTube, per-OS gating)
 ### Flutter app (all platforms, one UI)
 
 `apps/flutter` is the unified Material 3 frontend over the C ABI. Its FFI test
-drives the real `libcascade` (`cd apps/flutter && flutter test`). Building the
+drives the real `libspate` (`cd apps/flutter && flutter test`). Building the
 macOS app needs full Xcode and CocoaPods: `scripts/flutter-macos.sh run` (dev)
-or `scripts/flutter-macos.sh build` (bundles `libcascade.dylib` into the app).
+or `scripts/flutter-macos.sh build` (bundles `libspate.dylib` into the app).
 It is the only UI; the Go core has no UI code of its own.
 
 ## Use
 
-    cascade [flags] <url> [url...]
+    spate [flags] <url> [url...]
 
 Flags:
 
     -o <path>          output file (default: derived from URL; single URL only)
     -n <int>           parallel connections (default 8)
-    -resume            resume from an existing .cascade sidecar if present
+    -resume            resume from an existing .spate sidecar if present
     -limit <size>      aggregate rate limit, e.g. 2M or 500K (default: unlimited)
     -sha256 <hex>      expected SHA-256 to verify on completion
     -retries <int>     per-segment retry attempts (default 5)
@@ -241,11 +241,11 @@ Flags:
 
 Examples:
 
-    cascade https://example.com/file.bin -o file.bin -n 8 -sha256 <hex>
+    spate https://example.com/file.bin -o file.bin -n 8 -sha256 <hex>
     # interrupt with Ctrl-C, then resume:
-    cascade https://example.com/file.bin -o file.bin -resume
+    spate https://example.com/file.bin -o file.bin -resume
     # download several files, two at a time:
-    cascade -max-concurrent 2 https://host/a.bin https://host/b.bin https://host/c.bin
+    spate -max-concurrent 2 https://host/a.bin https://host/b.bin https://host/c.bin
 
 Exit codes: 0 success, 1 error, 2 usage, 130 interrupted (resumable).
 
@@ -253,10 +253,10 @@ Exit codes: 0 success, 1 error, 2 usage, 130 interrupted (resumable).
 
 Downloads are filed and timed by rules, so you set them once and stop
 thinking about them. Everything lives in one document, `settings.json`, in the
-per-user config folder (`~/Library/Application Support/cascade` on macOS,
-`%AppData%\cascade` on Windows, `~/.config/cascade` on Linux; override with
-`CASCADE_SETTINGS=<path>`). The Flutter app edits it under Settings; any
-front-end can read/write it through `CascadeSettingsJSON`/`CascadeSettingsApply`.
+per-user config folder (`~/Library/Application Support/spate` on macOS,
+`%AppData%\spate` on Windows, `~/.config/spate` on Linux; override with
+`SPATE_SETTINGS=<path>`). The Flutter app edits it under Settings; any
+front-end can read/write it through `SpateSettingsJSON`/`SpateSettingsApply`.
 
 - Destination rules: a base folder, optional category folders by extension
   (editable defaults), and per-site folders (`host` matches the host and its
@@ -277,11 +277,11 @@ front-end can read/write it through `CascadeSettingsJSON`/`CascadeSettingsApply`
 ## How resume works
 
 While a download runs its data lives in `<output>.part` (preallocated to the
-full size) and progress is tracked in a sidecar `<output>.cascade` (JSON)
+full size) and progress is tracked in a sidecar `<output>.spate` (JSON)
 holding the URL, total size, a validator (ETag or Last-Modified), and each
 segment's byte offset. On completion the `.part` is renamed to `<output>`,
 never over an existing file (`name (1).ext` is used instead). On resume,
-cascade re-probes and sends `If-Range`; if the validator changed (the upstream
+spate re-probes and sends `If-Range`; if the validator changed (the upstream
 file changed), it discards the partial data and restarts rather than producing
 a corrupt merge. A partial from before `.part` naming (data at `<output>` with
 a sidecar beside it) is adopted on the next resume.
@@ -296,7 +296,7 @@ in the download folder) are picked up too.
 
 Body reads arrive in small, unaligned pieces; the engine coalesces them per
 connection into 512 KiB aligned writes and, on macOS, bypasses the page cache
-(`F_NOCACHE`; `CASCADE_PAGE_CACHE=1` restores the old behaviour) so a
+(`F_NOCACHE`; `SPATE_PAGE_CACHE=1` restores the old behaviour) so a
 multi-GiB download neither burns kernel CPU nor evicts the user's working set.
 On Linux the pages are dropped once the file is flushed (`posix_fadvise`).
 Measured on APFS, Apple M4, against a loopback server (26 October 2026):
@@ -322,7 +322,7 @@ responses midway still completes with the checksum verified.
 
 ## Logs
 
-The core writes `cascade.log` beside `settings.json` (rotated to `cascade.log.1`
+The core writes `spate.log` beside `settings.json` (rotated to `spate.log.1`
 past 5 MiB): start and stop, every job state change with the reason, hand-offs
 accepted or refused and why, resume decisions, gate closures and connection
 reductions. The CLI is silent unless run with `-v`, which logs the same to
