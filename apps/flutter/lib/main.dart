@@ -1,6 +1,7 @@
 // tray_manager 0.7.0's barrel file only re-exports nativeapi types, while its
 // own Menu/MenuItem/TrayListener live in src/; import them explicitly.
 // ignore_for_file: implementation_imports
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -185,12 +186,14 @@ bool _trayListening = false;
 /// the macOS activation policy to accessory, which drops the Dock icon).
 Future<void> _applyPresence(Spate core, SpateController controller, UiPrefs prefs) async {
   final wantTray = prefs.hasTray;
+  _TrayStatus.pulseEnabled = prefs.pulseTray;
   if (wantTray && !_trayUp) {
     _trayUp = true;
-    await _setupTray(core, controller);
+    await _setupTray(core, controller, prefs);
   } else if (!wantTray && _trayUp) {
     _trayUp = false;
     controller.onJobsRefreshed = null;
+    _TrayStatus.stopPulse();
     try {
       await TrayManager.instance.destroy();
     } catch (_) {}
@@ -268,18 +271,14 @@ class _Resident with WindowListener {
 /// follows the menu bar's light or dark style; the colour icon elsewhere),
 /// plus a live summary while downloading: "2 · 43%" beside the icon on
 /// macOS, the same in the tooltip and as the first line of the menu.
-Future<void> _setupTray(Spate core, SpateController controller) async {
+Future<void> _setupTray(Spate core, SpateController controller, UiPrefs prefs) async {
   final tray = TrayManager.instance;
   if (!_trayListening) {
     tray.addListener(_TrayClicks());
     _trayListening = true;
   }
   try {
-    if (Platform.isMacOS) {
-      await tray.setIcon('assets/tray/icon.png', isTemplate: true);
-    } else {
-      await tray.setIcon(Platform.isWindows ? 'assets/tray/icon.ico' : 'assets/tray/icon-color.png');
-    }
+    await _TrayStatus.setFrame(tray, dim: false);
     final status = _TrayStatus(tray, core, controller);
     await status.apply(force: true);
     controller.onJobsRefreshed = status.apply; // runs hidden or shown
@@ -297,6 +296,37 @@ class _TrayStatus {
   DateTime _menuAt = DateTime.fromMillisecondsSinceEpoch(0);
   _TrayStatus(this.tray, this.core, this.controller);
 
+  // The icon pulses (normal and 40% frames alternating once a second) while
+  // anything is downloading; solid when idle, or when the preference is off.
+  static bool pulseEnabled = true;
+  static Timer? _pulse;
+  static bool _dim = false;
+
+  static String _frame(bool dim) {
+    if (Platform.isMacOS) return dim ? 'assets/tray/icon-pulse.png' : 'assets/tray/icon.png';
+    if (Platform.isWindows) return dim ? 'assets/tray/icon-pulse.ico' : 'assets/tray/icon.ico';
+    return dim ? 'assets/tray/icon-color-pulse.png' : 'assets/tray/icon-color.png';
+  }
+
+  static Future<void> setFrame(TrayManager tray, {required bool dim}) async {
+    _dim = dim;
+    await tray.setIcon(_frame(dim), isTemplate: Platform.isMacOS);
+  }
+
+  static void stopPulse() {
+    _pulse?.cancel();
+    _pulse = null;
+  }
+
+  void _pulseWhile(bool running) {
+    if (running && pulseEnabled) {
+      _pulse ??= Timer.periodic(const Duration(milliseconds: 900), (_) => setFrame(tray, dim: !_dim));
+    } else if (_pulse != null || _dim) {
+      stopPulse();
+      setFrame(tray, dim: false);
+    }
+  }
+
   /// Recomputes the summary at most once a second and pushes it only when
   /// the text changed (menu rebuilds are not free).
   Future<void> apply({bool force = false}) async {
@@ -306,6 +336,7 @@ class _TrayStatus {
     final running = jobs.where((j) => j.state == 'running').toList();
     final queued = jobs.where((j) => j.state == 'pending').length;
     final paused = jobs.where((j) => j.state == 'paused').length;
+    _pulseWhile(running.isNotEmpty);
     var title = '';
     var line = queued > 0 ? '$queued queued' : 'Nothing downloading';
     if (running.isNotEmpty) {
