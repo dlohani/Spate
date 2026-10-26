@@ -1,9 +1,10 @@
 // Package policy builds download gates from platform conditions: only on Wi-Fi,
 // or only when battery is above a threshold (or on AC power).
 //
-// Detection is inherently OS-specific and best-effort. A full implementation is
-// provided for macOS (darwin) by shelling out to system tools; other platforms
-// return an unsupported error so callers can decide how to proceed.
+// Detection is inherently OS-specific and best-effort. Implementations exist
+// for macOS (pmset, route, networksetup) and Linux (ip route, nmcli, sysfs);
+// other platforms return an unsupported error so callers can decide how to
+// proceed.
 package policy
 
 import (
@@ -20,7 +21,7 @@ type Options struct {
 
 // Conditions is the platform-specific source of truth. Providers implement it.
 type Conditions interface {
-	OnWiFi() (bool, error)          // active default route is a Wi-Fi interface
+	OnWiFi() (bool, error) // active default route is a Wi-Fi interface
 	Battery() (percent int, onAC bool, err error)
 }
 

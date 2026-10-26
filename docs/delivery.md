@@ -109,12 +109,13 @@ Every "no" is a decision. Current state:
 | Settings, rules, schedules, windows | yes | yes | yes | no | no |
 | Browser capture | yes | yes | yes | n/a | n/a |
 | Share-sheet capture | n/a | n/a | n/a | not built | not built |
-| Wi-Fi / battery gating | yes | no | no | no | no |
+| Wi-Fi / battery gating | yes | no | yes | no | no |
 | Tray, background, single instance | yes | yes | partial | n/a | n/a |
 
-Gating providers to add: Windows (Network List Manager, power APIs), Linux
-(NetworkManager and UPower over D-Bus), Android (WorkManager constraints),
-iOS (background URLSession policy).
+Gating providers to add: Windows (Network List Manager, power APIs), Android
+(WorkManager constraints), iOS (background URLSession policy). Linux uses
+`ip route`, `nmcli` and sysfs (no D-Bus dependency; hosts without
+NetworkManager get a clear "unavailable" for Wi-Fi-only).
 
 ## Tamper resistance
 
