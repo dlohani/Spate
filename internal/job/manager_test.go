@@ -608,3 +608,48 @@ func TestShutdownRecordsRunningAsPending(t *testing.T) {
 		t.Fatalf("job restarted after Shutdown: %s", st.State)
 	}
 }
+
+func TestSeveralScheduledJobsAndReschedule(t *testing.T) {
+	m := New(2)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = m.Serve(ctx) }()
+	later := time.Now().Add(time.Hour)
+	ids := make([]string, 0, 3)
+	for i := 0; i < 3; i++ {
+		id, err := m.Add(Spec{URL: fmt.Sprintf("http://127.0.0.1:1/f%d.bin", i), Out: filepath.Join(t.TempDir(), "f.bin"), StartAt: later.Add(time.Duration(i) * time.Minute)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	time.Sleep(100 * time.Millisecond)
+	for i, id := range ids {
+		st, _ := m.Status(id)
+		if st.State != Pending || !st.StartAt.Equal(later.Add(time.Duration(i)*time.Minute)) {
+			t.Fatalf("job %s: %s at %v", id, st.State, st.StartAt)
+		}
+	}
+	// Reschedule one further out, clear another (it then tries to start and
+	// fails on the dead port, which is fine: it left the schedule).
+	far := later.Add(24 * time.Hour)
+	if err := m.SetStartAt(ids[0], far); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := m.Status(ids[0]); !st.StartAt.Equal(far) {
+		t.Fatalf("reschedule not applied: %v", st.StartAt)
+	}
+	if err := m.SetStartAt(ids[1], time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, 5*time.Second, func() bool {
+		st, _ := m.Status(ids[1])
+		return st.State != Pending || st.StartAt.IsZero() && st.State == Pending
+	})
+	if st, _ := m.Status(ids[2]); st.State != Pending {
+		t.Fatalf("untouched job changed: %s", st.State)
+	}
+	if err := m.SetStartAt("nope", far); err == nil {
+		t.Fatal("unknown job accepted")
+	}
+}

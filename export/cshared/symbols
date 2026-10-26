@@ -10,6 +10,7 @@ SpateAddJSON
 SpateSettingsJSON
 SpateSettingsApply
 SpateStartNow
+SpateSchedule
 SpateCurrentLimit
 SpatePause
 SpateResume

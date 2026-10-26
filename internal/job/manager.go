@@ -496,6 +496,25 @@ func (m *Manager) Shutdown() {
 	m.wg.Wait()
 }
 
+// SetStartAt changes when a pending or paused job may start (zero = as soon
+// as a slot is free). A paused job stays paused; the time applies when it is
+// resumed. Running and finished jobs cannot be rescheduled.
+func (m *Manager) SetStartAt(id string, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	j, ok := m.jobs[id]
+	if !ok {
+		return fmt.Errorf("no such job %q", id)
+	}
+	if j.state != Pending && j.state != Paused {
+		return fmt.Errorf("job %q is %s, cannot be scheduled", id, j.state)
+	}
+	j.StartAt = at
+	slog.Info("job scheduled", "id", id, "startAt", at)
+	m.signal()
+	return nil
+}
+
 // SetStartGate installs a policy consulted before any queued job starts (e.g.
 // a "download window"); running jobs are unaffected. nil removes it.
 func (m *Manager) SetStartGate(gate func() bool) {

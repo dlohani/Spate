@@ -106,6 +106,12 @@ class SpateController extends ChangeNotifier {
     _tick(force: true);
   }
 
+  /// Schedules (or reschedules) a queued job; null starts it as soon as possible.
+  void schedule(String id, DateTime? at) {
+    core.schedule(id, at);
+    _tick(force: true);
+  }
+
   void pause(String id) {
     core.pause(id);
     _tick(force: true);
@@ -199,6 +205,22 @@ const _kMaxWidth = 900.0;
 const kMotion = Duration(milliseconds: 220);
 const kMotionSlow = Duration(milliseconds: 420);
 const kMotionCurve = Curves.easeOutCubic;
+
+/// Date then time picker for a start time; null when the user cancelled.
+Future<DateTime?> pickWhen(BuildContext context, DateTime? current) async {
+  final now = DateTime.now();
+  final initial = (current != null && current.isAfter(now)) ? current : now.add(const Duration(hours: 1));
+  final d = await showDatePicker(
+    context: context,
+    initialDate: initial,
+    firstDate: now,
+    lastDate: now.add(const Duration(days: 365)),
+  );
+  if (d == null || !context.mounted) return null;
+  final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial));
+  if (t == null) return null;
+  return DateTime(d.year, d.month, d.day, t.hour, t.minute);
+}
 
 /// Fade-through page transition (opacity + a 1.5% scale settle) instead of
 /// the platform slide, which reads as heavy on desktop.
@@ -339,35 +361,39 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// Adds every link in the field (several may be pasted at once, separated
+  /// by spaces or line breaks), all with the same folder, connections and
+  /// start time. The start time stays selected so more links can be queued
+  /// for the same slot; the X beside it clears it.
   void _add() {
-    final u = _url.text.trim();
-    if (u.isEmpty) return;
-    final ok = widget.controller.add(
-      u,
-      dir: _dir.text.trim(),
-      conns: int.tryParse(_conns.text) ?? 8,
-      startAt: _startAt,
-    );
-    if (ok) {
+    final urls = _url.text.split(RegExp(r'\s+')).where((u) => u.isNotEmpty).toList();
+    if (urls.isEmpty) return;
+    final c = widget.controller;
+    final failed = <String>[];
+    String? firstError;
+    for (final u in urls) {
+      final ok = c.add(u, dir: _dir.text.trim(), conns: int.tryParse(_conns.text) ?? 8, startAt: _startAt);
+      if (!ok) {
+        failed.add(u);
+        firstError ??= c.lastError;
+      }
+    }
+    if (failed.isEmpty) {
       _url.clear();
-      _startAt = null;
+      c.lastError = null;
+    } else {
+      _url.text = failed.join(' '); // leave only what was refused, to fix or drop
+      c.lastError = urls.length == 1
+          ? firstError
+          : '${urls.length - failed.length} of ${urls.length} added; ${failed.length} not downloadable: $firstError';
     }
     setState(() {});
   }
 
   Future<void> _pickSchedule() async {
-    final now = DateTime.now();
-    final initial = _startAt ?? now.add(const Duration(hours: 1));
-    final d = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365)),
-    );
-    if (d == null || !mounted) return;
-    final t = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(initial));
-    if (t == null) return;
-    setState(() => _startAt = DateTime(d.year, d.month, d.day, t.hour, t.minute));
+    final at = await pickWhen(context, _startAt);
+    if (at == null || !mounted) return;
+    setState(() => _startAt = at);
   }
 
   Future<void> _openSettings() async {
@@ -506,8 +532,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     controller: _url,
                     focusNode: _urlFocus,
                     onSubmitted: (_) => _add(),
+                    // Several links pasted with line breaks become one
+                    // space-separated line; _add splits them again.
+                    inputFormatters: [FilteringTextInputFormatter.deny(RegExp(r'[\r\n]+'), replacementString: ' ')],
                     decoration: InputDecoration(
-                      hintText: 'Paste a link to download',
+                      hintText: 'Paste one or more links to download',
                       prefixIcon: const Icon(Icons.link_rounded),
                       suffixIcon: IconButton(
                         tooltip: 'Paste and download',
@@ -571,7 +600,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 TextButton.icon(
                   onPressed: _pickSchedule,
                   icon: const Icon(Icons.schedule_rounded, size: 18),
-                  label: Text(_startAt == null ? 'Schedule' : 'Starts ${_fmtWhen(_startAt!)}'),
+                  label: Text(_startAt == null ? 'Schedule' : 'New links start ${_fmtWhen(_startAt!)}'),
                 ),
                 if (_startAt != null)
                   IconButton(
@@ -847,6 +876,10 @@ class _DownloadCardState extends State<DownloadCard> {
             Clipboard.setData(ClipboardData(text: job.url));
           case 'startnow':
             c.startNow(job.id);
+          case 'schedule':
+            pickWhen(context, job.startAt).then((at) {
+              if (at != null) c.schedule(job.id, at);
+            });
           case 'open':
             c.openFile(job.out);
           case 'reveal':
@@ -866,6 +899,15 @@ class _DownloadCardState extends State<DownloadCard> {
           const PopupMenuItem(
             value: 'startnow',
             child: ListTile(dense: true, leading: Icon(Icons.play_arrow_rounded), title: Text('Start now')),
+          ),
+        if (job.state == 'pending' || job.state == 'paused')
+          PopupMenuItem(
+            value: 'schedule',
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.schedule_rounded),
+              title: Text(job.isScheduled ? 'Reschedule' : 'Schedule'),
+            ),
           ),
         if (job.state == 'done')
           const PopupMenuItem(
