@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Cascade Download Capture",
+  "name": "Spate Download Capture",
   "version": "0.4.0",
-  "description": "Automatically send downloads started in the browser to the Cascade app, with cookies and referrer.",
+  "description": "Automatically send downloads started in the browser to the Spate app, with cookies and referrer.",
   "permissions": [
     "downloads",
     "cookies",
@@ -20,7 +20,7 @@
   },
   "options_page": "options.html",
   "action": {
-    "default_title": "Cascade",
+    "default_title": "Spate",
     "default_popup": "options.html",
     "default_icon": {
       "16": "icons/16.png",

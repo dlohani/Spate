@@ -8,7 +8,7 @@ import (
 )
 
 func TestToFileAppendsWithMode(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cascade.log")
+	path := filepath.Join(t.TempDir(), "spate.log")
 	lg, err := ToFile(path, 5<<20)
 	if err != nil {
 		t.Fatal(err)
@@ -30,7 +30,7 @@ func TestToFileAppendsWithMode(t *testing.T) {
 }
 
 func TestToFileRotatesWhenLarge(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cascade.log")
+	path := filepath.Join(t.TempDir(), "spate.log")
 	big := make([]byte, 6<<20)
 	if err := os.WriteFile(path, big, 0o600); err != nil {
 		t.Fatal(err)

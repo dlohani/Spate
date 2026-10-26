@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"cascade/internal/download"
+	"spate/internal/download"
 )
 
 func blob(n int) []byte {
@@ -442,7 +442,7 @@ func TestDiscardDeletesPartialAndClearFinishedDropsCancelled(t *testing.T) {
 	if _, ok := m.Status(a); ok {
 		t.Fatal("job still listed after Discard")
 	}
-	for _, p := range []string{filepath.Join(dir, "a.bin"), filepath.Join(dir, "a.bin.part"), filepath.Join(dir, "a.bin.cascade")} {
+	for _, p := range []string{filepath.Join(dir, "a.bin"), filepath.Join(dir, "a.bin.part"), filepath.Join(dir, "a.bin.spate")} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Fatalf("%s still exists after Discard (err=%v)", p, err)
 		}
@@ -459,7 +459,7 @@ func TestDiscardDeletesPartialAndClearFinishedDropsCancelled(t *testing.T) {
 	if n := m.ClearFinished(); n != 1 {
 		t.Fatalf("ClearFinished = %d, want 1", n)
 	}
-	for _, p := range []string{filepath.Join(dir, "b.bin"), filepath.Join(dir, "b.bin.part"), filepath.Join(dir, "b.bin.cascade")} {
+	for _, p := range []string{filepath.Join(dir, "b.bin"), filepath.Join(dir, "b.bin.part"), filepath.Join(dir, "b.bin.spate")} {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Fatalf("%s still exists after ClearFinished (err=%v)", p, err)
 		}

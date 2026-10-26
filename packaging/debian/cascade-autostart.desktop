@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Cascade
-Comment=Start Cascade hidden at login (tray icon; browser downloads are captured)
-Exec=/usr/lib/cascade/cascade_app/cascade_app --background
-Icon=cascade
-Terminal=false
-NoDisplay=true
-X-GNOME-Autostart-enabled=true

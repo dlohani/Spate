@@ -1,4 +1,4 @@
-// Command cascade is a segmented, resumable HTTP downloader.
+// Command spate is a segmented, resumable HTTP downloader.
 //
 // It fetches a file over multiple parallel byte-range connections to make full
 // use of the bandwidth the connection provides and to defeat per-connection or
@@ -18,12 +18,12 @@ import (
 	"syscall"
 	"time"
 
-	"cascade/internal/download"
-	"cascade/internal/job"
-	"cascade/internal/logx"
-	"cascade/internal/policy"
-	"cascade/internal/progress"
 	"log/slog"
+	"spate/internal/download"
+	"spate/internal/job"
+	"spate/internal/logx"
+	"spate/internal/policy"
+	"spate/internal/progress"
 )
 
 func main() {
@@ -31,12 +31,12 @@ func main() {
 }
 
 func run(args []string) int {
-	fs := flag.NewFlagSet("cascade", flag.ContinueOnError)
+	fs := flag.NewFlagSet("spate", flag.ContinueOnError)
 	var headers headerFlags
 	var (
 		out      = fs.String("o", "", "output file path (default: derived from URL)")
 		conns    = fs.Int("n", 8, "number of parallel connections")
-		resume   = fs.Bool("resume", false, "resume from an existing .cascade sidecar if present")
+		resume   = fs.Bool("resume", false, "resume from an existing .spate sidecar if present")
 		limit    = fs.String("limit", "", "aggregate rate limit, e.g. 2M or 500K (default: unlimited)")
 		sha      = fs.String("sha256", "", "expected SHA-256 hex digest to verify on completion")
 		retries  = fs.Int("retries", 0, "per-window retry attempts; 0 = keep retrying up to 15 minutes")
@@ -53,7 +53,7 @@ func run(args []string) int {
 	)
 	fs.Var(&headers, "H", "extra request header 'Key: Value' (repeatable)")
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: cascade [flags] <url> [url...]\n\nflags:\n")
+		fmt.Fprintf(fs.Output(), "usage: spate [flags] <url> [url...]\n\nflags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -64,7 +64,7 @@ func run(args []string) int {
 		return 2
 	}
 	if fs.NArg() > 1 && *out != "" {
-		fmt.Fprintf(os.Stderr, "cascade: -o cannot be used with multiple URLs\n")
+		fmt.Fprintf(os.Stderr, "spate: -o cannot be used with multiple URLs\n")
 		return 2
 	}
 	// The core logs through slog; the CLI shows that only on request so the
@@ -77,17 +77,17 @@ func run(args []string) int {
 
 	rate, err := parseSize(*limit)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cascade: invalid --limit: %v\n", err)
+		fmt.Fprintf(os.Stderr, "spate: invalid --limit: %v\n", err)
 		return 2
 	}
 	wb, err := parseSize(*wbuf)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cascade: invalid --wbuf: %v\n", err)
+		fmt.Fprintf(os.Stderr, "spate: invalid --wbuf: %v\n", err)
 		return 2
 	}
 	hdrMap, err := headers.toMap()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cascade: invalid -H: %v\n", err)
+		fmt.Fprintf(os.Stderr, "spate: invalid -H: %v\n", err)
 		return 2
 	}
 	var basicUser, basicPass string
@@ -96,7 +96,7 @@ func run(args []string) int {
 	}
 	gate, err := policy.Gate(policy.Options{WiFiOnly: *wifiOnly, BatteryMin: *battMin})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "cascade: %v\n", err)
+		fmt.Fprintf(os.Stderr, "spate: %v\n", err)
 		return 2
 	}
 
@@ -133,13 +133,13 @@ func run(args []string) int {
 
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			fmt.Fprintf(os.Stderr, "\ncascade: interrupted; rerun with --resume to continue\n")
+			fmt.Fprintf(os.Stderr, "\nspate: interrupted; rerun with --resume to continue\n")
 			return 130
 		}
-		fmt.Fprintf(os.Stderr, "\ncascade: %v\n", err)
+		fmt.Fprintf(os.Stderr, "\nspate: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(os.Stderr, "\ncascade: saved %s\n", d.Output())
+	fmt.Fprintf(os.Stderr, "\nspate: saved %s\n", d.Output())
 	return 0
 }
 
@@ -148,7 +148,7 @@ func runQueue(ctx context.Context, urls []string, maxConc int, opts download.Opt
 	m := job.New(maxConc)
 	for _, u := range urls {
 		if _, err := m.Add(job.Spec{URL: u, Options: opts}); err != nil {
-			fmt.Fprintf(os.Stderr, "cascade: %v\n", err)
+			fmt.Fprintf(os.Stderr, "spate: %v\n", err)
 			return 1
 		}
 	}
@@ -194,17 +194,17 @@ func summarizeQueue(m *job.Manager, runErr error) int {
 	for _, s := range m.Statuses() {
 		if s.State == job.Failed {
 			failed++
-			fmt.Fprintf(os.Stderr, "cascade: %s failed: %v\n", s.ID, s.Err)
+			fmt.Fprintf(os.Stderr, "spate: %s failed: %v\n", s.ID, s.Err)
 		}
 	}
 	if runErr != nil && errors.Is(runErr, context.Canceled) {
-		fmt.Fprintf(os.Stderr, "cascade: interrupted; rerun with --resume to continue\n")
+		fmt.Fprintf(os.Stderr, "spate: interrupted; rerun with --resume to continue\n")
 		return 130
 	}
 	if failed > 0 || runErr != nil {
 		return 1
 	}
-	fmt.Fprintf(os.Stderr, "cascade: all %d downloads complete\n", len(m.Statuses()))
+	fmt.Fprintf(os.Stderr, "spate: all %d downloads complete\n", len(m.Statuses()))
 	return 0
 }
 

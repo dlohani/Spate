@@ -1,8 +1,8 @@
-// Command cascade-host is the browser native-messaging host for Cascade.
+// Command spate-host is the browser native-messaging host for Spate.
 //
 // The browser launches this process itself when the extension calls
-// chrome.runtime.sendNativeMessage("com.cascade.host", ...). It makes sure the
-// resident Cascade app is running (launching it, detached, if not), waits for
+// chrome.runtime.sendNativeMessage("com.amlabs.spate.host", ...). It makes sure the
+// resident Spate app is running (launching it, detached, if not), waits for
 // its loopback endpoint, and replies with the endpoint address and the capture
 // token. Native messaging is a browser-enforced trusted channel (only the
 // extension IDs listed in the host manifest can invoke it), so handing over the
@@ -27,9 +27,9 @@ import (
 )
 
 const (
-	appBundle    = "Cascade.app" // macOS: Flutter app bundle installed next to this host (preferred)
-	bundleDir    = "cascade_app" // Linux/Windows: Flutter bundle directory installed next to this host
-	bundleBinary = "cascade_app" // executable inside the bundle directory (+ .exe on Windows)
+	appBundle    = "Spate.app" // macOS: Flutter app bundle installed next to this host (preferred)
+	bundleDir    = "spate_app" // Linux/Windows: Flutter bundle directory installed next to this host
+	bundleBinary = "spate_app" // executable inside the bundle directory (+ .exe on Windows)
 	launchWait   = 20 * time.Second
 	ports        = "8760,8761,8762"
 )
@@ -83,7 +83,7 @@ func ensure() reply {
 	return r
 }
 
-// macAppBundle returns the installed Cascade.app on macOS: the per-user or
+// macAppBundle returns the installed Spate.app on macOS: the per-user or
 // system Applications folder (where the installers put it), else the legacy
 // location next to this host. "" when none exists.
 func macAppBundle(hostDir string) string {
@@ -100,7 +100,7 @@ func macAppBundle(hostDir string) string {
 	return ""
 }
 
-// findApp returns the address of a running Cascade endpoint, or "".
+// findApp returns the address of a running Spate endpoint, or "".
 func findApp() string {
 	c := &http.Client{Timeout: 400 * time.Millisecond}
 	for _, p := range strings.Split(ports, ",") {
@@ -114,7 +114,7 @@ func findApp() string {
 		}
 		_ = json.NewDecoder(resp.Body).Decode(&body)
 		resp.Body.Close()
-		if body.App == "cascade" {
+		if body.App == "spate" {
 			return addr
 		}
 	}
@@ -145,12 +145,12 @@ func launchApp() error {
 		cmd = exec.Command(filepath.Join(dir, bundleDir, bundleBinary+ext))
 		detach(cmd)
 	default:
-		return fmt.Errorf("no Cascade app found next to %s", exe)
+		return fmt.Errorf("no Spate app found next to %s", exe)
 	}
 
 	// Serialize concurrent launches (two downloads arriving at once).
 	cfg, _ := os.UserConfigDir()
-	lockPath := filepath.Join(cfg, "cascade", "launch.lock")
+	lockPath := filepath.Join(cfg, "spate", "launch.lock")
 	_ = os.MkdirAll(filepath.Dir(lockPath), 0o700)
 	unlock, ok := tryLock(lockPath)
 	if !ok {
@@ -185,7 +185,7 @@ func readToken() string {
 	if err != nil {
 		return ""
 	}
-	b, err := os.ReadFile(filepath.Join(cfg, "cascade", "token"))
+	b, err := os.ReadFile(filepath.Join(cfg, "spate", "token"))
 	if err != nil {
 		return ""
 	}

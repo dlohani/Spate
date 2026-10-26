@@ -1,4 +1,4 @@
-# cascade architecture: one core, five platforms
+# spate architecture: one core, five platforms
 
 Goal: a single shared codebase that exports to Android, iOS, Windows, Linux, and
 macOS. The download engine is written once in Go and exposed through a stable
@@ -36,10 +36,10 @@ per-platform. The engine holds all the hard logic; shells wire it to the OS.
 
 Two exports over the same core, sharing one JSON status schema:
 
-- **C ABI** (`export/cshared`, `buildmode=c-shared`): `libcascade.{dylib,so}` /
-  `cascade.dll` + header. Consumed by Flutter via `dart:ffi` and by any native C
+- **C ABI** (`export/cshared`, `buildmode=c-shared`): `libspate.{dylib,so}` /
+  `spate.dll` + header. Consumed by Flutter via `dart:ffi` and by any native C
   code. Handle-based API; structured data crosses as JSON strings.
-- **gomobile** (`mobile/`): `cascade.aar` (Android) and `Cascade.xcframework`
+- **gomobile** (`mobile/`): `spate.aar` (Android) and `Spate.xcframework`
   (iOS) for native Kotlin/Swift shells. Same JSON schema.
 
 Status schema (every export, defined once as `job.StatusJSON`):
@@ -84,7 +84,7 @@ prohibited or DRM-blocked. Findings:
 
 Chosen approach: **user shares the post to the app (mobile) or a browser
 extension reads the page (desktop); a resolver turns that into a media URL; the
-cascade engine downloads it.** No screen analysis, no mobile "extension."
+spate engine downloads it.** No screen analysis, no mobile "extension."
 
 ## Boundary (non-negotiable)
 
@@ -97,14 +97,14 @@ responsibility.
 
 | Target | Artifact | Command | Prereqs |
 |---|---|---|---|
-| Desktop CLI | `dist/cascade` | `make cli` | Go 1.22+ |
-| Desktop/Flutter FFI | `libcascade.{dylib,so}` / `cascade.dll` + header | `make lib` | CGO + host C toolchain |
-| Android | `cascade.aar` | `make android` | gomobile + Android SDK/NDK |
-| iOS | `Cascade.xcframework` | `make ios` | gomobile + Xcode (macOS) |
+| Desktop CLI | `dist/spate` | `make cli` | Go 1.22+ |
+| Desktop/Flutter FFI | `libspate.{dylib,so}` / `spate.dll` + header | `make lib` | CGO + host C toolchain |
+| Android | `spate.aar` | `make android` | gomobile + Android SDK/NDK |
+| iOS | `Spate.xcframework` | `make ios` | gomobile + Xcode (macOS) |
 
 ### Verified in this environment (macOS/arm64)
 - `go build ./...`, `go vet ./...`, `go test -race ./...` (all pass).
-- `make lib` produces `libcascade.dylib` + header; a C program linked against it
+- `make lib` produces `libspate.dylib` + header; a C program linked against it
   ran a real download end to end with byte-identical output.
 
 ### Not verifiable here (needs external SDKs)

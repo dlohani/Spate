@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"cascade/internal/logx"
+	"spate/internal/logx"
 )
 
 // The core logs through slog's default logger, which only the service and the

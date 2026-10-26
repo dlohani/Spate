@@ -93,7 +93,7 @@ func ftpDial(ctx context.Context, u *url.URL, opts Options) (*ftpConn, error) {
 			return nil, err
 		}
 	}
-	user, pass := "anonymous", "cascade@"
+	user, pass := "anonymous", "spate@"
 	if u.User != nil {
 		user = u.User.Username()
 		if p, ok := u.User.Password(); ok {

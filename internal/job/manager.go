@@ -3,7 +3,7 @@
 // once, and per-job pause/resume.
 //
 // Pause is implemented by cancelling the running download (which leaves a
-// resumable .cascade sidecar) and marking the job paused; resume re-queues it
+// resumable .spate sidecar) and marking the job paused; resume re-queues it
 // with the engine's Resume option, so it continues from where it stopped.
 package job
 
@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"cascade/internal/download"
+	"spate/internal/download"
 )
 
 // gateRetryDelay is how long a job waits before retrying after a policy gate
@@ -332,7 +332,7 @@ func (m *Manager) Pause(id string) error {
 }
 
 // Cancel force-cancels a job. A running job is stopped (partial file and its
-// .cascade sidecar remain on disk); a pending or paused job is marked cancelled.
+// .spate sidecar remain on disk); a pending or paused job is marked cancelled.
 func (m *Manager) Cancel(id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

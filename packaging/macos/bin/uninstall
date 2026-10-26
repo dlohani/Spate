@@ -1,17 +1,17 @@
 #!/bin/bash
-# Remove Cascade for the current user: login item, browser host registrations,
+# Remove Spate for the current user: login item, browser host registrations,
 # the app and helper files. Settings, the pairing token and downloads are kept.
 set -u
-ROOT="$HOME/Library/Application Support/cascade"
-launchctl bootout "gui/$(id -u)/dev.d3xt3r.cascade" >/dev/null 2>&1 || true
-rm -f "$HOME/Library/LaunchAgents/dev.d3xt3r.cascade.plist"
-pkill -x cascade_app >/dev/null 2>&1 || true
-pkill -x cascade-mac >/dev/null 2>&1 || true
+ROOT="$HOME/Library/Application Support/spate"
+launchctl bootout "gui/$(id -u)/com.amlabs.spate" >/dev/null 2>&1 || true
+rm -f "$HOME/Library/LaunchAgents/com.amlabs.spate.plist"
+pkill -x spate_app >/dev/null 2>&1 || true
+pkill -x spate-mac >/dev/null 2>&1 || true
 AS="$HOME/Library/Application Support"
 for b in Chromium Google/Chrome BraveSoftware/Brave-Browser "Microsoft Edge" Vivaldi; do
-  rm -f "$AS/$b/NativeMessagingHosts/com.cascade.host.json"
+  rm -f "$AS/$b/NativeMessagingHosts/com.amlabs.spate.host.json"
 done
-rm -rf "$HOME/Applications/Cascade.app" "$ROOT/bin" "$ROOT/extension"
-pkgutil --forget dev.d3xt3r.cascade >/dev/null 2>&1 || true
-pkgutil --forget dev.d3xt3r.cascade.app >/dev/null 2>&1 || true
-echo "Cascade removed. (Kept: $ROOT/settings.json, $ROOT/token and your downloads.)"
+rm -rf "$HOME/Applications/Spate.app" "$ROOT/bin" "$ROOT/extension"
+pkgutil --forget com.amlabs.spate >/dev/null 2>&1 || true
+pkgutil --forget com.amlabs.spate.app >/dev/null 2>&1 || true
+echo "Spate removed. (Kept: $ROOT/settings.json, $ROOT/token and your downloads.)"

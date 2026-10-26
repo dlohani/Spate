@@ -16,7 +16,7 @@ import (
 // over 8 connections, 7.2 s kernel CPU with the cache vs 2.8 s without, at
 // four times the throughput. Best effort: an error is ignored.
 func bypassCache(f *os.File) {
-	if os.Getenv("CASCADE_PAGE_CACHE") == "1" {
+	if os.Getenv("SPATE_PAGE_CACHE") == "1" {
 		return // escape hatch: write through the cache as before
 	}
 	const fNOCACHE = 48 // F_NOCACHE from <fcntl.h>

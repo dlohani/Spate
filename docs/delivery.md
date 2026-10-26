@@ -1,4 +1,4 @@
-# Delivering Cascade to every platform
+# Delivering Spate to every platform
 
 This is the reference for how the app is built, shipped and kept the same on
 macOS, Windows, Linux, Android and iOS. `architecture.md` says what the layers
@@ -24,7 +24,7 @@ edges, and they are where parity and cost problems come from.
   about 115 MB after. The daemon split (Phase 4) is what removes the Flutter
   share from the always-on process.
 - The UI polls the core every 500 ms. Since October 2026 it first reads
-  `CascadeQueueVersion` and skips the status round trip when the queue is
+  `SpateQueueVersion` and skips the status round trip when the queue is
   unchanged and nothing is running; push (callback) remains for Phase 4.
 - Delivery is manual and can degrade silently: the Windows UI is built by
   hand in a VM and copied back, and a build without it produced an installer
@@ -42,8 +42,8 @@ atomically with 0600. Since October 2026: partial downloads live under
 `"layout":"part"`; only a sidecar without it may treat a file at the final path
 as its partial, so a finished file is never adopted or deleted as one); the queue
 (pause state, schedule, priority, hand-off cookies and headers) survives a
-restart; every C export reports its failure through `CascadeLastError`, and the
-shell shows a start failure instead of exiting; the core logs to `cascade.log`
+restart; every C export reports its failure through `SpateLastError`, and the
+shell shows a start failure instead of exiting; the core logs to `spate.log`
 beside the settings; the status JSON is one Go type (`job.StatusJSON`) with a
 field-set test; CI runs `flutter analyze` and the FFI test on macOS and Linux.
 Engine writes are coalesced into 512 KiB aligned blocks and bypass the page
@@ -76,7 +76,7 @@ progress ticks (see README "Footprint").
 - `./build windows` and `scripts/build-windows.sh` refuse to produce an
   installer without the Flutter bundle unless explicitly told to build a
   CLI-only artifact, and that artifact is named as such.
-- `cascade-setup.exe` refuses to install without the UI in its payload unless
+- `spate-setup.exe` refuses to install without the UI in its payload unless
   told to (`--no-ui`), so a UI-less setup can never look like a full one.
 - A release build requires a clean, tagged tree; dev builds keep the
   `+sha.dirty` label and cannot be published.
@@ -99,7 +99,7 @@ progress ticks (see README "Footprint").
   `c-archive` linked statically on iOS. Flutter uses the identical `dart:ffi`
   binding on all five platforms. gomobile is retired unless a native Kotlin or
   Swift shell is actually wanted.
-- `CascadeABIVersion` export and the add-only rule for the JSON schema.
+- `SpateABIVersion` export and the add-only rule for the JSON schema.
 - The JSON crossing FFI and loopback is defined once in Go with a schema test
   (done: `job.StatusJSON`); Dart models are generated from it (open).
 
@@ -108,11 +108,11 @@ progress ticks (see README "Footprint").
 - On desktop the resident process becomes a headless Go daemon. The Flutter
   UI launches on demand and talks to it over the existing loopback API. On
   mobile the UI keeps FFI in-process.
-- One Dart `CascadeClient` interface with two implementations (FFI, loopback)
+- One Dart `SpateClient` interface with two implementations (FFI, loopback)
   under one contract test suite run on every platform. Screens never branch on
   platform for behaviour.
 - Push, not poll: the core signals change (`NativeCallable` callback) and the
-  UI redraws on change. The version counter half is done (`CascadeQueueVersion`,
+  UI redraws on change. The version counter half is done (`SpateQueueVersion`,
   the UI skips idle polls); stopping the timer when hidden is open.
 
 ### Throughout: the parity matrix and the manifest
@@ -141,7 +141,7 @@ NetworkManager get a clear "unavailable" for Wi-Fi-only).
 - Signed, reproducible artifacts from CI only (Phase 2). A dirty or untagged
   tree cannot produce a release-labelled artifact (Phase 1).
 - The FFI loader in release builds accepts exactly one location, the
-  application bundle. `CASCADE_LIB` and the repo-relative candidates stay
+  application bundle. `SPATE_LIB` and the repo-relative candidates stay
   behind a debug flag. The native host launches the app only from its
   installed location.
 - No silent fallbacks. The fixed capture token fallback is removed: if the
@@ -165,11 +165,11 @@ NetworkManager get a clear "unavailable" for Wi-Fi-only).
 ### Release obfuscation
 
 `./build release <targets>` and tag-push CI (`refs/tags/v*`) build with
-`CASCADE_OBFUSCATE=1`. Dev builds and PR/branch CI do not, for speed. Set the
+`SPATE_OBFUSCATE=1`. Dev builds and PR/branch CI do not, for speed. Set the
 variable yourself to try it on a dev build; a release without `garble` on PATH
 (`go install mvdan.cc/garble@v0.18.0`) fails loudly instead of shipping plain
 binaries. The garble seed derives from VERSION plus the git SHA (override with
-`CASCADE_OBF_SEED`), so a release rebuilds identically given the pinned
+`SPATE_OBF_SEED`), so a release rebuilds identically given the pinned
 toolchains CI uses (Go 1.27.x and garble v0.18.0).
 
 Three layers:
@@ -179,7 +179,7 @@ Three layers:
   via `build-windows.sh`, Linux via `package-linux.sh`, all through the same
   `scripts/lib/obfuscate.sh` helper); the shared library also gets `-literals`
   (string and constant obfuscation) and `-tiny`; the CLI gets `-tiny` only.
-- C ABI: the shared library exports only the 28 `Cascade*` symbols, on macOS,
+- C ABI: the shared library exports only the 28 `Spate*` symbols, on macOS,
   Windows and Linux (always-on hardening, independent of the switch).
 - Dart UI: `flutter build --obfuscate --split-debug-info` randomizes Dart
   identifiers on the macOS, Windows and Linux desktop builds.
@@ -188,9 +188,9 @@ Cost: `-literals` roughly doubles the size of the core library, and garble
 builds are slower.
 
 Verified, not assumed: `scripts/verify-obfuscation.sh` runs inside every
-packager when `CASCADE_OBFUSCATE=1` and fails the build if a shipped Go
-artifact still names a `cascade/...` package in its symbols or strings, or if
-the shared library exports anything but the listed `Cascade*` symbols. The
+packager when `SPATE_OBFUSCATE=1` and fails the build if a shipped Go
+artifact still names a `spate/...` package in its symbols or strings, or if
+the shared library exports anything but the listed `Spate*` symbols. The
 macOS and Linux native hosts are built through the same helper as the core.
 Measured on the 0.4.0 tree: the library goes from 11,715 symbols and 283
 package-path symbols to 149 and none, with no telltale strings left; the CLI

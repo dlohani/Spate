@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Cascade build front door: one command per platform, always from the working
+# Spate build front door: one command per platform, always from the working
 # tree (uncommitted changes included). Finished artifacts land in
 # dist/{macos,windows,linux,extension,android,ios}/ with the version in the
 # name; everything else under dist/ is build intermediates.
 #
-#   ./build mac        [--install]   Flutter app + libcascade -> Cascade-<v>.pkg, Cascade-<v>-macos.zip
-#   ./build windows                  cross-compiled Go pieces + cascade-setup.exe (+ NSIS installer)
+#   ./build mac        [--install]   Flutter app + libspate -> Spate-<v>.pkg, Spate-<v>-macos.zip
+#   ./build windows                  cross-compiled Go pieces + spate-setup.exe (+ NSIS installer)
 #   ./build linux      [--cli-only]  Debian package (full on Linux, CLI-only elsewhere)
-#   ./build android                  libcascade .aar (gomobile) + APK when the Android SDK is present
-#   ./build ios                      Cascade.xcframework (gomobile) + unsigned iOS app
+#   ./build android                  libspate .aar (gomobile) + APK when the Android SDK is present
+#   ./build ios                      Spate.xcframework (gomobile) + unsigned iOS app
 #   ./build extension                Chrome/Firefox zips, Safari source (+ Safari app on macOS)
 #   ./build all                      everything this host can build
 #   ./build release <target...>      same, but refuses unless the tree is clean and HEAD is tagged;
@@ -39,7 +39,7 @@ TAGGED=""; git describe --tags --exact-match >/dev/null 2>&1 && TAGGED=1
 LABEL="$VERSION"
 if [ -z "$TAGGED" ] || [ -n "$DIRTY" ]; then LABEL="$VERSION+$SHA$DIRTY"; fi
 BUILDNUM="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
-export CASCADE_BUILD_NUMBER="$BUILDNUM"
+export SPATE_BUILD_NUMBER="$BUILDNUM"
 
 # require_release: a release-labelled build needs a clean tree on tag v$VERSION and
 # must carry the UI.
@@ -47,7 +47,7 @@ require_release() {
   local why=""
   [ -z "$DIRTY" ] || why="uncommitted changes"
   [ "$(git describe --tags --exact-match 2>/dev/null)" = "v$VERSION" ] || why="${why:+$why, }HEAD is not on tag v$VERSION"
-  [ -z "${CASCADE_ALLOW_NO_UI:-}" ] || why="${why:+$why, }CASCADE_ALLOW_NO_UI is set"
+  [ -z "${SPATE_ALLOW_NO_UI:-}" ] || why="${why:+$why, }SPATE_ALLOW_NO_UI is set"
   if [ -n "$why" ]; then
     echo "release: refused ($why). Commit, tag v$VERSION, unset overrides, then retry." >&2
     exit 2
@@ -62,7 +62,7 @@ need() { command -v "$1" >/dev/null 2>&1 || { note "missing: $1 ($2)"; [ "$RELEA
 artifacts=()
 # label SRC PLATFORM: moves a finished artifact into dist/<platform>/ under its
 # labelled name (version -> label) and records it. Intermediates (dist/
-# windows-amd64, linux-*, libcascade.*, *-extension/ sources) stay in place.
+# windows-amd64, linux-*, libspate.*, *-extension/ sources) stay in place.
 label() {
   local src="$1" plat="$2" name dst
   [ -e "$src" ] || return 0
@@ -94,8 +94,8 @@ if [ "${TARGETS[0]}" = release ]; then
   # Release artifacts are always obfuscated (Go core via garble, Dart, C ABI).
   # The seed is reproducible per release (VERSION + SHA, same derivation the
   # helper uses); a missing garble aborts here, never a plain fallback.
-  export CASCADE_OBFUSCATE=1
-  export CASCADE_OBF_SEED="${CASCADE_OBF_SEED:-$(obf_seed)}"
+  export SPATE_OBFUSCATE=1
+  export SPATE_OBF_SEED="${SPATE_OBF_SEED:-$(obf_seed)}"
   obf_require_garble
   # (check the count before slicing: an empty array trips bash 3.2 + set -u)
   [ ${#TARGETS[@]} -gt 1 ] || { echo "release: name at least one target (e.g. ./build release all)" >&2; exit 2; }
@@ -116,9 +116,9 @@ do_mac() {
   say "macOS $LABEL"
   scripts/flutter-macos.sh build 2>&1 | grep -E "==> app|error:" || true
   scripts/package-macos.sh | grep -E "^==> /|error" || true
-  label "$DIST/Cascade-$VERSION.pkg" macos
+  label "$DIST/Spate-$VERSION.pkg" macos
   local app; app="$(ls -d apps/flutter/build/macos/Build/Products/Release/*.app | head -1)"
-  local zip="$DIST/Cascade-$VERSION-macos.zip"; rm -f "$zip"
+  local zip="$DIST/Spate-$VERSION-macos.zip"; rm -f "$zip"
   ditto -c -k --keepParent "$app" "$zip" && label "$zip" macos
   if [ "$INSTALL" = 1 ]; then scripts/install-macos.sh | grep -E "^==>" || true; fi
 }
@@ -136,7 +136,7 @@ do_windows() {
     echo "==> Windows build failed (see above)" >&2
     exit 1
   fi
-  for z in cascade-windows-amd64.zip cascade-windows-amd64-cli-only.zip; do
+  for z in spate-windows-amd64.zip spate-windows-amd64-cli-only.zip; do
     if [ -f "$DIST/$z" ]; then
       mv -f "$DIST/$z" "$DIST/${z%.zip}-$VERSION.zip"; label "$DIST/${z%.zip}-$VERSION.zip" windows
     fi
@@ -149,12 +149,12 @@ do_windows() {
         echo "==> Windows installer packaging failed (see above)" >&2
         exit 1
       fi
-      label "$DIST/Cascade-Setup-$VERSION.exe" windows
+      label "$DIST/Spate-Setup-$VERSION.exe" windows
     else
-      note "NSIS installer skipped: the Flutter Windows UI is built on Windows (scripts/flutter-windows.ps1); copy its Release folder to dist/windows-amd64/cascade_app"
+      note "NSIS installer skipped: the Flutter Windows UI is built on Windows (scripts/flutter-windows.ps1); copy its Release folder to dist/windows-amd64/spate_app"
     fi
   else
-    note "makensis missing (brew install makensis): no NSIS installer, cascade-setup.exe built"
+    note "makensis missing (brew install makensis): no NSIS installer, spate-setup.exe built"
   fi
 }
 
@@ -162,21 +162,21 @@ do_linux() {
   say "Linux $LABEL"
   # (no array: bash 3.2 + set -u trips on an empty "${args[@]}")
   scripts/package-linux.sh ${CLI_ONLY:+--cli-only} | grep -E "^==>|note:" || true
-  for f in "$DIST"/cascade_"$VERSION"_*.deb "$DIST"/cascade-cli_"$VERSION"_*.deb; do [ -e "$f" ] && label "$f" linux; done
-  make -s host-linux && note "dist/linux-{amd64,arm64}/cascade-host"
+  for f in "$DIST"/spate_"$VERSION"_*.deb "$DIST"/spate-cli_"$VERSION"_*.deb; do [ -e "$f" ] && label "$f" linux; done
+  make -s host-linux && note "dist/linux-{amd64,arm64}/spate-host"
 }
 
 do_android() {
   say "Android $LABEL"
   if need gomobile "make tools" && [ -n "${ANDROID_NDK_HOME:-}${ANDROID_HOME:-}" ]; then
-    make -s android && { mv -f "$DIST/cascade.aar" "$DIST/cascade-$VERSION.aar"; label "$DIST/cascade-$VERSION.aar" android; }
+    make -s android && { mv -f "$DIST/spate.aar" "$DIST/spate-$VERSION.aar"; label "$DIST/spate-$VERSION.aar" android; }
   else
-    note "libcascade .aar skipped (needs gomobile + ANDROID_HOME/ANDROID_NDK_HOME)"
+    note "libspate .aar skipped (needs gomobile + ANDROID_HOME/ANDROID_NDK_HOME)"
   fi
   if command -v flutter >/dev/null && [ -n "${ANDROID_HOME:-}${ANDROID_SDK_ROOT:-}" ]; then
     (cd apps/flutter && flutter build apk --release --build-name="$VERSION" --build-number="$BUILDNUM" 2>&1 | grep -E "Built|error" || true)
     local apk="apps/flutter/build/app/outputs/flutter-apk/app-release.apk"
-    [ -f "$apk" ] && { cp "$apk" "$DIST/Cascade-$VERSION.apk"; label "$DIST/Cascade-$VERSION.apk" android; }
+    [ -f "$apk" ] && { cp "$apk" "$DIST/Spate-$VERSION.apk"; label "$DIST/Spate-$VERSION.apk" android; }
   else
     note "APK skipped (needs Flutter + Android SDK: ANDROID_HOME)"
   fi
@@ -186,13 +186,13 @@ do_ios() {
   [ "$(uname -s)" = Darwin ] || { note "ios: needs a macOS host"; return 0; }
   say "iOS $LABEL"
   if need gomobile "make tools"; then
-    make -s ios && { rm -rf "$DIST/Cascade-$VERSION.xcframework"; mv "$DIST/Cascade.xcframework" "$DIST/Cascade-$VERSION.xcframework"; label "$DIST/Cascade-$VERSION.xcframework" ios; }
+    make -s ios && { rm -rf "$DIST/Spate-$VERSION.xcframework"; mv "$DIST/Spate.xcframework" "$DIST/Spate-$VERSION.xcframework"; label "$DIST/Spate-$VERSION.xcframework" ios; }
   fi
   if command -v flutter >/dev/null; then
     (cd apps/flutter && flutter build ios --release --no-codesign --build-name="$VERSION" --build-number="$BUILDNUM" 2>&1 | grep -E "Built|error" || true)
     local app="apps/flutter/build/ios/iphoneos/Runner.app"
     if [ -d "$app" ]; then
-      local zip="$DIST/Cascade-$VERSION-ios-unsigned.zip"; rm -f "$zip"
+      local zip="$DIST/Spate-$VERSION-ios-unsigned.zip"; rm -f "$zip"
       ditto -c -k --keepParent "$app" "$zip" && label "$zip" ios
       note "unsigned: sign with your team in Xcode (or flutter build ipa) for a device"
     fi
@@ -205,10 +205,10 @@ do_extension() {
   if [ "$(uname -s)" = Darwin ] && xcrun --find safari-web-extension-converter >/dev/null 2>&1; then
     # (re-packages internally, so the zips are labelled afterwards)
     scripts/safari-extension.sh 2>&1 | grep -E "==> installed|error|BUILD" || true
-    artifacts+=("$HOME/Applications/Cascade for Safari.app")
+    artifacts+=("$HOME/Applications/Spate for Safari.app")
   fi
-  label "$DIST/cascade-extension-$VERSION.zip" extension
-  label "$DIST/cascade-extension-firefox-$VERSION.zip" extension
+  label "$DIST/spate-extension-$VERSION.zip" extension
+  label "$DIST/spate-extension-firefox-$VERSION.zip" extension
 }
 
 do_bump() {
@@ -217,8 +217,8 @@ do_bump() {
   local old="$VERSION"
   printf '%s\n' "$v" > VERSION
   sed -i.bak "s/^version: .*/version: $v+1/" apps/flutter/pubspec.yaml && rm -f apps/flutter/pubspec.yaml.bak
-  sed -i.bak "s/  version \"$old\"/  version \"$v\"/" packaging/homebrew/cascade.rb && rm -f packaging/homebrew/cascade.rb.bak
-  sed -i.bak "s/$old/$v/g" packaging/winget/d3xt3r.Cascade.yaml && rm -f packaging/winget/d3xt3r.Cascade.yaml.bak
+  sed -i.bak "s/  version \"$old\"/  version \"$v\"/" packaging/homebrew/spate.rb && rm -f packaging/homebrew/spate.rb.bak
+  sed -i.bak "s/$old/$v/g" packaging/winget/AMLabs.Spate.yaml && rm -f packaging/winget/AMLabs.Spate.yaml.bak
   scripts/package-extension.sh >/dev/null   # stamps the three manifests
   say "version $old -> $v"
   git --no-pager diff --stat | sed 's/^/    /'

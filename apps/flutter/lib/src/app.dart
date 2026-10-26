@@ -5,14 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
-import 'ffi/cascade_ffi.dart';
+import 'ffi/spate_ffi.dart';
 import 'model/job.dart';
 import 'model/ui_prefs.dart';
 import 'settings_screen.dart';
 
 /// App state: polls the core twice a second and exposes the queue.
-class CascadeController extends ChangeNotifier {
-  final Cascade core;
+class SpateController extends ChangeNotifier {
+  final Spate core;
   List<JobStatus> jobs = const [];
   final Map<String, _Rate> _rates = {};
   bool pairShown = false; // a pairing dialog is currently on screen
@@ -35,7 +35,7 @@ class CascadeController extends ChangeNotifier {
   /// while false, widget listeners are not notified (see [onJobsRefreshed]).
   bool visible = true;
 
-  CascadeController(this.core) {
+  SpateController(this.core) {
     _tick();
     _timer = Timer.periodic(const Duration(milliseconds: 500), (_) => _tick());
   }
@@ -215,10 +215,10 @@ Route<T> fadeRoute<T>(Widget page) => PageRouteBuilder<T>(
   },
 );
 
-class CascadeApp extends StatelessWidget {
-  final CascadeController controller;
+class SpateApp extends StatelessWidget {
+  final SpateController controller;
   final UiPrefs prefs;
-  const CascadeApp({super.key, required this.controller, required this.prefs});
+  const SpateApp({super.key, required this.controller, required this.prefs});
 
   /// Light is white surfaces on a soft grey; dark is near-black surfaces.
   /// Both are seeded from the user's accent colour.
@@ -275,7 +275,7 @@ class CascadeApp extends StatelessWidget {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: prefs,
     builder: (context, _) => MaterialApp(
-      title: 'Cascade',
+      title: 'Spate',
       debugShowCheckedModeBanner: false,
       themeMode: prefs.mode,
       themeAnimationDuration: kMotionSlow,
@@ -288,7 +288,7 @@ class CascadeApp extends StatelessWidget {
 }
 
 class HomeScreen extends StatefulWidget {
-  final CascadeController controller;
+  final SpateController controller;
   final UiPrefs prefs;
   const HomeScreen({super.key, required this.controller, required this.prefs});
   @override
@@ -327,7 +327,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.extension_outlined),
         title: const Text('Connect browser extension?'),
-        content: const Text('The Cascade browser extension wants to hand downloads to this app.'),
+        content: const Text('The Spate browser extension wants to hand downloads to this app.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Deny')),
           FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Allow')),
@@ -453,7 +453,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 15),
           ),
           const SizedBox(width: 10),
-          Text('Cascade', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.2)),
+          Text('Spate', style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.2)),
         ],
         const Spacer(),
         if (active > 0) ...[
@@ -676,7 +676,7 @@ class _Pill extends StatelessWidget {
 
 class DownloadCard extends StatefulWidget {
   final JobStatus job;
-  final CascadeController controller;
+  final SpateController controller;
   const DownloadCard({super.key, required this.job, required this.controller});
   @override
   State<DownloadCard> createState() => _DownloadCardState();

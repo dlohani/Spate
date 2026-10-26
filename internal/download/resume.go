@@ -7,7 +7,7 @@ import (
 )
 
 // controlExt is appended to the output path for the resume sidecar file.
-const controlExt = ".cascade"
+const controlExt = ".spate"
 
 // Segment is one contiguous byte range [Start, End] and how much of it has been
 // written to disk. Done is a count of bytes, so the next fetch resumes at

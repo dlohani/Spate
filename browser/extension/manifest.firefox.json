@@ -1,11 +1,11 @@
 {
   "manifest_version": 2,
-  "name": "Cascade Download Capture",
+  "name": "Spate Download Capture",
   "version": "0.4.0",
-  "description": "Automatically send downloads started in the browser to the Cascade app, with cookies and referrer.",
+  "description": "Automatically send downloads started in the browser to the Spate app, with cookies and referrer.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "cascade@d3xt3r.dev",
+      "id": "spate@amlabs.dev",
       "strict_min_version": "115.0"
     }
   },
@@ -28,7 +28,7 @@
     "open_in_tab": true
   },
   "browser_action": {
-    "default_title": "Cascade",
+    "default_title": "Spate",
     "default_popup": "options.html",
     "default_icon": {
       "16": "icons/16.png",

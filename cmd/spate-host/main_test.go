@@ -38,9 +38,9 @@ func TestReadMessageRejectsOversize(t *testing.T) {
 }
 
 func TestFindAppReturnsEmptyWhenNothingListens(t *testing.T) {
-	// Nothing should answer on the probe ports as "cascade" from inside a unit
+	// Nothing should answer on the probe ports as "spate" from inside a unit
 	// test; this guards the "not running" path the launcher depends on.
 	if a := findApp(); a != "" {
-		t.Skipf("a Cascade app is running at %s; skipping", a)
+		t.Skipf("a Spate app is running at %s; skipping", a)
 	}
 }

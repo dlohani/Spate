@@ -1,4 +1,4 @@
-# cascade_app
+# spate_app
 
 A new Flutter project.
 

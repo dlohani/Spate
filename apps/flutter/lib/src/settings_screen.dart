@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'app.dart' show kMotion, kMotionCurve;
-import 'ffi/cascade_ffi.dart';
+import 'ffi/spate_ffi.dart';
 import 'model/job.dart' show humanBytes;
 import 'model/settings.dart';
 import 'model/ui_prefs.dart';
@@ -15,7 +15,7 @@ const _dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /// limits with time windows, the download window, recurring downloads, and
 /// concurrency. Saved as one document through the C ABI.
 class SettingsScreen extends StatefulWidget {
-  final Cascade core;
+  final Spate core;
   final UiPrefs prefs;
   const SettingsScreen({super.key, required this.core, required this.prefs});
   @override
@@ -72,7 +72,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const Text('Settings'),
                 const SizedBox(width: 10),
                 Text(
-                  'Cascade ${widget.core.version}',
+                  'Spate ${widget.core.version}',
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(color: cs.onSurfaceVariant),
                 ),
               ],
@@ -166,8 +166,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: const Text('Minimise to the tray'),
                     subtitle: Text(
                       Platform.isMacOS
-                          ? 'Minimising hides the window into the menu bar instead of the Dock. Closing always keeps Cascade running; quit from the menu-bar icon.'
-                          : 'Minimising hides the window into the tray instead of the taskbar. Closing always keeps Cascade running; quit from the tray icon.',
+                          ? 'Minimising hides the window into the menu bar instead of the Dock. Closing always keeps Spate running; quit from the menu-bar icon.'
+                          : 'Minimising hides the window into the tray instead of the taskbar. Closing always keeps Spate running; quit from the tray icon.',
                     ),
                     value: widget.prefs.minimizeToTray,
                     onChanged: widget.prefs.setMinimizeToTray,

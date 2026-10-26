@@ -10,7 +10,7 @@ import 'package:tray_manager/src/tray_manager.dart' show TrayManager;
 import 'package:window_manager/window_manager.dart';
 
 import 'src/app.dart';
-import 'src/ffi/cascade_ffi.dart';
+import 'src/ffi/spate_ffi.dart';
 import 'src/model/job.dart' show humanBytes;
 import 'src/model/ui_prefs.dart';
 
@@ -23,34 +23,34 @@ Future<void> main(List<String> args) async {
   // host + a manual open) asks the running instance to show its window and
   // exits. Any other start failure (a corrupt settings file, an unwritable
   // folder) is shown, never swallowed.
-  final Cascade core;
+  final Spate core;
   try {
-    core = Cascade.start(); // concurrency and folder come from settings
-  } on CascadeException catch (e) {
+    core = Spate.start(); // concurrency and folder come from settings
+  } on SpateException catch (e) {
     if (e.alreadyRunning) {
-      Cascade.requestShow();
+      Spate.requestShow();
       exit(0);
     }
     runApp(_FatalApp(e.message));
     return;
   } on StateError catch (e) {
-    // libcascade could not be found.
+    // libspate could not be found.
     runApp(_FatalApp(e.message));
     return;
   } on ArgumentError catch (e) {
-    // libcascade exists but failed to load (wrong architecture, a missing
+    // libspate exists but failed to load (wrong architecture, a missing
     // dependency, a quarantined file).
-    runApp(_FatalApp('libcascade could not be loaded: ${e.message}'));
+    runApp(_FatalApp('libspate could not be loaded: ${e.message}'));
     return;
   }
-  final controller = CascadeController(core);
+  final controller = SpateController(core);
   // Theme mode + accent, kept in ui.json next to the core's settings.json.
   final configDir = (core.info()['configDir'] as String?) ?? '';
   final prefs = UiPrefs(configDir.isEmpty ? 'ui.json' : '$configDir/ui.json');
 
   // --background: started at login (or by the native host for a silent hand-off);
   // stay in the tray without showing the window.
-  final background = args.contains('--background') || Platform.environment['CASCADE_BACKGROUND'] == '1';
+  final background = args.contains('--background') || Platform.environment['SPATE_BACKGROUND'] == '1';
 
   final desktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
   if (desktop) {
@@ -62,15 +62,15 @@ Future<void> main(List<String> args) async {
       minimumSize: kMinWindowSize,
       maximumSize: kMaxWindowSize,
       center: true,
-      title: 'Cascade',
-      // macOS: the app's header row is the title bar (one "Cascade", not a
+      title: 'Spate',
+      // macOS: the app's header row is the title bar (one "Spate", not a
       // native title above an in-app one); traffic lights stay. Windows and
       // Linux keep the native bar, which carries their window controls.
       titleBarStyle: Platform.isMacOS ? TitleBarStyle.hidden : TitleBarStyle.normal,
     );
     windowManager.waitUntilReadyToShow(opts, () async {
       if (background) {
-        // Stay in the tray until "Open Cascade". On macOS the window is hidden
+        // Stay in the tray until "Open Spate". On macOS the window is hidden
         // at launch by MainFlutterWindow; the Windows/Linux runners show it
         // themselves, so hide it here.
         if (!Platform.isMacOS) await windowManager.hide();
@@ -90,7 +90,7 @@ Future<void> main(List<String> args) async {
     await _setupTray(core, controller);
   }
 
-  runApp(CascadeApp(controller: controller, prefs: prefs));
+  runApp(SpateApp(controller: controller, prefs: prefs));
 }
 
 /// Shown instead of the app when the core cannot start: the reason from the
@@ -101,9 +101,9 @@ class _FatalApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cfg = Platform.environment['CASCADE_SETTINGS'] ?? 'the cascade folder in your user config directory';
+    final cfg = Platform.environment['SPATE_SETTINGS'] ?? 'the spate folder in your user config directory';
     return MaterialApp(
-      title: 'Cascade',
+      title: 'Spate',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: const Color(0xFFE11D48)),
       home: Scaffold(
         body: Center(
@@ -115,11 +115,11 @@ class _FatalApp extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Cascade could not start', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+                  const Text('Spate could not start', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 12),
                   SelectableText(message),
                   const SizedBox(height: 12),
-                  Text('Settings and queue files: $cfg. Fix or remove the file named above and open Cascade again.',
+                  Text('Settings and queue files: $cfg. Fix or remove the file named above and open Spate again.',
                       style: Theme.of(context).textTheme.bodySmall),
                   const SizedBox(height: 20),
                   FilledButton(onPressed: () => exit(1), child: const Text('Quit')),
@@ -134,7 +134,7 @@ class _FatalApp extends StatelessWidget {
 }
 
 /// Brings the window back from hidden or minimised state.
-Future<void> showWindow(CascadeController controller) async {
+Future<void> showWindow(SpateController controller) async {
   if (await windowManager.isMinimized()) await windowManager.restore();
   await windowManager.show();
   await windowManager.focus();
@@ -143,7 +143,7 @@ Future<void> showWindow(CascadeController controller) async {
 
 class _Resident with WindowListener {
   final UiPrefs prefs;
-  final CascadeController controller;
+  final SpateController controller;
   _Resident(this.prefs, this.controller);
 
   @override
@@ -179,7 +179,7 @@ class _Resident with WindowListener {
 /// Menu-bar / tray icon: the app icon, plus a live summary
 /// while downloading: "2 · 43%" beside the icon on macOS, the same in the
 /// tooltip and as the first line of the menu everywhere.
-Future<void> _setupTray(Cascade core, CascadeController controller) async {
+Future<void> _setupTray(Spate core, SpateController controller) async {
   final tray = TrayManager.instance;
   tray.addListener(_TrayClicks());
   try {
@@ -199,8 +199,8 @@ Future<void> _setupTray(Cascade core, CascadeController controller) async {
 
 class _TrayStatus {
   final TrayManager tray;
-  final Cascade core;
-  final CascadeController controller;
+  final Spate core;
+  final SpateController controller;
   String _last = '';
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _menuAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -232,7 +232,7 @@ class _TrayStatus {
     _last = key;
     _lastAt = now;
     if (Platform.isMacOS) await tray.setTitle(title.isEmpty ? '' : ' $title');
-    await tray.setToolTip(title.isEmpty ? 'Cascade' : 'Cascade: $line');
+    await tray.setToolTip(title.isEmpty ? 'Spate' : 'Spate: $line');
     // Rebuilding the native menu is the expensive part (it was most of the
     // app's CPU during a long download); the title and tooltip above carry
     // the live numbers every second, the menu's first line can lag a little.
@@ -243,10 +243,10 @@ class _TrayStatus {
         items: [
           MenuItem(label: line, disabled: true),
           MenuItem.separator(),
-          MenuItem(label: 'Open Cascade', onClick: (_) => showWindow(controller)),
+          MenuItem(label: 'Open Spate', onClick: (_) => showWindow(controller)),
           MenuItem.separator(),
           MenuItem(
-            label: 'Quit Cascade',
+            label: 'Quit Spate',
             onClick: (_) async {
               core.stop();
               await tray.destroy();

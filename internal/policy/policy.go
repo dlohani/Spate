@@ -10,7 +10,7 @@ package policy
 import (
 	"fmt"
 
-	"cascade/internal/download"
+	"spate/internal/download"
 )
 
 // Options selects which conditions to enforce.

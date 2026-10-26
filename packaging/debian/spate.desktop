@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Cascade
+Name=Spate
 Comment=Download manager: parallel connections, resume, browser capture
-Exec=/usr/lib/cascade/cascade_app/cascade_app
-Icon=cascade
+Exec=/usr/lib/spate/spate_app/spate_app
+Icon=spate
 Terminal=false
 Categories=Network;FileTransfer;
 Keywords=download;downloader;
-StartupWMClass=cascade_app
+StartupWMClass=spate_app
