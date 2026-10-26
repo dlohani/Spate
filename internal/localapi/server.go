@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"cascade/internal/download"
 	"cascade/internal/job"
@@ -359,15 +360,39 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// safeBase reduces a client-supplied file name to a single path element:
-// both separator styles are honoured, "..", "." and empty collapse to "" so
-// the caller falls back to a name derived from the URL.
+// safeBase reduces a client-supplied file name to a single path element that
+// is safe on every platform: both separator styles are honoured, drive and
+// stream separators (":") become "_", trailing dots and spaces (which Win32
+// strips, aliasing names) are trimmed, Windows reserved device names are
+// rejected, and over-long names are cut keeping the extension. "..", "."
+// and empty collapse to "" so the caller falls back to a URL-derived name.
 func safeBase(name string) string {
 	name = strings.ReplaceAll(name, "\\", "/")
 	name = path.Base(path.Clean("/" + name))
+	name = strings.ReplaceAll(name, ":", "_")
+	name = strings.TrimRight(name, ". ")
 	switch name {
 	case "/", ".", "..", "":
 		return ""
+	}
+	stem := strings.ToUpper(strings.TrimSuffix(name, path.Ext(name)))
+	switch stem {
+	case "CON", "PRN", "AUX", "NUL",
+		"COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+		"LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
+		return ""
+	}
+	const maxName = 200 // leaves room for ".part" and " (N)" under the 255-byte limit
+	if len(name) > maxName {
+		ext := path.Ext(name)
+		if len(ext) > 20 {
+			ext = ""
+		}
+		cut := maxName - len(ext)
+		for cut > 0 && !utf8.RuneStart(name[cut]) {
+			cut--
+		}
+		name = name[:cut] + ext
 	}
 	return name
 }

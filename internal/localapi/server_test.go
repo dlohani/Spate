@@ -366,6 +366,11 @@ func TestAddSanitisesFilename(t *testing.T) {
 		{"..", "f.bin"}, // nothing usable: derive from the URL
 		{".", "f.bin"},
 		{"/", "f.bin"},
+		{"C:evil", "C_evil"},           // drive / NTFS stream separator
+		{"report.pdf. ", "report.pdf"}, // Win32 strips trailing dots and spaces
+		{"CON", "f.bin"},               // reserved device names
+		{"nul.txt", "f.bin"},
+		{strings.Repeat("a", 300) + ".tar.gz", strings.Repeat("a", 197) + ".gz"},
 	}
 	for _, c := range cases {
 		code, got := postAdd(t, base, addRequest{URL: origin.URL + "/f.bin", Filename: c.filename})

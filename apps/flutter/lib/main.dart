@@ -34,8 +34,13 @@ Future<void> main(List<String> args) async {
     runApp(_FatalApp(e.message));
     return;
   } on StateError catch (e) {
-    // libcascade itself could not be found or loaded.
+    // libcascade could not be found.
     runApp(_FatalApp(e.message));
+    return;
+  } on ArgumentError catch (e) {
+    // libcascade exists but failed to load (wrong architecture, a missing
+    // dependency, a quarantined file).
+    runApp(_FatalApp('libcascade could not be loaded: ${e.message}'));
     return;
   }
   final controller = CascadeController(core);
