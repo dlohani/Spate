@@ -4,7 +4,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:local_notifier/local_notifier.dart';
 import 'package:tray_manager/src/menu.dart' show Menu, MenuItem;
 import 'package:tray_manager/src/tray_listener.dart' show TrayListener;
 import 'package:tray_manager/src/tray_manager.dart' show TrayManager;
@@ -14,6 +13,7 @@ import 'src/app.dart';
 import 'src/ffi/spate_ffi.dart';
 import 'src/model/job.dart';
 import 'src/model/ui_prefs.dart';
+import 'src/notify.dart';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -106,32 +106,26 @@ Future<void> main(List<String> args) async {
 /// is hidden or in the background (the only feedback channel for a resident
 /// app). Open and Show in folder on the finished one, Retry on the failed.
 Future<void> _setupNotifications(SpateController controller, UiPrefs prefs) async {
-  try {
-    await localNotifier.setup(appName: 'Spate', shortcutPolicy: ShortcutPolicy.requireCreate);
-  } catch (_) {
-    return; // no notification service (some Linux sessions): nothing to hook
-  }
+  await Notifier.setup();
   controller.onFinished = (job) {
     if (!prefs.notify) return;
     if (controller.visible && controller.focused) return; // the user is looking at it
     final done = job.state == 'done';
-    final n = LocalNotification(
-      identifier: job.id,
+    Notifier.show(
+      id: job.id,
       title: done ? 'Download finished' : 'Download failed',
       body: done ? '${job.filename}${job.total > 0 ? ' · ${humanBytes(job.total)}' : ''}' : '${job.filename}\n${job.error ?? ''}',
-      actions: done
-          ? [LocalNotificationAction(text: 'Open'), LocalNotificationAction(text: Platform.isMacOS ? 'Show in Finder' : 'Show in folder')]
-          : [LocalNotificationAction(text: 'Retry')],
+      actions: done ? ['Open', Platform.isMacOS ? 'Show in Finder' : 'Show in folder'] : ['Retry'],
+      onAction: (i) {
+        if (i < 0) {
+          showWindow(controller);
+        } else if (done) {
+          i == 0 ? controller.openFile(job.out) : controller.reveal(job.out);
+        } else {
+          controller.retry(job);
+        }
+      },
     );
-    n.onClick = () => showWindow(controller);
-    n.onClickAction = (i) {
-      if (done) {
-        i == 0 ? controller.openFile(job.out) : controller.reveal(job.out);
-      } else {
-        controller.retry(job);
-      }
-    };
-    n.show();
   };
 }
 
