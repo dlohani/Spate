@@ -18,8 +18,11 @@ edges, and they are where parity and cost problems come from.
 - Policy gating (Wi-Fi-only, battery) has macOS and Linux providers; Windows,
   Android and iOS have none.
 - The resident desktop process is the Flutter app, autostarted hidden, hosting
-  the Go core in-process. A Flutter engine idles at tens of megabytes to guard
-  a Go loop that would idle at a few.
+  the Go core in-process. Measured (October 2026): hidden and idle it holds 75
+  to 80 MB at about 0.1% CPU, the Go core alone would be about 20 MB; with the
+  window shown and downloads animating it reaches about 215 MB, dropping to
+  about 115 MB after. The daemon split (Phase 4) is what removes the Flutter
+  share from the always-on process.
 - The UI polls the core every 500 ms. Since October 2026 it first reads
   `CascadeQueueVersion` and skips the status round trip when the queue is
   unchanged and nothing is running; push (callback) remains for Phase 4.
@@ -43,6 +46,10 @@ restart; every C export reports its failure through `CascadeLastError`, and the
 shell shows a start failure instead of exiting; the core logs to `cascade.log`
 beside the settings; the status JSON is one Go type (`job.StatusJSON`) with a
 field-set test; CI runs `flutter analyze` and the FFI test on macOS and Linux.
+Engine writes are coalesced into 512 KiB aligned blocks and bypass the page
+cache (macOS `F_NOCACHE`, Linux `fadvise`): 4 GiB over 8 connections went from
+7.5 s to 1.0 s of kernel CPU; the hidden app no longer rasterises frames for
+progress ticks (see README "Footprint").
 
 ## Principles
 
