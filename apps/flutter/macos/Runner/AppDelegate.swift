@@ -1,12 +1,8 @@
 import Cocoa
 import FlutterMacOS
-import UserNotifications
 
 @main
-class AppDelegate: FlutterAppDelegate, UNUserNotificationCenterDelegate {
-  private var notifyChannel: FlutterMethodChannel?
-  private var menuChannel: FlutterMethodChannel?
-
+class AppDelegate: FlutterAppDelegate {
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
     // Resident app: keep running with no windows (menu-bar icon, background
     // downloads, browser capture). Quit only from the tray menu.
@@ -24,106 +20,5 @@ class AppDelegate: FlutterAppDelegate, UNUserNotificationCenterDelegate {
       NSApp.activate(ignoringOtherApps: true)
     }
     return true
-  }
-
-  override func applicationDidFinishLaunching(_ notification: Notification) {
-    super.applicationDidFinishLaunching(notification)
-    guard let controller = mainFlutterWindow?.contentViewController as? FlutterViewController else { return }
-    setUpNotifications(controller)
-    setUpHelpMenu(controller)
-  }
-
-  // MARK: Help menu
-
-  // The Help menu in the menu bar: Spate Help (Cmd-?), Keyboard Shortcuts,
-  // Report a Problem, Buy Me a Coffee. Each item hands its name to Dart over
-  // the "spate/menu" channel, which owns the URLs, so the in-app overflow
-  // menu on Windows and Linux and this menu stay one list.
-  private func setUpHelpMenu(_ controller: FlutterViewController) {
-    let channel = FlutterMethodChannel(name: "spate/menu", binaryMessenger: controller.engine.binaryMessenger)
-    menuChannel = channel
-    guard let help = NSApp.helpMenu ?? NSApp.mainMenu?.item(withTitle: "Help")?.submenu else { return }
-    help.removeAllItems()
-    func add(_ title: String, _ action: String, key: String = "", mods: NSEvent.ModifierFlags = []) {
-      let item = NSMenuItem(title: title, action: #selector(helpItem(_:)), keyEquivalent: key)
-      item.keyEquivalentModifierMask = mods
-      item.representedObject = action
-      item.target = self
-      help.addItem(item)
-    }
-    add("Spate Help", "help", key: "?", mods: [.command])
-    add("Keyboard Shortcuts", "shortcuts")
-    help.addItem(.separator())
-    add("Report a Problem…", "report")
-    help.addItem(.separator())
-    add("Buy Me a Coffee…", "coffee")
-  }
-
-  @objc private func helpItem(_ sender: NSMenuItem) {
-    guard let action = sender.representedObject as? String else { return }
-    if let window = NSApp.windows.first, !window.isVisible {
-      window.makeKeyAndOrderFront(nil) // the shortcuts dialog needs a window
-    }
-    menuChannel?.invokeMethod("help", arguments: action)
-  }
-
-  // MARK: Notifications
-
-  // Notifications through the current UserNotifications framework (the
-  // Dart-side plugin covers Windows and Linux; on macOS its legacy API no
-  // longer delivers). "notify" {id, title, body, actions[]} posts one and
-  // asks for permission the first time; a click comes back on the same
-  // channel as "action" {id, action: index or -1 for the body}.
-  private func setUpNotifications(_ controller: FlutterViewController) {
-    let channel = FlutterMethodChannel(name: "spate/notify", binaryMessenger: controller.engine.binaryMessenger)
-    notifyChannel = channel
-    let center = UNUserNotificationCenter.current()
-    center.delegate = self
-    channel.setMethodCallHandler { call, result in
-      guard call.method == "notify", let a = call.arguments as? [String: Any] else {
-        result(FlutterMethodNotImplemented)
-        return
-      }
-      let id = a["id"] as? String ?? UUID().uuidString
-      let actions = a["actions"] as? [String] ?? []
-      center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
-        guard granted else { DispatchQueue.main.async { result(false) }; return }
-        let content = UNMutableNotificationContent()
-        content.title = a["title"] as? String ?? ""
-        content.body = a["body"] as? String ?? ""
-        content.sound = .default
-        content.userInfo = ["id": id]
-        if !actions.isEmpty {
-          let category = "spate." + actions.joined(separator: "|")
-          let unActions = actions.enumerated().map { UNNotificationAction(identifier: "\($0.offset)", title: $0.element, options: [.foreground]) }
-          center.getNotificationCategories { existing in
-            var set = existing
-            set.insert(UNNotificationCategory(identifier: category, actions: unActions, intentIdentifiers: [], options: []))
-            center.setNotificationCategories(set)
-            content.categoryIdentifier = category
-            center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
-            DispatchQueue.main.async { result(true) }
-          }
-        } else {
-          center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
-          DispatchQueue.main.async { result(true) }
-        }
-      }
-    }
-  }
-
-  // Show the banner even while the app is frontmost (Dart decides whether to
-  // post one at all).
-  func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
-                              withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-    completionHandler([.banner, .sound])
-  }
-
-  func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
-                              withCompletionHandler completionHandler: @escaping () -> Void) {
-    let id = response.notification.request.content.userInfo["id"] as? String ?? ""
-    let action = Int(response.actionIdentifier) ?? -1 // -1: the body itself
-    notifyChannel?.invokeMethod("action", arguments: ["id": id, "action": action])
-    completionHandler()
   }
 }
