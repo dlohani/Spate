@@ -187,9 +187,13 @@ bool _trayListening = false;
 Future<void> _applyPresence(Spate core, SpateController controller, UiPrefs prefs) async {
   final wantTray = prefs.hasTray;
   _TrayStatus.pulseEnabled = prefs.pulseTray;
+  final styleChanged = _TrayStatus.mono != (prefs.trayIconStyle == 'mono');
+  _TrayStatus.mono = prefs.trayIconStyle == 'mono';
   if (wantTray && !_trayUp) {
     _trayUp = true;
     await _setupTray(core, controller, prefs);
+  } else if (wantTray && _trayUp && styleChanged) {
+    await _TrayStatus.setFrame(TrayManager.instance, dim: false);
   } else if (!wantTray && _trayUp) {
     _trayUp = false;
     controller.onJobsRefreshed = null;
@@ -299,18 +303,19 @@ class _TrayStatus {
   // The icon pulses (normal and 40% frames alternating once a second) while
   // anything is downloading; solid when idle, or when the preference is off.
   static bool pulseEnabled = true;
+  static bool mono = false; // macOS: template glyph instead of the colour icon
   static Timer? _pulse;
   static bool _dim = false;
 
   static String _frame(bool dim) {
-    if (Platform.isMacOS) return dim ? 'assets/tray/icon-pulse.png' : 'assets/tray/icon.png';
+    if (Platform.isMacOS && mono) return dim ? 'assets/tray/icon-pulse.png' : 'assets/tray/icon.png';
     if (Platform.isWindows) return dim ? 'assets/tray/icon-pulse.ico' : 'assets/tray/icon.ico';
     return dim ? 'assets/tray/icon-color-pulse.png' : 'assets/tray/icon-color.png';
   }
 
   static Future<void> setFrame(TrayManager tray, {required bool dim}) async {
     _dim = dim;
-    await tray.setIcon(_frame(dim), isTemplate: Platform.isMacOS);
+    await tray.setIcon(_frame(dim), isTemplate: Platform.isMacOS && mono);
   }
 
   static void stopPulse() {

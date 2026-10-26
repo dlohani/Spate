@@ -47,6 +47,18 @@ class UiPrefs extends ChangeNotifier {
   /// Pulse the menu-bar / tray icon while something is downloading.
   bool pulseTray = true;
 
+  /// Menu-bar icon style on macOS: the coloured app icon, or a monochrome
+  /// template glyph that follows the menu bar like Apple's own items.
+  String trayIconStyle = 'color';
+  static const trayIconStyles = ['color', 'mono'];
+
+  void setTrayIconStyle(String v) {
+    if (!trayIconStyles.contains(v) || v == trayIconStyle) return;
+    trayIconStyle = v;
+    _save();
+    notifyListeners();
+  }
+
   void setPulseTray(bool v) {
     if (v == pulseTray) return;
     pulseTray = v;
@@ -118,6 +130,8 @@ class UiPrefs extends ChangeNotifier {
       if (p != null && presences.contains(p)) presence = p;
       notify = j['notify'] as bool? ?? true;
       pulseTray = j['pulseTray'] as bool? ?? true;
+      final ts = j['trayIconStyle'] as String?;
+      if (ts != null && trayIconStyles.contains(ts)) trayIconStyle = ts;
       final w = (j['windowW'] as num?)?.toDouble();
       final h = (j['windowH'] as num?)?.toDouble();
       if (w != null && h != null && w >= kMinWindowSize.width && h >= kMinWindowSize.height) {
@@ -139,6 +153,7 @@ class UiPrefs extends ChangeNotifier {
           'presence': presence,
           'notify': notify,
           'pulseTray': pulseTray,
+          'trayIconStyle': trayIconStyle,
           if (windowSize != null) 'windowW': windowSize!.width,
           if (windowSize != null) 'windowH': windowSize!.height,
         }),
