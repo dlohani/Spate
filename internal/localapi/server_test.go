@@ -72,13 +72,22 @@ func TestAddRequiresTokenAndEnqueues(t *testing.T) {
 		t.Fatalf("with token: status %d id %q", resp.StatusCode, got["id"])
 	}
 
-	// The enqueued job should complete and write the file.
-	deadline := time.Now().Add(5 * time.Second)
+	// The enqueued job should complete and write the file. The deadline is
+	// generous: a loaded CI runner has overrun 5 s with the job still running,
+	// which is a slow machine, not a bug.
+	deadline := time.Now().Add(60 * time.Second)
+	var st job.Status
 	for time.Now().Before(deadline) {
-		if st, ok := mgr.Status(got["id"]); ok && st.State == job.Done {
-			break
+		if s, ok := mgr.Status(got["id"]); ok {
+			st = s
+			if s.State == job.Done || s.State == job.Failed {
+				break
+			}
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+	if st.State != job.Done {
+		t.Fatalf("enqueued job did not finish: state=%v err=%v bytes=%d/%d", st.State, st.Err, st.Bytes, st.Total)
 	}
 	out := filepath.Join(dir, "out.bin")
 	b, err := os.ReadFile(out)
