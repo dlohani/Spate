@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Spate Download Capture",
-  "version": "0.4.1",
+  "version": "1.0.0",
   "description": "Send downloads to the Spate app: right-click a link, or click a file link with capture on.",
   "permissions": [
     "cookies",

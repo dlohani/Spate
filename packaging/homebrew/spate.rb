@@ -2,7 +2,7 @@
 # GitHub release, fill in url/sha256, and host this file in a tap
 # (e.g. github.com/<you>/homebrew-spate), then:  brew install --cask <you>/spate/spate
 cask "spate" do
-  version "0.4.1"
+  version "1.0.0"
   sha256 "REPLACE_WITH_SHA256_OF_Spate-#{version}.pkg"
 
   url "https://github.com/dlohani/Spate/releases/download/v#{version}/Spate-#{version}.pkg"
