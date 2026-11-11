@@ -60,6 +60,71 @@ note() { printf '    %s\n' "$*"; }
 # release a missing toolchain is fatal instead.
 need() { command -v "$1" >/dev/null 2>&1 || { note "missing: $1 ($2)"; [ "$RELEASE" = 1 ] && { echo "release: cannot continue without $1" >&2; exit 2; }; return 1; }; }
 
+# persist_path DIR: ensures DIR is permanently added to the user's shell PATH
+# across macOS, Linux, and Windows for future terminal sessions.
+persist_path() {
+  local dir="$1"
+  [ -d "$dir" ] || return 0
+
+  local os="$(uname -s 2>/dev/null || echo unknown)"
+  case "$os" in
+    Darwin)
+      # macOS: default shell is zsh; also update bash configs if present
+      local f
+      for f in "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.bashrc"; do
+        if [ -f "$f" ] || [ "$(basename "$f")" = ".zshrc" ]; then
+          if ! grep -qsF "$dir" "$f" 2>/dev/null; then
+            printf '\n# Added by Spate build\nexport PATH="%s:$PATH"\n' "$dir" >> "$f"
+            note "persisted $dir to $f"
+          fi
+        fi
+      done
+      ;;
+    Linux)
+      # Linux: profile, bashrc, and zshrc if present
+      local f
+      for f in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
+        if [ -f "$f" ] || [ "$(basename "$f")" = ".profile" ] || [ "$(basename "$f")" = ".bashrc" ]; then
+          if ! grep -qsF "$dir" "$f" 2>/dev/null; then
+            printf '\n# Added by Spate build\nexport PATH="%s:$PATH"\n' "$dir" >> "$f"
+            note "persisted $dir to $f"
+          fi
+        fi
+      done
+      ;;
+    CYGWIN*|MINGW*|MSYS*)
+      # Windows: User environment variable via PowerShell
+      if command -v powershell.exe >/dev/null 2>&1; then
+        local win_dir="$dir"
+        command -v cygpath >/dev/null 2>&1 && win_dir="$(cygpath -w "$dir")"
+        powershell.exe -NoProfile -Command "
+          \$target = '$win_dir';
+          \$userPath = [Environment]::GetEnvironmentVariable('Path', 'User');
+          if (\$userPath) {
+            \$parts = \$userPath -split ';';
+            if (\$parts -notcontains \$target) {
+              [Environment]::SetEnvironmentVariable('Path', \"\$target;\$userPath\", 'User');
+            }
+          } else {
+            [Environment]::SetEnvironmentVariable('Path', \$target, 'User');
+          }
+        " >/dev/null 2>&1 || true
+        note "persisted $win_dir to Windows User PATH"
+      fi
+      # Also update Git Bash / MSYS profile if present
+      local f
+      for f in "$HOME/.bash_profile" "$HOME/.bashrc"; do
+        if [ -f "$f" ]; then
+          if ! grep -qsF "$dir" "$f" 2>/dev/null; then
+            printf '\n# Added by Spate build\nexport PATH="%s:$PATH"\n' "$dir" >> "$f"
+            note "persisted $dir to $f"
+          fi
+        fi
+      done
+      ;;
+  esac
+}
+
 # ensure_go checks if the Go toolchain is available on the host machine
 # (macOS, Linux, or Windows) and automatically installs Go if missing.
 ensure_go() {
@@ -183,6 +248,9 @@ ensure_go() {
     echo "build: Go toolchain is required but could not be installed automatically. Please install Go (>= 1.22) from https://go.dev/dl/." >&2
     exit 2
   fi
+  local go_bin_dir
+  go_bin_dir="$(dirname "$(command -v go)")"
+  persist_path "$go_bin_dir"
   say "Go ready: $(go version)"
 }
 artifacts=()
