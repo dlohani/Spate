@@ -26,7 +26,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
-export PATH="/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin:$PATH"
+export PATH="/opt/homebrew/bin:/usr/local/go/bin:$HOME/go/bin:$HOME/.local/go/bin:$PATH"
 DIST="$ROOT/dist"
 . "$ROOT/scripts/lib/bundle.sh"
 . "$ROOT/scripts/lib/sha256.sh"
@@ -59,6 +59,132 @@ note() { printf '    %s\n' "$*"; }
 # need CMD HINT: 1 when CMD is missing (the caller skips that piece); under
 # release a missing toolchain is fatal instead.
 need() { command -v "$1" >/dev/null 2>&1 || { note "missing: $1 ($2)"; [ "$RELEASE" = 1 ] && { echo "release: cannot continue without $1" >&2; exit 2; }; return 1; }; }
+
+# ensure_go checks if the Go toolchain is available on the host machine
+# (macOS, Linux, or Windows) and automatically installs Go if missing.
+ensure_go() {
+  local p
+  for p in \
+    "/usr/local/go/bin" \
+    "/opt/homebrew/bin" \
+    "/usr/local/bin" \
+    "$HOME/go/bin" \
+    "$HOME/.local/go/bin" \
+    "/c/Program Files/Go/bin" \
+    "/c/Go/bin" \
+    "${LOCALAPPDATA:-}/Programs/Go/bin"; do
+    if [ -d "$p" ] && [[ ":$PATH:" != *":$p:"* ]]; then
+      export PATH="$p:$PATH"
+    fi
+  done
+
+  if command -v go >/dev/null 2>&1; then
+    return 0
+  fi
+
+  say "Go is not installed; auto-installing Go..."
+  local os="$(uname -s 2>/dev/null || echo unknown)"
+  local arch="$(uname -m 2>/dev/null || echo amd64)"
+  local go_arch="amd64"
+  case "$arch" in
+    x86_64|amd64)   go_arch="amd64" ;;
+    arm64|aarch64)  go_arch="arm64" ;;
+    armv6l|armv7l)  go_arch="armv6l" ;;
+  esac
+
+  case "$os" in
+    Darwin)
+      if command -v brew >/dev/null 2>&1; then
+        note "installing Go via Homebrew"
+        brew install go
+      else
+        note "Homebrew not found; installing official Go release to $HOME/.local/go"
+        local ver
+        ver="$(curl -sSL --max-time 10 "https://go.dev/VERSION?m=text" 2>/dev/null | head -1 || true)"
+        [ -n "$ver" ] || ver="go1.24.0"
+        mkdir -p "$HOME/.local"
+        curl -sSL "https://go.dev/dl/${ver}.darwin-${go_arch}.tar.gz" | tar -C "$HOME/.local" -xz
+        export PATH="$HOME/.local/go/bin:$PATH"
+      fi
+      ;;
+    Linux)
+      note "installing official Go release to $HOME/.local/go"
+      local ver
+      ver="$(curl -sSL --max-time 10 "https://go.dev/VERSION?m=text" 2>/dev/null | head -1 || true)"
+      [ -n "$ver" ] || ver="go1.24.0"
+      mkdir -p "$HOME/.local"
+      if curl -sSL "https://go.dev/dl/${ver}.linux-${go_arch}.tar.gz" 2>/dev/null | tar -C "$HOME/.local" -xz 2>/dev/null; then
+        export PATH="$HOME/.local/go/bin:$PATH"
+      elif command -v apt-get >/dev/null 2>&1; then
+        note "falling back to apt-get"
+        local sudo_cmd=""
+        [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && sudo_cmd="sudo"
+        $sudo_cmd apt-get update && $sudo_cmd apt-get install -y golang-go
+      elif command -v dnf >/dev/null 2>&1; then
+        note "falling back to dnf"
+        local sudo_cmd=""
+        [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && sudo_cmd="sudo"
+        $sudo_cmd dnf install -y golang
+      elif command -v pacman >/dev/null 2>&1; then
+        note "falling back to pacman"
+        local sudo_cmd=""
+        [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1 && sudo_cmd="sudo"
+        $sudo_cmd pacman -S --noconfirm go
+      fi
+      ;;
+    CYGWIN*|MINGW*|MSYS*)
+      if command -v winget.exe >/dev/null 2>&1; then
+        note "installing Go via winget"
+        winget.exe install --id GoLang.Go -e --silent --accept-source-agreements --accept-package-agreements || true
+      elif command -v choco >/dev/null 2>&1; then
+        note "installing Go via Chocolatey"
+        choco install golang -y --no-progress
+      elif command -v scoop >/dev/null 2>&1; then
+        note "installing Go via Scoop"
+        scoop install go
+      elif command -v powershell.exe >/dev/null 2>&1; then
+        note "installing official Go release via PowerShell"
+        local ver
+        ver="$(curl -sSL --max-time 10 "https://go.dev/VERSION?m=text" 2>/dev/null | head -1 || true)"
+        [ -n "$ver" ] || ver="go1.24.0"
+        powershell.exe -NoProfile -Command "
+          \$dest = [System.IO.Path]::Combine(\$env:LOCALAPPDATA, 'Programs');
+          New-Item -ItemType Directory -Force -Path \$dest | Out-Null;
+          \$zip = [System.IO.Path]::Combine(\$env:TEMP, 'go.zip');
+          Invoke-WebRequest -Uri 'https://go.dev/dl/${ver}.windows-${go_arch}.zip' -OutFile \$zip;
+          Expand-Archive -Path \$zip -DestinationPath \$dest -Force;
+          Remove-Item \$zip -Force;
+        " || true
+      fi
+      for wp in "/c/Program Files/Go/bin" "/c/Go/bin" "${LOCALAPPDATA:-}/Programs/Go/bin" "$HOME/go/bin"; do
+        [ -d "$wp" ] && export PATH="$wp:$PATH"
+      done
+      ;;
+    *)
+      note "unsupported OS for auto-install: $os"
+      ;;
+  esac
+
+  for p in \
+    "/usr/local/go/bin" \
+    "/opt/homebrew/bin" \
+    "/usr/local/bin" \
+    "$HOME/go/bin" \
+    "$HOME/.local/go/bin" \
+    "/c/Program Files/Go/bin" \
+    "/c/Go/bin" \
+    "${LOCALAPPDATA:-}/Programs/Go/bin"; do
+    if [ -d "$p" ] && [[ ":$PATH:" != *":$p:"* ]]; then
+      export PATH="$p:$PATH"
+    fi
+  done
+
+  if ! command -v go >/dev/null 2>&1; then
+    echo "build: Go toolchain is required but could not be installed automatically. Please install Go (>= 1.22) from https://go.dev/dl/." >&2
+    exit 2
+  fi
+  say "Go ready: $(go version)"
+}
 artifacts=()
 # label SRC PLATFORM: moves a finished artifact into dist/<platform>/ under its
 # labelled name (version -> label) and records it. Intermediates (dist/
@@ -104,6 +230,7 @@ if [ "${TARGETS[0]}" = release ]; then
 fi
 
 run_tests() {
+  ensure_go
   [ "$TEST" = 1 ] || return 0
   say "go vet + tests"
   go vet ./...
@@ -111,6 +238,7 @@ run_tests() {
 }
 
 do_mac() {
+  ensure_go
   [ "$(uname -s)" = Darwin ] || { note "mac: needs a macOS host"; return 0; }
   need flutter "https://docs.flutter.dev/get-started/install" || return 0
   say "macOS $LABEL"
@@ -124,6 +252,7 @@ do_mac() {
 }
 
 do_windows() {
+  ensure_go
   say "Windows $LABEL"
   need "${CC:-x86_64-w64-mingw32-gcc}" "brew install mingw-w64" || return 0
   # Filter the script's stdout down to its progress lines; stderr (compiler,
@@ -159,6 +288,7 @@ do_windows() {
 }
 
 do_linux() {
+  ensure_go
   say "Linux $LABEL"
   # (no array: bash 3.2 + set -u trips on an empty "${args[@]}")
   scripts/package-linux.sh ${CLI_ONLY:+--cli-only} | grep -E "^==>|note:" || true
@@ -167,6 +297,7 @@ do_linux() {
 }
 
 do_android() {
+  ensure_go
   say "Android $LABEL"
   if need gomobile "make tools" && [ -n "${ANDROID_NDK_HOME:-}${ANDROID_HOME:-}" ]; then
     make -s android && { mv -f "$DIST/spate.aar" "$DIST/spate-$VERSION.aar"; label "$DIST/spate-$VERSION.aar" android; }
@@ -183,6 +314,7 @@ do_android() {
 }
 
 do_ios() {
+  ensure_go
   [ "$(uname -s)" = Darwin ] || { note "ios: needs a macOS host"; return 0; }
   say "iOS $LABEL"
   if need gomobile "make tools"; then

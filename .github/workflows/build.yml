@@ -16,8 +16,8 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with: { go-version: "${{ env.GO_VERSION }}" }
       - run: go vet ./...
       - run: go test -race ./...
@@ -30,9 +30,9 @@ jobs:
     needs: test
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with: { go-version: "${{ env.GO_VERSION }}" }
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
@@ -48,14 +48,14 @@ jobs:
         run: ./build mac extension --no-test
         env:
           SPATE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos
           path: |
             dist/macos/*
             dist/extension/*
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: macos-debug-symbols
           path: dist/debug-symbols/**
@@ -66,9 +66,9 @@ jobs:
     needs: test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with: { go-version: "${{ env.GO_VERSION }}" }
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
@@ -87,9 +87,9 @@ jobs:
         run: ./build linux --no-test
         env:
           SPATE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: { name: linux, path: "dist/linux/*", retention-days: 7 }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-debug-symbols
           path: dist/debug-symbols/**
@@ -102,9 +102,9 @@ jobs:
     defaults:
       run: { shell: bash }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with: { go-version: "${{ env.GO_VERSION }}" }
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with: { channel: stable, flutter-version: "${{ env.FLUTTER_VERSION }}" }
@@ -134,9 +134,9 @@ jobs:
           CC: gcc
           SPATE_OBFUSCATE: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
         run: ./build windows --no-test
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with: { name: windows, path: "dist/windows/*", retention-days: 7 }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-debug-symbols
           path: dist/debug-symbols/**
@@ -154,16 +154,16 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: tag must match VERSION
         run: |
           v="$(tr -d '[:space:]' < VERSION)"
           [ "${GITHUB_REF_NAME}" = "v$v" ] || { echo "tag ${GITHUB_REF_NAME} does not match VERSION $v" >&2; exit 1; }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with: { name: macos, path: release }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with: { name: linux, path: release }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with: { name: windows, path: release }
       - name: checksums
         run: |
