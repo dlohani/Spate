@@ -15,10 +15,27 @@
 # Windows setup payload, filled by scripts/build-windows.sh
 /cmd/spate-setup/payload/
 
-# Editors and assistant tooling
-.DS_Store
+# Editors and IDEs
+.vscode/
 .idea/
 *.iml
+*.swp
+*.swo
+*~
+
+# OS metadata
+.DS_Store
+**/.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Test and profile artifacts
+*.test
+*.out
+*.prof
+
+# Assistant and local tooling
 .serena/
 .claude/
 .superpowers/
+.gemini/

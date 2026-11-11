@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Spate Download Capture",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Automatically send downloads started in the browser to the Spate app, with cookies and referrer.",
   "browser_specific_settings": {
     "gecko": {
@@ -20,7 +20,9 @@
     "<all_urls>"
   ],
   "background": {
-    "scripts": ["background.js"],
+    "scripts": [
+      "background.js"
+    ],
     "persistent": false
   },
   "options_ui": {

@@ -3,7 +3,7 @@
 # github.com/microsoft/winget-pkgs (or use a private REST source).
 # Then:  winget install DeepakLohani.Spate
 PackageIdentifier: DeepakLohani.Spate
-PackageVersion: 0.4.0
+PackageVersion: 0.4.1
 PackageName: Spate
 Publisher: Deepak Lohani
 License: MIT
@@ -12,8 +12,8 @@ Installers:
   - Architecture: x64
     InstallerType: nullsoft
     Scope: user
-    InstallerUrl: https://github.com/dlohani/Spate/releases/download/v0.4.0/Spate-Setup-0.4.0.exe
-    InstallerSha256: REPLACE_WITH_SHA256_OF_Spate-Setup-0.4.0.exe
+    InstallerUrl: https://github.com/dlohani/Spate/releases/download/v0.4.1/Spate-Setup-0.4.1.exe
+    InstallerSha256: REPLACE_WITH_SHA256_OF_Spate-Setup-0.4.1.exe
     InstallerSwitches:
       Silent: /S
       SilentWithProgress: /S
