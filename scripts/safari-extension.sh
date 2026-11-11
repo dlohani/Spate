@@ -27,9 +27,16 @@ xcrun safari-web-extension-converter "$SRC" \
   --project-location "$OUT" --app-name "$APPNAME" \
   --bundle-identifier com.amlabs.spate.safari --macos-only --no-open --no-prompt --force >/dev/null
 PROJ="$(ls -d "$OUT"/*/*.xcodeproj | head -1)"
-# The converter derives the app's bundle id from the app name, which does
-# not prefix the extension's id and fails the build; pin the app's id.
-perl -0pi -e 's/PRODUCT_BUNDLE_IDENTIFIER = "?dev\.d3xt3r\.spate\.Spate-for-Safari"?;/PRODUCT_BUNDLE_IDENTIFIER = com.amlabs.spate.safari;/g' "$PROJ/project.pbxproj"
+# The converter derives the app's bundle id from the app name
+# (com.amlabs.spate.Spate-for-Safari), which does not prefix the extension's
+# id (com.amlabs.spate.safari.Extension) and fails the build; pin the app's
+# id. Xcode 26 and earlier write project.pbxproj, Xcode 27 project.xcproj.
+PROJFILE=""
+for f in "$PROJ/project.pbxproj" "$PROJ/project.xcproj"; do [ -f "$f" ] && PROJFILE="$f" && break; done
+[ -n "$PROJFILE" ] || { echo "error: no project file under $PROJ" >&2; exit 1; }
+perl -pi -e 's/\bcom\.amlabs\.spate\.Spate-for-Safari\b/com.amlabs.spate.safari/g' "$PROJFILE"
+grep -q 'com\.amlabs\.spate\.safari\b' "$PROJFILE" && ! grep -q 'Spate-for-Safari' "$PROJFILE" \
+  || { echo "error: could not pin the app bundle id in $PROJFILE" >&2; exit 1; }
 echo "    $PROJ"
 [ "$MODE" = "project" ] && exit 0
 

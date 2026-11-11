@@ -583,7 +583,24 @@ func TestRestoredIDsDoNotCollide(t *testing.T) {
 
 func TestShutdownRecordsRunningAsPending(t *testing.T) {
 	data := blob(8 << 20)
-	srv := httptest.NewServer(rangeServer(data, 50*time.Millisecond, nil, nil, nil))
+	// Each ranged body stalls halfway until the client goes away, so the job
+	// is still running when Shutdown is called however fast loopback is.
+	full := rangeServer(data, 0, nil, nil, nil)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start, end, ok := parseRange(r.Header.Get("Range"), int64(len(data)))
+		if r.Method == http.MethodHead || !ok || end-start < 1 {
+			full(w, r)
+			return
+		}
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("ETag", `"v1"`)
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(data)))
+		w.Header().Set("Content-Length", strconv.FormatInt(end-start+1, 10))
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(data[start : start+(end-start+1)/2])
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
 	defer srv.Close()
 	m := New(1)
 	ctx, cancel := context.WithCancel(context.Background())

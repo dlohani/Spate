@@ -203,8 +203,14 @@ do_extension() {
   say "browser extension $LABEL"
   scripts/package-extension.sh | grep -E "^==>|unpacked" || true
   if [ "$(uname -s)" = Darwin ] && xcrun --find safari-web-extension-converter >/dev/null 2>&1; then
-    # (re-packages internally, so the zips are labelled afterwards)
-    scripts/safari-extension.sh 2>&1 | grep -E "==> installed|error|BUILD" || true
+    # (re-packages internally, so the zips are labelled afterwards; the grep
+    # is wrapped so "no match" cannot mask the script's own exit status)
+    local status=0
+    scripts/safari-extension.sh 2>&1 | { grep -E "==> installed|error|BUILD" || true; } || status=$?
+    if [ "$status" != 0 ]; then
+      echo "==> Safari extension build failed (see above)" >&2
+      exit 1
+    fi
     artifacts+=("$HOME/Applications/Spate for Safari.app")
   fi
   label "$DIST/spate-extension-$VERSION.zip" extension
