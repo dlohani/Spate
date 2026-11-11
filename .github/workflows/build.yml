@@ -177,11 +177,39 @@ jobs:
         run: |
           v="$(tr -d '[:space:]' < VERSION)"
           files="$(find release -type f ! -name '*.sha256' | sort | tr '\n' ' ')"
+
+          cat << 'EOF' > release_notes.md
+          ## Spate v1.0.0
+
+          The fast, lightweight download manager for macOS, Linux, and Windows that finishes what your browser starts.
+
+          ### ✨ Key Features
+          - **Multi-Connection Acceleration**: Up to 32 parallel connections with dynamic work-stealing.
+          - **Resilient Resume**: Seamlessly recovers interrupted transfers after network drops or sleep.
+          - **Browser Integration**: Hand-off extensions for Chrome, Brave, Edge, Firefox, and Safari.
+          - **Smart Organization**: Rule-based folder sorting, bandwidth throttling, and scheduled transfers.
+          - **Pure & Lightweight**: Self-contained ~20 MB engine with native tray integration.
+
+          ### 📦 Installation Packages
+          | Platform | Package | Notes |
+          |---|---|---|
+          | **macOS** | `Spate-1.0.0.pkg` | Apple Silicon & Intel (per-user install) |
+          | **Linux** | `spate_1.0.0_amd64.deb` | Debian & Ubuntu packages |
+          | **Windows** | `Spate-Setup-1.0.0.exe` | Windows NSIS installer |
+          | **Browser** | `spate-extension.zip` | Chrome, Brave, Edge, Firefox extension |
+          | **Safari** | `Spate-for-Safari.pkg` | Safari web extension companion |
+
+          ### 🔐 Integrity Verification
+          Verify package integrity using the included `SHA256SUMS`:
+          ```bash
+          sha256sum -c SHA256SUMS
+          ```
+          EOF
+
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             gh release create "${GITHUB_REF_NAME}" $files \
               --title "Spate $v" \
-              --generate-notes \
-              --notes "Installers for macOS (.pkg), Debian/Ubuntu (.deb) and Windows (.exe), plus the browser extension zips. Verify with SHA256SUMS." \
+              --notes-file release_notes.md \
               || gh release upload "${GITHUB_REF_NAME}" $files --clobber
           else
             gh release create "latest" $files \

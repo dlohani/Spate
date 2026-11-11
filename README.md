@@ -1,49 +1,98 @@
 # Spate
 
-**The download manager for macOS and Linux (and Windows) that finishes what your browser starts.**
-Many connections per file, resume after anything, hand-off from the browser with your cookies intact, rules that file and schedule downloads for you. One Go core, a thin native-feeling app, free and open source.
+<p align="center">
+  <a href="https://github.com/dlohani/Spate/releases/latest"><img src="https://img.shields.io/github/v/release/dlohani/Spate?color=blue&label=version" alt="GitHub Release"></a>
+  <a href="https://github.com/dlohani/Spate/actions/workflows/build.yml"><img src="https://github.com/dlohani/Spate/actions/workflows/build.yml/badge.svg" alt="Build Status"></a>
+  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go&logoColor=white" alt="Go Version">
+  <img src="https://img.shields.io/github/license/dlohani/Spate" alt="License">
+</p>
 
-![Spate on macOS](docs/ui-light.png)
+<p align="center">
+  <strong>The fast, lightweight download manager for macOS, Linux, and Windows that finishes what your browser starts.</strong><br>
+  Multi-connection acceleration, rock-solid resume, and seamless browser hand-off with your session intact.
+</p>
 
-## Why Spate
+<p align="center">
+  <img src="docs/ui-light.png" alt="Spate Interface" width="800">
+</p>
 
-- **Fast where it counts.** Up to 32 connections per file with work-stealing, so a per-connection cap on the server side stops mattering. Resumes after a crash, a sleep, a flaky link or a changed file, and verifies SHA-256 when you give it one.
-- **The browser hands over.** The extension catches a download, checks the link is fetchable with your session, and only then takes it; what cannot be re-fetched stays in the browser. Chrome, Brave, Edge, Vivaldi, Firefox and Safari.
-- **Set rules once.** Folders by site or by file type, speed limits by time of day, a download window, recurring fetches, scheduled starts.
-- **Stays out of the way.** 20 MB for the engine, a menu-bar or tray icon that shows "2 · 43%", notifications when something finishes, and a window with six downloads on screen, not two.
-- **Honest about limits.** No DRM, no scraping, nothing that bypasses your ISP. It downloads what you are allowed to fetch, well.
+---
 
-## Install
+## Highlights
 
-| Platform | Get |
-|---|---|
-| macOS | `Spate-<version>.pkg` from the releases page; per-user, no admin password |
-| Debian, Ubuntu | `sudo apt install ./spate_<version>_<arch>.deb` |
-| Windows | `Spate-Setup-<version>.exe` (silent: `/S`) |
-| Command line only | `go build -o spate ./cmd/spate` (Go 1.22+, standard library only) |
+- ⚡ **Accelerated Downloads** &mdash; Up to 32 parallel connections per file with dynamic work-stealing to bypass server rate caps.
+- 🔄 **Resilient Resume** &mdash; Seamlessly recovers after sleep, connection drops, or restarts with optional SHA-256 verification.
+- 🌐 **Browser Integration** &mdash; Catch downloads from Chrome, Brave, Edge, Firefox, and Safari with cookies and authentication intact.
+- 🗂️ **Automated Organization** &mdash; Rule-based folder sorting by domain or file extension, speed limiters, and off-peak scheduling.
+- 🪶 **Lightweight Footprint** &mdash; ~20 MB Go engine, native system tray / menu bar integration, and zero bloatware.
 
-Then load the browser extension once: Chrome, Brave, Edge or Vivaldi → `chrome://extensions` → Developer mode → Load unpacked → the `extension` folder the installer printed; Firefox → `about:debugging` → Load Temporary Add-on. The installer registers the native host, so pairing is automatic. Store listings and signed builds are on the way.
+---
 
-## Use
+## Installation
 
-Paste links (one or many), drop them on the window, or press Cmd-V anywhere. Start a download in the browser and choose **Download with Spate**. Pick a folder and a start time from the buttons inside the field; everything else follows the rules in Settings. Arrows, Space and Delete work on the list; right-click any row.
+Download the latest release for your platform from the [Releases page](https://github.com/dlohani/Spate/releases/latest):
 
-Full guide, shortcuts and troubleshooting: [docs/help.md](docs/help.md). Command line: `spate <url> [-o out] [-n 8] [-resume] [-limit 2M] [-sha256 <hex>]`.
+| Platform | Package | Notes |
+|:---|:---|:---|
+| **macOS** | [`Spate-1.0.0.pkg`](https://github.com/dlohani/Spate/releases/latest) | Apple Silicon & Intel, per-user install (no admin password needed) |
+| **Linux** | [`spate_1.0.0_amd64.deb`](https://github.com/dlohani/Spate/releases/latest) | Debian / Ubuntu (`sudo apt install ./spate_*.deb`) |
+| **Windows** | [`Spate-Setup-1.0.0.exe`](https://github.com/dlohani/Spate/releases/latest) | NSIS installer (silent mode: `/S`) |
+| **CLI Only** | `go install github.com/dlohani/Spate/cmd/spate@latest` | Requires Go 1.22+ (standard library only) |
 
-## Build from source
+### Browser Extension
 
-    ./build mac        # Flutter app + core -> dist/macos (.pkg and .zip)
-    ./build linux      # Debian package
-    ./build windows    # cross-compiled core + NSIS installer
-    go test -race ./... && scripts/test/run.sh && (cd apps/flutter && flutter test)
+1. **Chrome / Brave / Edge**: Open `chrome://extensions` &rarr; enable *Developer mode* &rarr; click *Load unpacked* &rarr; select the `extension` folder included with Spate.
+2. **Firefox**: Open `about:debugging` &rarr; *This Firefox* &rarr; *Load Temporary Add-on* &rarr; select `manifest.json`.
+3. **Safari**: Included in `Spate-for-Safari.pkg` on macOS.
 
-Needs Go 1.22+, Flutter 3.47 and the platform toolchain. Details, installers, footprint measurements and the resume format: [docs/building.md](docs/building.md). Design and delivery: [docs/architecture.md](docs/architecture.md), [docs/delivery.md](docs/delivery.md).
+---
+
+## Command Line (CLI)
+
+Spate includes a standalone, dependency-free CLI tool:
+
+```bash
+# Basic download
+spate https://example.com/archive.iso
+
+# Accelerated download with 16 connections and SHA-256 validation
+spate -n 16 -sha256 <expected-hash> -o archive.iso https://example.com/archive.iso
+
+# Resume an interrupted download
+spate -resume https://example.com/archive.iso
+
+# Rate limit transfer speed
+spate -limit 5M https://example.com/large-dataset.tar.gz
+```
+
+---
+
+## Building from Source
+
+Prerequisites: **Go 1.22+** and **Flutter 3.x** (optional, for desktop GUI).
+
+```bash
+# Build desktop app and core for current OS
+./build mac       # macOS (.pkg and .zip in dist/macos)
+./build linux     # Linux (.deb in dist/linux)
+./build windows   # Windows (.exe in dist/windows)
+
+# Run test suite
+go test -race ./...
+```
+
+For architecture notes and protocol specifications, see [docs/architecture.md](docs/architecture.md).
+
+---
 
 ## License
 
-MIT. Copyright (c) 2026 Deepak Lohani.
+Distributed under the [MIT License](LICENSE). Copyright &copy; 2026 Deepak Lohani.
 
-## Buy me a coffee
+---
 
-Spate is built by one developer and will stay free. If it saves you time, a coffee keeps the next release coming:
-**[buymeacoffee.com/dlohani](https://buymeacoffee.com/dlohani)**
+## Support
+
+Spate is an independent, open-source project. If it saves you time or bandwidth, consider supporting its development:
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support-yellow?style=for-the-badge&logo=buy-me-a-coffee)](https://buymeacoffee.com/dlohani)
