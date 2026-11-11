@@ -34,9 +34,9 @@ PROJ="$(ls -d "$OUT"/*/*.xcodeproj | head -1)"
 PROJFILE=""
 for f in "$PROJ/project.pbxproj" "$PROJ/project.xcproj"; do [ -f "$f" ] && PROJFILE="$f" && break; done
 [ -n "$PROJFILE" ] || { echo "error: no project file under $PROJ" >&2; exit 1; }
-perl -pi -e 's/\bcom\.amlabs\.spate\.Spate-for-Safari\b/com.amlabs.spate.safari/g' "$PROJFILE"
-perl -pi -e 's/PRODUCT_BUNDLE_IDENTIFIER = "?[^";]*Spate-for-Safari"?;/PRODUCT_BUNDLE_IDENTIFIER = com.amlabs.spate.safari;/g' "$PROJFILE"
-perl -pi -e 's/"PRODUCT_BUNDLE_IDENTIFIER": "[^"]*Spate-for-Safari"/"PRODUCT_BUNDLE_IDENTIFIER": "com.amlabs.spate.safari"/g' "$PROJFILE"
+perl -pi -e 's/(PRODUCT_BUNDLE_IDENTIFIER\s*=\s*)"?[^";]*Spate-for-Safari"?;/${1}com.amlabs.spate.safari;/g' "$PROJFILE"
+perl -pi -e 's/("PRODUCT_BUNDLE_IDENTIFIER"\s*:\s*)"[^"]*Spate-for-Safari"/$1"com.amlabs.spate.safari"/g' "$PROJFILE"
+perl -pi -e 's/\b[\w\.]*Spate-for-Safari\b/com.amlabs.spate.safari/g' "$PROJFILE"
 grep -q 'com\.amlabs\.spate\.safari' "$PROJFILE" && ! grep -q 'PRODUCT_BUNDLE_IDENTIFIER.*Spate-for-Safari' "$PROJFILE" \
   || { echo "error: could not pin the app bundle id in $PROJFILE" >&2; exit 1; }
 echo "    $PROJ"

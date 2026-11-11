@@ -18,8 +18,20 @@ for f in "$@"; do
     echo "verify-obfuscation: $f is NOT obfuscated ($syms symbols, $strs strings name spate packages)" >&2; rc=1
   fi
   case "$f" in
-    *.dylib|*.so|*.dll)
-      if command -v nm >/dev/null; then
+    *.dll)
+      od=""
+      for tool in "${OBJDUMP:-}" objdump x86_64-w64-mingw32-objdump llvm-objdump; do
+        if [ -n "$tool" ] && command -v "$tool" >/dev/null 2>&1; then od="$tool"; break; fi
+      done
+      if [ -n "$od" ]; then
+        got="$("$od" -p "$f" 2>/dev/null | grep -c '[[:space:]]Spate' || true)"
+        [ "$got" = "$want_exports" ] || { echo "verify-obfuscation: $f exports $got Spate* symbols, want $want_exports" >&2; rc=1; }
+      elif command -v nm >/dev/null 2>&1; then
+        got="$(nm -g "$f" 2>/dev/null | grep -c ' _\{0,1\}Spate' || true)"
+        [ "$got" = "$want_exports" ] || { echo "verify-obfuscation: $f exports $got Spate* symbols, want $want_exports" >&2; rc=1; }
+      fi ;;
+    *.dylib|*.so)
+      if command -v nm >/dev/null 2>&1; then
         got="$(nm -gU "$f" 2>/dev/null | grep -c ' _\{0,1\}Spate' || true)"
         [ "$got" = "$want_exports" ] || { echo "verify-obfuscation: $f exports $got Spate* symbols, want $want_exports" >&2; rc=1; }
       fi ;;
