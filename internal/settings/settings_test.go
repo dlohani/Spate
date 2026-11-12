@@ -3,6 +3,7 @@ package settings
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -175,7 +176,8 @@ func TestSaveConcurrent(t *testing.T) {
 		t.Fatalf("saved file unreadable: %v", err)
 	}
 	fi, _ := os.Stat(path)
-	if fi.Mode().Perm() != 0o600 {
+	// Windows has no owner-only permission bits: it reports 0666.
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %o, want 0600", fi.Mode().Perm())
 	}
 	if left, _ := filepath.Glob(filepath.Join(filepath.Dir(path), "*.tmp")); len(left) != 0 {
