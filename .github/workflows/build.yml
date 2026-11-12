@@ -22,6 +22,10 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
       - run: scripts/test/run.sh
+      - name: browser extension tests
+        run: |
+          for f in browser/extension/*.js; do node --check "$f"; done
+          node --test browser/test/*.test.js
       - name: core stays standard-library only
         run: |
           if grep -q '^require' go.mod; then echo "go.mod has a require block; the core must stay standard-library only" >&2; exit 1; fi
@@ -40,6 +44,10 @@ jobs:
         run: |
           go install mvdan.cc/garble@v0.18.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Go vet and tests on macOS
+        run: |
+          go vet ./...
+          go test ./...
       - name: Flutter analyze and FFI test against the real core
         run: |
           make lib
@@ -48,6 +56,21 @@ jobs:
         run: ./build mac extension --no-test
         env:
           SPATE_OBFUSCATE: ${{ (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main') && '1' || '' }}
+      - name: install smoke test (package installs, is universal, uninstalls)
+        run: |
+          pkg="$(ls dist/macos/Spate-*.pkg | head -1)"
+          installer -pkg "$pkg" -target CurrentUserHomeDirectory
+          app="$HOME/Applications/Spate.app"
+          support="$HOME/Library/Application Support/spate"
+          test -d "$app"
+          test -x "$support/bin/spate-host"
+          test -f "$support/extension/manifest.json"
+          for f in "$support/bin/spate-host" "$app/Contents/Frameworks/libspate.dylib" "$app/Contents/MacOS/spate_app"; do
+            lipo "$f" -verify_arch arm64
+            lipo "$f" -verify_arch x86_64
+          done
+          "$support/bin/uninstall"
+          test ! -e "$app"
       - uses: actions/upload-artifact@v7
         with:
           name: macos
@@ -78,7 +101,7 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libayatana-appindicator3-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libayatana-appindicator3-dev libnotify-dev
       - name: Flutter analyze and FFI test against the real core
         run: |
           make lib
@@ -87,6 +110,21 @@ jobs:
         run: ./build linux --no-test
         env:
           SPATE_OBFUSCATE: ${{ (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main') && '1' || '' }}
+      - name: install smoke test (package installs with its declared dependencies, removes cleanly)
+        run: |
+          deb="$(ls dist/linux/spate_*_amd64.deb | head -1)"
+          sudo apt-get install -y "./$deb"
+          test -x /usr/bin/spate
+          test -x /usr/lib/spate/spate-host
+          test -x /usr/lib/spate/spate_app/spate_app
+          test -f /usr/share/spate/extension/manifest.json
+          test -f /etc/opt/chrome/native-messaging-hosts/com.amlabs.spate.host.json
+          test -f /usr/lib/mozilla/native-messaging-hosts/com.amlabs.spate.host.json
+          # Every shared library the app links must come from a declared dependency.
+          if ldd /usr/lib/spate/spate_app/spate_app /usr/lib/spate/spate_app/lib/*.so | grep "not found"; then exit 1; fi
+          sudo apt-get remove -y spate
+          test ! -e /usr/lib/spate/spate-host
+          test ! -e /etc/opt/chrome/native-messaging-hosts/com.amlabs.spate.host.json
       - uses: actions/upload-artifact@v7
         with: { name: linux, path: "dist/linux/*", retention-days: 7 }
       - uses: actions/upload-artifact@v7
@@ -122,6 +160,14 @@ jobs:
           gcc --version | head -1
           makensis -VERSION
           7z | head -2
+      - name: Go vet and tests on Windows
+        # The Linux job cannot catch Windows-only behaviour (file sharing
+        # rules, path separators, the native host's launch code). The
+        # installer package is left out: it embeds a payload that only exists
+        # after packaging.
+        run: |
+          go vet ./internal/... ./cmd/spate ./cmd/spate-host
+          go test ./internal/... ./cmd/spate ./cmd/spate-host
       - name: Flutter Windows UI (builds spate.dll natively when absent)
         shell: pwsh
         env:
@@ -134,6 +180,19 @@ jobs:
           CC: gcc
           SPATE_OBFUSCATE: ${{ (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main') && '1' || '' }}
         run: ./build windows --no-test
+      - name: install smoke test (silent install puts the files and registry keys in place)
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem dist\windows\Spate-Setup-*.exe | Select-Object -First 1).FullName
+          $p = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exited with $($p.ExitCode)" }
+          $root = Join-Path $env:LOCALAPPDATA 'Spate'
+          foreach ($f in 'bin\spate-host.exe', 'bin\spate.dll', 'bin\spate_app\spate_app.exe', 'extension\manifest.json', 'Uninstall.exe') {
+            if (-not (Test-Path (Join-Path $root $f))) { throw "missing after install: $f" }
+          }
+          foreach ($k in 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.amlabs.spate.host', 'HKCU:\Software\Mozilla\NativeMessagingHosts\com.amlabs.spate.host') {
+            if (-not (Test-Path $k)) { throw "missing registry key: $k" }
+          }
       - uses: actions/upload-artifact@v7
         with: { name: windows, path: "dist/windows/*", retention-days: 7 }
       - uses: actions/upload-artifact@v7
@@ -179,25 +238,27 @@ jobs:
           files="$(find release -type f ! -name '*.sha256' | sort | tr '\n' ' ')"
 
           cat << 'EOF' > release_notes.md
-          ## Spate v1.0.0
+          ## Spate v@V@
 
           The fast, lightweight download manager for macOS, Linux, and Windows that finishes what your browser starts.
 
           ### ✨ Key Features
           - **Multi-Connection Acceleration**: Up to 32 parallel connections with dynamic work-stealing.
           - **Resilient Resume**: Seamlessly recovers interrupted transfers after network drops or sleep.
-          - **Browser Integration**: Hand-off extensions for Chrome, Brave, Edge, Firefox, and Safari.
+          - **Browser Integration**: Hand-off extensions for Chrome, Brave, Edge and Firefox (Safari is experimental and built from source).
           - **Smart Organization**: Rule-based folder sorting, bandwidth throttling, and scheduled transfers.
           - **Pure & Lightweight**: Self-contained ~20 MB engine with native tray integration.
 
           ### 📦 Installation Packages
           | Platform | Package | Notes |
           |---|---|---|
-          | **macOS** | `Spate-1.0.0.pkg` | Apple Silicon & Intel (per-user install) |
-          | **Linux** | `spate_1.0.0_amd64.deb` | Debian & Ubuntu packages |
-          | **Windows** | `Spate-Setup-1.0.0.exe` | Windows NSIS installer |
-          | **Browser** | `spate-extension.zip` | Chrome, Brave, Edge, Firefox extension |
-          | **Safari** | `Spate-for-Safari.pkg` | Safari web extension companion |
+          | **macOS** | `Spate-@V@.pkg` | Apple Silicon & Intel (per-user install) |
+          | **Linux** | `spate_@V@_amd64.deb` | Debian & Ubuntu packages |
+          | **Windows** | `Spate-Setup-@V@.exe` | Windows NSIS installer |
+          | **Chrome, Brave, Edge** | `spate-extension-@V@.zip` | Unzip, then Load unpacked |
+          | **Firefox** | `spate-extension-firefox-@V@.zip` | Unzip, then Load Temporary Add-on |
+
+          The installers are not code-signed yet, so macOS Gatekeeper and Windows SmartScreen warn on first run.
 
           ### 🔐 Integrity Verification
           Verify package integrity using the included `SHA256SUMS`:
@@ -205,16 +266,25 @@ jobs:
           sha256sum -c SHA256SUMS
           ```
           EOF
+          # The notes name the files by version: fill it in from VERSION so
+          # they cannot drift from what is attached.
+          sed -i "s/@V@/$v/g" release_notes.md
 
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            # A draft: check the attached files, then publish it by hand.
             gh release create "${GITHUB_REF_NAME}" $files \
+              --draft \
               --title "Spate $v" \
               --notes-file release_notes.md \
               || gh release upload "${GITHUB_REF_NAME}" $files --clobber
           else
+            # Rolling build: replace the previous one entirely, so the tag
+            # follows main and old files (each named after its commit) do not
+            # pile up outside what SHA256SUMS covers.
+            gh release delete "latest" --cleanup-tag --yes || true
             gh release create "latest" $files \
               --prerelease \
+              --target "${GITHUB_SHA}" \
               --title "Spate (Latest Build)" \
-              --notes "Automated rolling release from commit ${GITHUB_SHA}. Verify with SHA256SUMS." \
-              || gh release upload "latest" $files --clobber
+              --notes "Automated rolling release from commit ${GITHUB_SHA}. Verify with SHA256SUMS."
           fi

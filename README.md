@@ -22,7 +22,7 @@
 
 - ⚡ **Accelerated Downloads** &mdash; Up to 32 parallel connections per file with dynamic work-stealing to bypass server rate caps.
 - 🔄 **Resilient Resume** &mdash; Seamlessly recovers after sleep, connection drops, or restarts with optional SHA-256 verification.
-- 🌐 **Browser Integration** &mdash; Catch downloads from Chrome, Brave, Edge, Firefox, and Safari with cookies and authentication intact.
+- 🌐 **Browser Integration** &mdash; Catch downloads from Chrome, Brave, Edge, and Firefox with cookies and authentication intact. Safari support is experimental.
 - 🗂️ **Automated Organization** &mdash; Rule-based folder sorting by domain or file extension, speed limiters, and off-peak scheduling.
 - 🪶 **Lightweight Footprint** &mdash; ~20 MB Go engine, native system tray / menu bar integration, and zero bloatware.
 
@@ -34,16 +34,23 @@ Download the latest release for your platform from the [Releases page](https://g
 
 | Platform | Package | Notes |
 |:---|:---|:---|
-| **macOS** | [`Spate-1.0.0.pkg`](https://github.com/dlohani/Spate/releases/latest) | Apple Silicon & Intel, per-user install (no admin password needed) |
+| **macOS** | [`Spate-1.0.0.pkg`](https://github.com/dlohani/Spate/releases/latest) | macOS 12 or later, per-user install (no admin password needed). Releases after 1.0.0 are universal (Apple Silicon and Intel); 1.0.0 itself runs on Apple Silicon only. |
 | **Linux** | [`spate_1.0.0_amd64.deb`](https://github.com/dlohani/Spate/releases/latest) | Debian / Ubuntu (`sudo apt install ./spate_*.deb`) |
 | **Windows** | [`Spate-Setup-1.0.0.exe`](https://github.com/dlohani/Spate/releases/latest) | NSIS installer (silent mode: `/S`) |
-| **CLI Only** | `go install github.com/dlohani/Spate/cmd/spate@latest` | Requires Go 1.22+ (standard library only) |
+| **CLI Only** | `git clone https://github.com/dlohani/Spate && cd Spate && go build ./cmd/spate` | Requires Go 1.22+ (standard library only) |
+
+The installers are not code-signed yet, so the operating system warns on first run:
+
+- **macOS**: after the blocked first attempt, open *System Settings* &rarr; *Privacy & Security* and choose *Open Anyway*.
+- **Windows**: on the SmartScreen prompt choose *More info* &rarr; *Run anyway*.
+
+Check a download against `SHA256SUMS` from the same release before running it.
 
 ### Browser Extension
 
 1. **Chrome / Brave / Edge**: Open `chrome://extensions` &rarr; enable *Developer mode* &rarr; click *Load unpacked* &rarr; select the `extension` folder included with Spate.
-2. **Firefox**: Open `about:debugging` &rarr; *This Firefox* &rarr; *Load Temporary Add-on* &rarr; select `manifest.json`.
-3. **Safari**: Included in `Spate-for-Safari.pkg` on macOS.
+2. **Firefox**: Download `spate-extension-firefox-<version>.zip` from the release and unzip it. Open `about:debugging` &rarr; *This Firefox* &rarr; *Load Temporary Add-on* &rarr; select the `manifest.json` inside the unzipped folder. Do not use the `extension` folder installed with Spate for Firefox: it is the Chrome build. Firefox removes a temporary add-on when it restarts, so this step is repeated after each restart until a signed add-on is published.
+3. **Safari** (experimental): not included in the release. On a Mac with Xcode, build it from source with `scripts/safari-extension.sh`. It is unsigned, so *Allow Unsigned Extensions* must be enabled in Safari's Develop menu each time Safari starts, and Spate must already be running because Safari cannot start it.
 
 ---
 
