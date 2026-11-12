@@ -50,7 +50,10 @@ Check a download against `SHA256SUMS` from the same release before running it.
 
 1. **Chrome / Brave / Edge**: Open `chrome://extensions` &rarr; enable *Developer mode* &rarr; click *Load unpacked* &rarr; select the `extension` folder included with Spate.
 2. **Firefox**: Download `spate-extension-firefox-<version>.zip` from the release and unzip it. Open `about:debugging` &rarr; *This Firefox* &rarr; *Load Temporary Add-on* &rarr; select the `manifest.json` inside the unzipped folder. Do not use the `extension` folder installed with Spate for Firefox: it is the Chrome build. Firefox removes a temporary add-on when it restarts, so this step is repeated after each restart until a signed add-on is published.
-3. **Safari** (experimental): not included in the release. On a Mac with Xcode, build it from source with `scripts/safari-extension.sh`. It is unsigned, so *Allow Unsigned Extensions* must be enabled in Safari's Develop menu each time Safari starts, and Spate must already be running because Safari cannot start it.
+3. **Safari** (experimental, unsigned): download `spate-extension-safari-<version>-macos-unsigned.zip` from the release, unzip it and move *Spate for Safari* to your Applications folder. Because it is not signed with an Apple Developer ID:
+   - macOS blocks the first open. Open *System Settings* &rarr; *Privacy & Security* and choose *Open Anyway*, then open the app once.
+   - In Safari, turn on *Settings* &rarr; *Advanced* &rarr; *Show features for web developers*, then choose *Develop* &rarr; *Allow Unsigned Extensions*, and enable Spate under *Settings* &rarr; *Extensions*. Safari forgets *Allow Unsigned Extensions* when it quits, so this is repeated each time Safari starts.
+   - Safari cannot start Spate, so the app must already be running, and downloads are captured from link clicks and the right-click *Download with Spate* menu only.
 
 ---
 

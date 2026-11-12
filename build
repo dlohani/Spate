@@ -452,6 +452,7 @@ do_extension() {
   fi
   label "$DIST/spate-extension-$VERSION.zip" extension "spate-extension-chrome-$VERSION.zip"
   label "$DIST/spate-extension-firefox-$VERSION.zip" extension
+  label "$DIST/spate-extension-safari-$VERSION-macos-unsigned.zip" extension
 }
 
 do_bump() {

@@ -250,7 +250,7 @@ jobs:
           ### ✨ Key Features
           - **Multi-Connection Acceleration**: Up to 32 parallel connections with dynamic work-stealing.
           - **Resilient Resume**: Seamlessly recovers interrupted transfers after network drops or sleep.
-          - **Browser Integration**: Hand-off extensions for Chrome, Brave, Edge and Firefox (Safari is experimental and built from source).
+          - **Browser Integration**: Hand-off extensions for Chrome, Brave, Edge and Firefox (Safari is experimental and unsigned).
           - **Smart Organization**: Rule-based folder sorting, bandwidth throttling, and scheduled transfers.
           - **Pure & Lightweight**: Self-contained ~20 MB engine with native tray integration.
 
@@ -262,6 +262,7 @@ jobs:
           | **Windows** | `spate-windows-@V@-amd64-setup.exe` | Installer (silent mode: `/S`) |
           | **Chrome, Brave, Edge** | `spate-extension-chrome-@V@.zip` | Unzip, then Load unpacked |
           | **Firefox** | `spate-extension-firefox-@V@.zip` | Unzip, then Load Temporary Add-on |
+          | **Safari (experimental)** | `spate-extension-safari-@V@-macos-unsigned.zip` | Unsigned app: see the README for the steps Safari requires |
 
           The installers are not code-signed yet, so macOS Gatekeeper and Windows SmartScreen warn on first run.
 
