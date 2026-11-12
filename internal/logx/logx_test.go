@@ -3,11 +3,13 @@ package logx
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestToFileAppendsWithMode(t *testing.T) {
+	defer Close() // release the log file before the temp folder is removed
 	path := filepath.Join(t.TempDir(), "spate.log")
 	lg, err := ToFile(path, 5<<20)
 	if err != nil {
@@ -24,12 +26,14 @@ func TestToFileAppendsWithMode(t *testing.T) {
 		t.Fatalf("log content: %q", b)
 	}
 	fi, _ := os.Stat(path)
-	if fi.Mode().Perm() != 0o600 {
+	// Windows has no owner-only permission bits: it reports 0666.
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %o", fi.Mode().Perm())
 	}
 }
 
 func TestToFileRotatesWhenLarge(t *testing.T) {
+	defer Close() // release the log file before the temp folder is removed
 	path := filepath.Join(t.TempDir(), "spate.log")
 	big := make([]byte, 6<<20)
 	if err := os.WriteFile(path, big, 0o600); err != nil {

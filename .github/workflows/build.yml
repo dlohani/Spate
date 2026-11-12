@@ -58,8 +58,12 @@ jobs:
           SPATE_OBFUSCATE: ${{ (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main') && '1' || '' }}
       - name: install smoke test (package installs, is universal, uninstalls)
         run: |
+          set -x
           pkg="$(ls dist/macos/Spate-*.pkg | head -1)"
           installer -pkg "$pkg" -target CurrentUserHomeDirectory
+          # Where the installer actually put the app (shown for diagnosis).
+          pkgutil --volume "$HOME" --pkg-info com.amlabs.spate.app || true
+          ls -la "$HOME/Applications" || true
           app="$HOME/Applications/Spate.app"
           support="$HOME/Library/Application Support/spate"
           test -d "$app"
@@ -112,6 +116,7 @@ jobs:
           SPATE_OBFUSCATE: ${{ (startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main') && '1' || '' }}
       - name: install smoke test (package installs with its declared dependencies, removes cleanly)
         run: |
+          set -x
           deb="$(ls dist/linux/spate_*_amd64.deb | head -1)"
           sudo apt-get install -y "./$deb"
           test -x /usr/bin/spate

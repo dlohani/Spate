@@ -25,6 +25,9 @@ func ToFile(path string, maxBytes int64) (*slog.Logger, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
+	// Let go of the previous file first: Windows cannot rotate (rename) or
+	// remove a file that is still open.
+	Close()
 	if fi, err := os.Stat(path); err == nil && maxBytes > 0 && fi.Size() > maxBytes {
 		if err := os.Rename(path, path+".1"); err != nil {
 			return nil, err
@@ -35,12 +38,21 @@ func ToFile(path string, maxBytes int64) (*slog.Logger, error) {
 		return nil, err
 	}
 	mu.Lock()
-	if current != nil {
-		_ = current.Close()
-	}
 	current = f
 	mu.Unlock()
 	return slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelInfo})), nil
+}
+
+// Close closes the file the last ToFile opened, if any. Loggers returned for
+// it drop their output afterwards. Called on shutdown so the log file is not
+// held open (on Windows an open file cannot be moved or deleted).
+func Close() {
+	mu.Lock()
+	if current != nil {
+		_ = current.Close()
+		current = nil
+	}
+	mu.Unlock()
 }
 
 // Discard returns a logger that drops everything.

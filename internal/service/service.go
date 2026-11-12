@@ -242,6 +242,9 @@ func (s *Service) Stop() {
 	}
 	s.cancel()
 	slog.Info("stopped")
+	// Release the log file; anything logged after this point is dropped.
+	slog.SetDefault(logx.Discard())
+	logx.Close()
 }
 
 // Resolve picks the folder for a download per the settings rules.

@@ -370,8 +370,11 @@ do_linux() {
   ensure_go
   say "Linux $LABEL"
   # (no array: bash 3.2 + set -u trips on an empty "${args[@]}")
-  local status=0
-  scripts/package-linux.sh ${CLI_ONLY:+--cli-only} | { grep -E "^==>|note:" || true; } || status=$?
+  # (CLI_ONLY is 0 or 1, so ${CLI_ONLY:+...} would always pass the flag and
+  # the desktop package would never be built.)
+  local status=0 flag=""
+  [ "$CLI_ONLY" = 1 ] && flag="--cli-only"
+  scripts/package-linux.sh $flag | { grep -E "^==>|note:" || true; } || status=$?
   if [ "$status" != 0 ]; then
     echo "==> Linux build failed (see above)" >&2
     exit 1

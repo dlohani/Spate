@@ -83,7 +83,14 @@ echo "==> component packages"
 sed "s/@VERSION@/$VERSION/g" "$ROOT/packaging/macos/scripts/preinstall" > "$STAGE/scripts-app/preinstall"
 cp "$ROOT/packaging/macos/scripts/postinstall" "$STAGE/scripts-support/postinstall"
 chmod +x "$STAGE/scripts-app/preinstall" "$STAGE/scripts-support/postinstall"
+# Not relocatable: by default the installer looks for another copy of the
+# bundle anywhere on the disk (a build folder, an old copy in Downloads) and
+# installs over that one instead of into ~/Applications.
+pkgbuild --analyze --root "$APPROOT" "$STAGE/app-component.plist" >/dev/null
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$STAGE/app-component.plist" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :0:BundleIsRelocatable bool false" "$STAGE/app-component.plist"
 pkgbuild --root "$APPROOT" \
+  --component-plist "$STAGE/app-component.plist" \
   --identifier com.amlabs.spate.app --version "$VERSION" \
   --install-location "Applications" \
   --scripts "$STAGE/scripts-app" \
