@@ -208,8 +208,8 @@ jobs:
           retention-days: 30
 
   # Releases attach the macOS, Linux, and Windows installers and extensions
-  # along with SHA256SUMS. On tagged releases (v*), a full production release
-  # is published. On pushes to main, a rolling 'latest' release is updated.
+  # along with SHA256SUMS. A tag (v*) creates a draft release to check and
+  # publish by hand. A push to main creates a prerelease for that build.
   release:
     needs: [macos, linux, windows]
     if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
@@ -283,13 +283,18 @@ jobs:
               --notes-file release_notes.md \
               || gh release upload "${GITHUB_REF_NAME}" $files --clobber
           else
-            # Rolling build: replace the previous one entirely, so the tag
-            # follows main and old files (each named after its commit) do not
-            # pile up outside what SHA256SUMS covers.
-            gh release delete "latest" --cleanup-tag --yes || true
-            gh release create "latest" $files \
+            # A build of main. The repository has immutable releases on, so a
+            # rolling release under one fixed tag is not possible: a published
+            # release cannot be changed and its tag name can never be used
+            # again. Each main build is therefore its own prerelease under a
+            # unique tag, and only the newest five are kept.
+            tag="build-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
+            gh release create "$tag" $files \
               --prerelease \
               --target "${GITHUB_SHA}" \
-              --title "Spate (Latest Build)" \
-              --notes "Automated rolling release from commit ${GITHUB_SHA}. Verify with SHA256SUMS."
+              --title "Spate $v build ${GITHUB_RUN_NUMBER} (${GITHUB_SHA::7})" \
+              --notes "Automated build of main at commit ${GITHUB_SHA}. Not a release: use the latest numbered version unless you are testing. Verify with SHA256SUMS."
+            gh release list --limit 100 --json tagName,isPrerelease,createdAt \
+              -q '[.[] | select(.isPrerelease and (.tagName | startswith("build-")))] | sort_by(.createdAt) | reverse | .[5:] | .[].tagName' \
+              | while read -r old; do gh release delete "$old" --cleanup-tag --yes || true; done
           fi

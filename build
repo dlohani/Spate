@@ -36,7 +36,7 @@ VERSION="$(tr -d '[:space:]' < VERSION)"
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 DIRTY=""; [ -n "$(git status --porcelain 2>/dev/null)" ] && DIRTY=".dirty"
 # Only the release tag v$VERSION makes a release-named build; other tags on
-# HEAD (the rolling "latest") must not.
+# HEAD (such as the per-build tags CI creates) must not.
 on_release_tag() { git tag --points-at HEAD 2>/dev/null | grep -qx "v$VERSION"; }
 TAGGED=""; on_release_tag && TAGGED=1
 LABEL="$VERSION"
