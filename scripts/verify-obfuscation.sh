@@ -30,7 +30,14 @@ for f in "$@"; do
         got="$(nm -g "$f" 2>/dev/null | grep -c ' _\{0,1\}Spate' || true)"
         [ "$got" = "$want_exports" ] || { echo "verify-obfuscation: $f exports $got Spate* symbols, want $want_exports" >&2; rc=1; }
       fi ;;
-    *.dylib|*.so)
+    *.so)
+      # The Linux library is linked with -s, which drops the regular symbol
+      # table: its exports are only in the dynamic one (nm -D).
+      if command -v nm >/dev/null 2>&1; then
+        got="$(nm -D --defined-only "$f" 2>/dev/null | grep -c ' _\{0,1\}Spate' || true)"
+        [ "$got" = "$want_exports" ] || { echo "verify-obfuscation: $f exports $got Spate* symbols, want $want_exports" >&2; rc=1; }
+      fi ;;
+    *.dylib)
       if command -v nm >/dev/null 2>&1; then
         got="$(nm -gU "$f" 2>/dev/null | grep -c ' _\{0,1\}Spate' || true)"
         [ "$got" = "$want_exports" ] || { echo "verify-obfuscation: $f exports $got Spate* symbols, want $want_exports" >&2; rc=1; }

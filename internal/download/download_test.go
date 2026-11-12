@@ -210,7 +210,10 @@ func TestPlanSegments(t *testing.T) {
 
 func TestHappyPathMultiConn(t *testing.T) {
 	data := randomBlob(5 << 20) // 5 MiB
-	m := &manualServer{data: data, etag: `"v1"`}
+	// A small per-request delay keeps requests open long enough to overlap:
+	// on a fast loopback each one can otherwise finish before the next
+	// starts, and the concurrency check below fails by chance.
+	m := &manualServer{data: data, etag: `"v1"`, delay: 5 * time.Millisecond}
 	srv := httptest.NewServer(m.handler())
 	defer srv.Close()
 
