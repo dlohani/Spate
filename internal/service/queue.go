@@ -28,6 +28,9 @@ type queueFile struct {
 }
 
 // queuePath is the queue file beside the settings document.
+// queueSaveMu serialises writes of the queue file.
+var queueSaveMu sync.Mutex
+
 func queuePath(settingsPath string) string {
 	return filepath.Join(filepath.Dir(settingsPath), "queue.json")
 }
@@ -44,6 +47,8 @@ func saveQueue(path string, recs []job.Record) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	queueSaveMu.Lock() // one replace at a time (Windows refuses overlapping ones)
+	defer queueSaveMu.Unlock()
 	tmp, err := os.CreateTemp(filepath.Dir(path), "queue-*.tmp")
 	if err != nil {
 		return err

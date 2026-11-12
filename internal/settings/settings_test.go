@@ -9,17 +9,19 @@ import (
 )
 
 func TestResolveRules(t *testing.T) {
-	s := Default("/dl")
+	// Absolute for the OS under test (dl is not absolute on Windows).
+	dl, abs := filepath.Join(t.TempDir(), "dl"), filepath.Join(t.TempDir(), "abs", "example")
+	s := Default(dl)
 	s.OrganizeByCategory = true
-	s.SiteRules = []SiteRule{{Host: "releases.ubuntu.com", Dir: "Linux ISOs"}, {Host: "example.org", Dir: "/abs/example"}}
+	s.SiteRules = []SiteRule{{Host: "releases.ubuntu.com", Dir: "Linux ISOs"}, {Host: "example.org", Dir: abs}}
 
 	cases := []struct{ url, name, want string }{
-		{"https://releases.ubuntu.com/x.iso", "x.iso", filepath.Join("/dl", "Linux ISOs")}, // site rule beats category
-		{"https://cdn.example.org/a.zip", "a.zip", "/abs/example"},                        // subdomain matches, absolute dir
-		{"https://host/movie.mkv", "movie.mkv", filepath.Join("/dl", "Video")},
-		{"https://host/doc.PDF", "doc.PDF", filepath.Join("/dl", "Documents")}, // case-insensitive ext
-		{"https://host/noext", "noext", "/dl"},
-		{"https://host/x.unknownext", "x.unknownext", "/dl"},
+		{"https://releases.ubuntu.com/x.iso", "x.iso", filepath.Join(dl, "Linux ISOs")}, // site rule beats category
+		{"https://cdn.example.org/a.zip", "a.zip", abs},                        // subdomain matches, absolute dir
+		{"https://host/movie.mkv", "movie.mkv", filepath.Join(dl, "Video")},
+		{"https://host/doc.PDF", "doc.PDF", filepath.Join(dl, "Documents")}, // case-insensitive ext
+		{"https://host/noext", "noext", dl},
+		{"https://host/x.unknownext", "x.unknownext", dl},
 	}
 	for _, c := range cases {
 		if got := s.Resolve(c.url, c.name); got != c.want {
@@ -27,7 +29,7 @@ func TestResolveRules(t *testing.T) {
 		}
 	}
 	s.OrganizeByCategory = false
-	if got := s.Resolve("https://host/movie.mkv", "movie.mkv"); got != "/dl" {
+	if got := s.Resolve("https://host/movie.mkv", "movie.mkv"); got != dl {
 		t.Errorf("organizing off: got %s", got)
 	}
 }

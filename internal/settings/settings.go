@@ -89,6 +89,9 @@ type Settings struct {
 const DefaultConnsValue = 8
 
 // DefaultCategories is the starting set; users can edit it.
+// saveMu serialises Save (see there).
+var saveMu sync.Mutex
+
 func DefaultCategories() []Category {
 	return []Category{
 		{Name: "Video", Extensions: []string{"mp4", "mkv", "avi", "mov", "webm", "m4v", "wmv", "flv"}, Dir: "Video"},
@@ -160,6 +163,10 @@ func (s *Settings) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	// One writer at a time: on Windows, replacing a file while another
+	// replace of the same file is in flight fails with "Access is denied".
+	saveMu.Lock()
+	defer saveMu.Unlock()
 	tmp, err := os.CreateTemp(filepath.Dir(path), "settings-*.tmp")
 	if err != nil {
 		return err
