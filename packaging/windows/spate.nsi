@@ -15,7 +15,7 @@ ${StrRep}
 !endif
 !define APPNAME "Spate"
 !define HOSTNAME "com.amlabs.spate.host"
-!define DEVEXTID "kamlaafhjnegfjdbnfajbanjfkemefga"
+!define DEVEXTID "gdnheihpfamplnmgkippinmhnajehdko"
 ; Store IDs (from browser/extension/store-ids.env via package-windows.sh).
 ; When set, browsers install the extension from the store by themselves.
 !ifndef CHROME_WEBSTORE_ID
@@ -88,8 +88,9 @@ same:
 done:
 FunctionEnd
 
-; Chrome derives an unpacked extension's ID from its folder path; the host
-; manifest authorizes the dev ID plus any ID passed to register-extension.cmd.
+; The extension's manifest carries a "key", so its ID is the same on every
+; machine and folder; the host manifest authorizes that ID, the store IDs,
+; plus any ID passed to register-extension.cmd.
 Function WriteHostManifest
   ; JSON needs backslashes escaped
   ${StrRep} $0 "$INSTDIR\bin\spate-host.exe" "\" "\\"
@@ -106,7 +107,30 @@ Function WriteFirefoxManifest
   FileClose $1
 FunctionEnd
 
+; The product was called Cascade before 0.4.x. Its app would keep starting at
+; login and holding the port Spate listens on, so an upgrade retires it:
+; process, autostart, browser host keys, Start menu and the files its
+; installer wrote. Settings are carried over by the app itself.
+Function RemoveCascade
+  ExecWait 'taskkill /IM cascade_app.exe /F'
+  ExecWait 'taskkill /IM cascade-gui.exe /F'
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Cascade"
+  DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\com.cascade.host"
+  DeleteRegKey HKCU "Software\Chromium\NativeMessagingHosts\com.cascade.host"
+  DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.cascade.host"
+  DeleteRegKey HKCU "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.cascade.host"
+  DeleteRegKey HKCU "Software\Mozilla\NativeMessagingHosts\com.cascade.host"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Cascade"
+  Delete "$SMPROGRAMS\Cascade\*.lnk"
+  RMDir "$SMPROGRAMS\Cascade"
+  RMDir /r "$LOCALAPPDATA\Cascade\bin"
+  RMDir /r "$LOCALAPPDATA\Cascade\extension"
+  Delete "$LOCALAPPDATA\Cascade\Uninstall.exe"
+  RMDir "$LOCALAPPDATA\Cascade"
+FunctionEnd
+
 Section "Spate" SecMain
+  Call RemoveCascade
   ; Windows will not overwrite a running executable: stop the app first.
   ExecWait 'taskkill /IM spate_app.exe /F'
   ExecWait 'taskkill /IM spate-gui.exe /F'   ; UI of installs before 0.4.0
@@ -182,5 +206,11 @@ Section "Uninstall"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPNAME}"
   Delete "$SMPROGRAMS\${APPNAME}\*.lnk"
   RMDir "$SMPROGRAMS\${APPNAME}"
-  RMDir /r "$INSTDIR"
+  ; Remove only what the installer put there. The install folder is the
+  ; user's choice and may be an existing folder holding other files, so it
+  ; is deleted only if it ends up empty.
+  RMDir /r "$INSTDIR\bin"
+  RMDir /r "$INSTDIR\extension"
+  Delete "$INSTDIR\Uninstall.exe"
+  RMDir "$INSTDIR"
 SectionEnd

@@ -3,7 +3,7 @@
 #
 #   powershell -ExecutionPolicy Bypass -File install-windows.ps1 [-ExtensionIds id1,id2] [-NoAutostart]
 param(
-  [string[]]$ExtensionIds = @("kamlaafhjnegfjdbnfajbanjfkemefga"),
+  [string[]]$ExtensionIds = @("gdnheihpfamplnmgkippinmhnajehdko"),
   [switch]$NoAutostart
 )
 $ErrorActionPreference = "Stop"

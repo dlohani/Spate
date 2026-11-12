@@ -50,7 +50,8 @@ class JobStatus {
   bool get isScheduled => state == 'pending' && startAt != null && startAt!.isAfter(DateTime.now());
 
   String get filename {
-    final i = out.lastIndexOf('/');
+    // Windows paths use backslashes; accept either separator.
+    final i = out.lastIndexOf(RegExp(r'[/\\]'));
     final name = i >= 0 ? out.substring(i + 1) : out;
     return name.isEmpty ? 'download' : name;
   }

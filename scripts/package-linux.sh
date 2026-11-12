@@ -113,7 +113,7 @@ if [ "$CLI_ONLY" = 0 ]; then
     sed -e "s/@VERSION@/$VERSION/g" -e "s/@CHROME_WEBSTORE_ID@/${CHROME_WEBSTORE_ID:-}/g" -e "s/@EDGE_ADDONS_ID@/${EDGE_ADDONS_ID:-}/g" \
       "$DEB/$f" > "$STAGE/DEBIAN/$f"; chmod 0755 "$STAGE/DEBIAN/$f"
   done
-  DEPENDS="libc6, libgtk-3-0, libglib2.0-0"
+  DEPENDS="libc6, libgtk-3-0, libglib2.0-0, libnotify4"
   RECOMMENDS="libayatana-appindicator3-1, chromium | google-chrome-stable | microsoft-edge-stable"
   CONFLICTS="spate-cli, cascade, cascade-cli"   # the old package names: upgrading replaces them
   DESC="Download manager: parallel connections, resume, queue, browser capture

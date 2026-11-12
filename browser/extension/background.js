@@ -32,7 +32,9 @@ async function findBase() {
   for (const p of PORTS) {
     try {
       const r = await fetch(`http://127.0.0.1:${p}/ping?client=extension`, { headers: CLIENT_HEADERS });
-      if (r.ok) return `http://127.0.0.1:${p}`;
+      // Cookies and the token are sent to this address next, so it must
+      // identify itself as Spate: some other program may own the port.
+      if (r.ok && (await r.json()).app === "spate") return `http://127.0.0.1:${p}`;
     } catch (e) {
       // try next port
     }
@@ -58,10 +60,14 @@ async function pair() {
     const t = setTimeout(() => ctrl.abort(), 95000);
     const r = await fetch(`${base}/pair`, { headers: CLIENT_HEADERS, signal: ctrl.signal });
     clearTimeout(t);
+    // 403 is the user clicking Deny in the app: remember it so the heartbeat
+    // and later downloads do not raise the prompt again. Only the Pair button
+    // on the Options page (an explicit request) clears it.
+    if (r.status === 403) await chrome.storage.local.set({ pairDeclined: true });
     if (!r.ok) return { ok: false, reason: `HTTP ${r.status}` };
     const { token } = await r.json();
     if (!token) return { ok: false, reason: "empty token" };
-    await chrome.storage.local.set({ token });
+    await chrome.storage.local.set({ token, pairDeclined: false });
     await note("paired with app");
     return { ok: true };
   } catch (e) {
@@ -100,16 +106,22 @@ async function ensureApp(forceRepair) {
   }
   if (!base) base = await findBase();
   if (base && !token) {
-    const p = await pair();
-    if (p.ok) token = (await getConfig()).token;
+    const { pairDeclined } = await chrome.storage.local.get({ pairDeclined: false });
+    if (!pairDeclined) {
+      const p = await pair();
+      if (p.ok) token = (await getConfig()).token;
+    }
   }
   return { base, token };
 }
 
+// heartbeat pairs with a running app in the background. It goes through
+// ensureApp so the native host supplies the token without a prompt when it is
+// installed, and so a declined prompt is not raised again every 30 seconds.
 async function heartbeat() {
   const base = await findBase();
   const { token } = await getConfig();
-  if (base && !token) await pair();
+  if (base && !token) await ensureApp();
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -270,14 +282,25 @@ async function handOff(item) {
       await chrome.downloads.erase({ id: item.id });
       const opts = { url: item.url, conflictAction: "uniquify" };
       if (filename) opts.filename = filename;
-      if (item.referrer) opts.headers = [{ name: "Referer", value: item.referrer }];
-      await chrome.downloads.download(opts);
+      restarted.add(item.url); // onCreated must leave this one to the browser
+      try {
+        // Firefox accepts a Referer here; Chromium rejects it as an unsafe
+        // header, so the restart is retried without it rather than lost.
+        if (!item.referrer) throw new Error("no referrer");
+        await chrome.downloads.download({ ...opts, headers: [{ name: "Referer", value: item.referrer }] });
+      } catch (e) {
+        await chrome.downloads.download(opts);
+      }
       await note("app refused; restarted in browser", item.url);
     } catch (e) {
       await note("app refused and browser restart failed: " + (e && e.message), item.url);
     }
   }
 }
+
+// URLs this extension restarted in the browser after the app refused them.
+// Without this, the restarted download would be captured again and loop.
+const restarted = new Set();
 
 async function askUser(item) {
   await chrome.storage.session.set({ ["pending:" + item.id]: item });
@@ -293,7 +316,8 @@ async function askUser(item) {
 
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg && msg.type === "pair") {
-    pair().then(reply);
+    // The Pair button: an explicit request overrides an earlier Deny.
+    chrome.storage.local.set({ pairDeclined: false }).then(pair).then(reply);
     return true;
   }
   if (msg && msg.type === "link") {
@@ -365,6 +389,12 @@ if (hasDownloads) chrome.downloads.onCreated.addListener(async (raw) => {
     incognito: !!raw.incognito, // read cookies from the incognito store
   };
   log("download detected:", item.url, "mode:", mode);
+  // A download this extension started is the hand-back of one the app
+  // refused: capturing it again would cancel and restart it forever.
+  if (raw.byExtensionId === chrome.runtime.id || restarted.delete(raw.url) || restarted.delete(url)) {
+    await note("skipped: restarted by Spate after the app refused it", item.url);
+    return;
+  }
   if (!enabled || mode === "never") {
     await note("skipped: capture disabled", item.url);
     return;
@@ -373,7 +403,7 @@ if (hasDownloads) chrome.downloads.onCreated.addListener(async (raw) => {
     await note("skipped: unsupported url scheme", item.url);
     return;
   }
-  if (item.url.includes("127.0.0.1")) {
+  if (["127.0.0.1", "localhost", "[::1]"].includes(item.host)) {
     await note("skipped: localhost url", item.url);
     return;
   }

@@ -535,7 +535,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
-          onPressed: configDir.isEmpty ? null : () => Process.start(Platform.isMacOS ? 'open' : Platform.isWindows ? 'explorer' : 'xdg-open', [Platform.isMacOS ? '-R' : '', '$configDir/spate.log'].where((a) => a.isNotEmpty).toList()),
+          onPressed: configDir.isEmpty ? null : () => Process.start(Platform.isMacOS ? 'open' : Platform.isWindows ? 'explorer' : 'xdg-open', [Platform.isMacOS ? '-R' : '', '$configDir${Platform.pathSeparator}spate.log'].where((a) => a.isNotEmpty).toList()),
           icon: const Icon(Icons.description_outlined, size: 16),
           label: const Text('Show log file'),
         ),

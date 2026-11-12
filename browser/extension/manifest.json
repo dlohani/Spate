@@ -2,6 +2,7 @@
   "manifest_version": 3,
   "name": "Spate Download Capture",
   "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu1apnkJq7uxFbHUyT606KfHlq2LgnqvaxIRcH4neywyYXj8Cu7dLdzdMLc7jisDHua2Bk+Yw95sLmboV63FlZ0+mAK/bg0M28sT6Lg2eSPXxjsR85MjWiq5s/4pAkbhLSjS2cwmfe2lzUnn0biUZd1rz0TEQvdznRjDYElTTLOYUcCzza51V/qSObFiPajAPVRO+t80WCP0Q9Ry/5LXhZi+9w+sPUL3obVKN2cprDvRQuqqLBXobrshANGy0RqFfWIScKyvaycPGCwmz244077U4ZvkjgKPatdBXHI7b7S7W58jWnqRZ8vMaodPIyGEuKzWFTYtIvNoGktoNobZZ9QIDAQAB",
   "description": "Automatically send downloads started in the browser to the Spate app, with cookies and referrer.",
   "permissions": [
     "downloads",

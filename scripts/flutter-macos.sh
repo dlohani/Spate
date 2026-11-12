@@ -13,9 +13,21 @@ export PATH="/opt/homebrew/bin:/usr/local/go/bin:$PATH"
 MODE="${1:-build}"
 . "$ROOT/scripts/lib/obfuscate.sh"
 
-echo "==> building Go core (libspate.dylib)"
-(cd "$ROOT" && make lib >/dev/null)
 DYLIB="$ROOT/dist/libspate.dylib"
+if [ "$MODE" = build ]; then
+  # A release bundle runs on Apple Silicon and Intel Macs: Flutter builds the
+  # app universal, so the Go core must be universal too or an Intel Mac fails
+  # to load it. Each architecture is built separately and joined with lipo.
+  echo "==> building Go core (libspate.dylib, universal: arm64 + x86_64)"
+  for arch in arm64 amd64; do
+    (cd "$ROOT" && GOARCH="$arch" make lib DIST="dist/lib-$arch" >/dev/null)
+  done
+  lipo -create -output "$DYLIB" "$ROOT/dist/lib-arm64/libspate.dylib" "$ROOT/dist/lib-amd64/libspate.dylib"
+  rm -rf "$ROOT/dist/lib-arm64" "$ROOT/dist/lib-amd64"
+else
+  echo "==> building Go core (libspate.dylib, this Mac's architecture)"
+  (cd "$ROOT" && make lib >/dev/null)
+fi
 # Give the dylib an @rpath install name so the bundled copy resolves.
 install_name_tool -id "@rpath/libspate.dylib" "$DYLIB" 2>/dev/null || true
 
@@ -49,7 +61,13 @@ case "$MODE" in
     # Adding a file after Flutter signed the bundle breaks its code seal
     # ("nested code is modified"); re-sign ad hoc so the bundle is consistent.
     # Replace "-" with a Developer ID identity for distribution/notarization.
-    codesign --force --deep --sign "${SPATE_SIGN_IDENTITY:--}" "$APP" 2>&1 | grep -v "replacing existing signature" || true
+    # With SPATE_SIGN_IDENTITY set to a "Developer ID Application" identity the
+    # app is signed for distribution: hardened runtime and a secure timestamp
+    # are what notarization requires. Without it the seal is ad hoc (local use).
+    SIGN_OPTS=""
+    if [ -n "${SPATE_SIGN_IDENTITY:-}" ]; then SIGN_OPTS="--options runtime --timestamp"; fi
+    # shellcheck disable=SC2086
+    codesign --force --deep $SIGN_OPTS --sign "${SPATE_SIGN_IDENTITY:--}" "$APP" 2>&1 | grep -v "replacing existing signature" || true
     codesign --verify --deep --strict "$APP" && echo "==> code seal OK"
     echo "==> app: $APP"
     ;;

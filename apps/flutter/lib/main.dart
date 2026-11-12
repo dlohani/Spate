@@ -73,7 +73,7 @@ Future<void> main(List<String> args) async {
     windowManager.waitUntilReadyToShow(opts, () async {
       // A background start with neither a tray icon nor (off macOS) a Dock
       // icon would leave nothing to open the app from: show the window.
-      final nowhereToOpenFrom = !prefs.hasTray && !Platform.isMacOS;
+      final nowhereToOpenFrom = (!prefs.hasTray || _trayFailed) && !Platform.isMacOS;
       if (background && !nowhereToOpenFrom) {
         // Stay in the tray until "Open Spate". On macOS the window is hidden
         // at launch by MainFlutterWindow; the Windows/Linux runners show it
@@ -181,6 +181,11 @@ Future<void> showWindow(SpateController controller) async {
 bool _trayUp = false;
 bool _trayListening = false;
 
+/// The tray icon could not be created (for example a GNOME session without
+/// an AppIndicator extension). Off macOS there is then nothing to reopen a
+/// hidden window from, so the app behaves as in Dock-only mode.
+bool _trayFailed = false;
+
 /// Applies the presence preference: creates or removes the tray icon and
 /// shows or hides the Dock / taskbar entry (window_manager's skipTaskbar sets
 /// the macOS activation policy to accessory, which drops the Dock icon).
@@ -229,7 +234,7 @@ class _Resident with WindowListener {
   void onWindowClose() async {
     // Dock-only mode off macOS: closing the only visible entry point quits;
     // on macOS the Dock icon stays and reopens the window (AppDelegate).
-    if (!prefs.hasTray && !Platform.isMacOS) {
+    if ((!prefs.hasTray || _trayFailed) && !Platform.isMacOS) {
       await quitApp(controller.core);
       return;
     }
@@ -251,7 +256,7 @@ class _Resident with WindowListener {
   // the Dock/taskbar and comes back from the tray menu or a second launch.
   @override
   void onWindowMinimize() async {
-    if (!prefs.minimizeToTray || !prefs.hasTray) {
+    if (!prefs.minimizeToTray || !prefs.hasTray || _trayFailed) {
       controller.setVisible(false); // minimised: nothing to paint either
       return;
     }
@@ -286,8 +291,15 @@ Future<void> _setupTray(Spate core, SpateController controller, UiPrefs prefs) a
     final status = _TrayStatus(tray, core, controller);
     await status.apply(force: true);
     controller.onJobsRefreshed = status.apply; // runs hidden or shown
+    _trayFailed = false;
   } catch (_) {
-    // No tray available (e.g. some Linux sessions); the window still works.
+    // No tray available (e.g. some Linux sessions). A window hidden for a
+    // background start would be unreachable, so bring it back.
+    _trayFailed = true;
+    if (!Platform.isMacOS) {
+      await windowManager.show();
+      controller.setVisible(true);
+    }
   }
 }
 

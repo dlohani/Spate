@@ -87,7 +87,7 @@ and adds a Run-key autostart (`spate_app.exe --background`).
 
 ```bash
 sudo apt install -y git golang clang cmake ninja-build pkg-config libgtk-3-dev \
-  liblzma-dev libstdc++-12-dev libayatana-appindicator3-dev
+  liblzma-dev libstdc++-12-dev libayatana-appindicator3-dev libnotify-dev
 # Flutter: https://docs.flutter.dev/get-started/install/linux (snap or tarball)
 git clone <repo> spate && cd spate
 (cd apps/flutter && flutter config --enable-linux-desktop && flutter pub get)

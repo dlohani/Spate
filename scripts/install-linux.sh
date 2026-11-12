@@ -6,8 +6,8 @@
 #   scripts/install-linux.sh [EXTENSION_ID ...]
 #
 # Prerequisites: Go, and for the UI `flutter build linux` (needs clang, cmake,
-# ninja, pkg-config, libgtk-3-dev). Chromium-family browsers only; a Firefox
-# extension variant is a follow-up.
+# ninja, pkg-config, libgtk-3-dev, libnotify-dev). Registers the native host
+# for Chromium-family browsers and Firefox.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,7 +18,7 @@ VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}/spate"
 BIN="$DATA/bin"
 HOST_NAME="com.amlabs.spate.host"
-DEFAULT_EXT_ID="kamlaafhjnegfjdbnfajbanjfkemefga"
+DEFAULT_EXT_ID="gdnheihpfamplnmgkippinmhnajehdko"
 EXT_IDS=("${@:-$DEFAULT_EXT_ID}")
 LDFLAGS="-X spate/internal/version.Version=$VERSION"
 

@@ -21,7 +21,7 @@ SUPPORT="$HOME/Library/Application Support/spate"
 BIN="$SUPPORT/bin"
 APP="$HOME/Applications/Spate.app"
 HOST_NAME="com.amlabs.spate.host"
-DEFAULT_EXT_ID="kamlaafhjnegfjdbnfajbanjfkemefga"
+DEFAULT_EXT_ID="gdnheihpfamplnmgkippinmhnajehdko"
 EXT_IDS=("${@:-$DEFAULT_EXT_ID}")
 LDFLAGS="-X spate/internal/version.Version=$VERSION"
 

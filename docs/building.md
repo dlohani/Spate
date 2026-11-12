@@ -93,9 +93,11 @@ on Linux. Opening the app while it is already running (Spotlight, Finder,
 Dock, Start menu) raises the running instance's window instead of starting a
 second one.
 
-Both installers are unsigned (Gatekeeper: right-click → Open; SmartScreen:
-"Run anyway"). Signing/notarization is a release step: set
-`SPATE_SIGN_IDENTITY` for macOS. One manual step remains everywhere: loading
+Both installers are unsigned (Gatekeeper: after the blocked first open, System
+Settings → Privacy & Security → Open Anyway; SmartScreen: "More info" → "Run
+anyway"). Signing/notarization is a release step: for macOS set
+`SPATE_SIGN_IDENTITY`, `SPATE_INSTALLER_IDENTITY` and `SPATE_NOTARY_PROFILE`
+(see the header of `scripts/package-macos.sh`). One manual step remains everywhere: loading
 the browser extension (Chrome only allows silent installs from the Web Store);
 the installers' final page shows the folder.
 

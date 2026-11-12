@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"spate/internal/httpc"
+	"spate/internal/paths"
 	"spate/internal/progress"
 )
 
@@ -336,6 +337,12 @@ func (d *Downloader) Run(ctx context.Context) error {
 	if err := d.ctrl.Remove(); err != nil {
 		return err
 	}
+	// Windows refuses to delete or rename a file that is still open, so the
+	// handle is closed before the .part is moved into place (the deferred
+	// Close then is a harmless no-op).
+	if err := d.file.Close(); err != nil {
+		return err
+	}
 	if err := d.finalize(); err != nil {
 		return err
 	}
@@ -627,6 +634,9 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 	if err := verifySHA256(PartPath(d.out), d.opts.SHA256); err != nil {
 		return err
 	}
+	if err := f.Close(); err != nil { // see Run: Windows cannot move an open file
+		return err
+	}
 	if err := d.finalize(); err != nil {
 		return err
 	}
@@ -637,12 +647,13 @@ func (d *Downloader) streamWhole(ctx context.Context, size int64) error {
 // the URL path, defaulting to download.bin. When the chosen name has no
 // extension, one is inferred from the Content-Type.
 func deriveFilename(rawURL, suggested, contentType string) string {
-	if suggested != "" {
-		return suggested
+	// Both sources are untrusted (a server header, a decoded URL path).
+	if s := paths.SafeName(suggested); s != "" {
+		return s
 	}
 	name := "download"
 	if u, err := url.Parse(rawURL); err == nil {
-		if base := path.Base(u.Path); base != "" && base != "/" && base != "." {
+		if base := paths.SafeName(u.Path); base != "" {
 			name = base
 		}
 	}

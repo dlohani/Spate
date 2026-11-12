@@ -138,3 +138,20 @@ func TestStartAddAndPair(t *testing.T) {
 		t.Fatal("pending flag should clear after resolve")
 	}
 }
+
+// A URL path is percent-decoded, so it can smuggle separators: the derived
+// name must stay a single element inside the download folder on every OS.
+func TestFilenameForStripsTraversal(t *testing.T) {
+	cases := map[string]string{
+		"http://h/a/%5C..%5C..%5Cevil.bin": "evil.bin",
+		"http://h/a/..%2F..%2Fevil.bin":    "evil.bin",
+		"http://h/a/..":                    "download.bin",
+		"http://h/dir/file.zip?x=1":        "file.zip",
+		"http://h/":                        "download.bin",
+	}
+	for in, want := range cases {
+		if got := FilenameFor(in); got != want {
+			t.Errorf("FilenameFor(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

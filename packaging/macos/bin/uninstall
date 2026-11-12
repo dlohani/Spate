@@ -11,6 +11,7 @@ AS="$HOME/Library/Application Support"
 for b in Chromium Google/Chrome BraveSoftware/Brave-Browser "Microsoft Edge" Vivaldi; do
   rm -f "$AS/$b/NativeMessagingHosts/com.amlabs.spate.host.json"
 done
+rm -f "$AS/Mozilla/NativeMessagingHosts/com.amlabs.spate.host.json"
 rm -rf "$HOME/Applications/Spate.app" "$ROOT/bin" "$ROOT/extension"
 pkgutil --forget com.amlabs.spate >/dev/null 2>&1 || true
 pkgutil --forget com.amlabs.spate.app >/dev/null 2>&1 || true

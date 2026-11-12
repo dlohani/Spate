@@ -5,7 +5,7 @@ set -e
 HOST=/usr/lib/spate/spate-host
 EXT=/usr/share/spate/extension
 NAME=com.amlabs.spate.host
-DEVID=kamlaafhjnegfjdbnfajbanjfkemefga
+DEVID=gdnheihpfamplnmgkippinmhnajehdko
 CHROME_WEBSTORE_ID="@CHROME_WEBSTORE_ID@"
 EDGE_ADDONS_ID="@EDGE_ADDONS_ID@"
 # Chrome derives an unpacked extension's ID from its folder path:

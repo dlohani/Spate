@@ -20,7 +20,7 @@ CHROME_WEBSTORE_ID=""; EDGE_ADDONS_ID=""
 
 # Chrome's unpacked-extension ID: sha256(path) -> first 32 hex digits mapped a-p.
 derive_id() { printf '%s' "$1" | shasum -a 256 | cut -c1-32 | tr '0123456789abcdef' 'abcdefghijklmnop'; }
-IDS="kamlaafhjnegfjdbnfajbanjfkemefga $(derive_id "$EXT_DIR") $CHROME_WEBSTORE_ID $EDGE_ADDONS_ID $*"
+IDS="gdnheihpfamplnmgkippinmhnajehdko $(derive_id "$EXT_DIR") $CHROME_WEBSTORE_ID $EDGE_ADDONS_ID $*"
 origins=""; seen=" "
 for id in $IDS; do
   case "$seen" in *" $id "*) continue ;; esac

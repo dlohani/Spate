@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -467,7 +466,8 @@ func hasPartial(out string, legacy bool) bool {
 // FilenameFor derives a file name from a URL path, defaulting to download.bin.
 func FilenameFor(rawURL string) string {
 	if u, err := url.Parse(rawURL); err == nil {
-		if base := path.Base(u.Path); base != "" && base != "/" && base != "." {
+		// u.Path is percent-decoded, so it can carry backslashes and "..".
+		if base := paths.SafeName(u.Path); base != "" {
 			return base
 		}
 	}
