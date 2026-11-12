@@ -35,7 +35,10 @@ DIST="$ROOT/dist"
 VERSION="$(tr -d '[:space:]' < VERSION)"
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)"
 DIRTY=""; [ -n "$(git status --porcelain 2>/dev/null)" ] && DIRTY=".dirty"
-TAGGED=""; git describe --tags --exact-match >/dev/null 2>&1 && TAGGED=1
+# Only the release tag v$VERSION makes a release-named build; other tags on
+# HEAD (the rolling "latest") must not.
+on_release_tag() { git tag --points-at HEAD 2>/dev/null | grep -qx "v$VERSION"; }
+TAGGED=""; on_release_tag && TAGGED=1
 LABEL="$VERSION"
 if [ -z "$TAGGED" ] || [ -n "$DIRTY" ]; then LABEL="$VERSION+$SHA$DIRTY"; fi
 BUILDNUM="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
@@ -46,7 +49,7 @@ export SPATE_BUILD_NUMBER="$BUILDNUM"
 require_release() {
   local why=""
   [ -z "$DIRTY" ] || why="uncommitted changes"
-  [ "$(git describe --tags --exact-match 2>/dev/null)" = "v$VERSION" ] || why="${why:+$why, }HEAD is not on tag v$VERSION"
+  on_release_tag || why="${why:+$why, }HEAD is not on tag v$VERSION"
   [ -z "${SPATE_ALLOW_NO_UI:-}" ] || why="${why:+$why, }SPATE_ALLOW_NO_UI is set"
   if [ -n "$why" ]; then
     echo "release: refused ($why). Commit, tag v$VERSION, unset overrides, then retry." >&2
@@ -310,8 +313,16 @@ do_mac() {
   [ "$(uname -s)" = Darwin ] || { note "mac: needs a macOS host"; return 0; }
   need flutter "https://docs.flutter.dev/get-started/install" || return 0
   say "macOS $LABEL"
-  scripts/flutter-macos.sh build 2>&1 | grep -E "==> app|error:" || true
-  scripts/package-macos.sh | grep -E "^==> /|error" || true
+  # As for Windows below: the grep is wrapped so "no match" cannot mask the
+  # script's own exit status, and a failed step stops the build instead of
+  # carrying on to ship nothing.
+  local status=0
+  scripts/flutter-macos.sh build | { grep -E "==> app|error:" || true; } || status=$?
+  [ "$status" = 0 ] && { scripts/package-macos.sh | { grep -E "^==> /|error" || true; } || status=$?; }
+  if [ "$status" != 0 ]; then
+    echo "==> macOS build failed (see above)" >&2
+    exit 1
+  fi
   label "$DIST/Spate-$VERSION.pkg" macos
   local app; app="$(ls -d apps/flutter/build/macos/Build/Products/Release/*.app | head -1)"
   local zip="$DIST/Spate-$VERSION-macos.zip"; rm -f "$zip"
@@ -359,7 +370,12 @@ do_linux() {
   ensure_go
   say "Linux $LABEL"
   # (no array: bash 3.2 + set -u trips on an empty "${args[@]}")
-  scripts/package-linux.sh ${CLI_ONLY:+--cli-only} | grep -E "^==>|note:" || true
+  local status=0
+  scripts/package-linux.sh ${CLI_ONLY:+--cli-only} | { grep -E "^==>|note:" || true; } || status=$?
+  if [ "$status" != 0 ]; then
+    echo "==> Linux build failed (see above)" >&2
+    exit 1
+  fi
   for f in "$DIST"/spate_"$VERSION"_*.deb "$DIST"/spate-cli_"$VERSION"_*.deb; do [ -e "$f" ] && label "$f" linux; done
   make -s host-linux && note "dist/linux-{amd64,arm64}/spate-host"
 }
@@ -401,7 +417,12 @@ do_ios() {
 
 do_extension() {
   say "browser extension $LABEL"
-  scripts/package-extension.sh | grep -E "^==>|unpacked" || true
+  local ext_status=0
+  scripts/package-extension.sh | { grep -E "^==>|unpacked" || true; } || ext_status=$?
+  if [ "$ext_status" != 0 ]; then
+    echo "==> extension packaging failed (see above)" >&2
+    exit 1
+  fi
   if [ "$(uname -s)" = Darwin ] && xcrun --find safari-web-extension-converter >/dev/null 2>&1; then
     # (re-packages internally, so the zips are labelled afterwards; the grep
     # is wrapped so "no match" cannot mask the script's own exit status)

@@ -40,7 +40,7 @@ var payload embed.FS
 
 const (
 	hostName     = "com.amlabs.spate.host"
-	defaultExtID = "kamlaafhjnegfjdbnfajbanjfkemefga" // ID when loaded from the repo path on the dev Mac
+	defaultExtID = "gdnheihpfamplnmgkippinmhnajehdko" // fixed by "key" in browser/extension/manifest.json: the same on every machine
 	// Add/Remove Programs entry; shared with the NSIS installer so each
 	// detects what the other installed.
 	uninstallKey = `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Spate`
@@ -100,6 +100,7 @@ func main() {
 		}
 	}
 	// Windows will not overwrite a running executable.
+	removeCascade()
 	stopApp()
 
 	fmt.Println("  installing to", root)
@@ -263,6 +264,34 @@ func registerStoreExtension(chromeID, edgeID string) {
 		} else {
 			fmt.Println("  extension registered:", k)
 		}
+	}
+}
+
+// removeCascade retires an install made under the product's old name,
+// Cascade: left alone, its app keeps starting at login and holds the port
+// Spate listens on. Settings are carried over by the app itself.
+func removeCascade() {
+	for _, exe := range []string{"cascade_app.exe", "cascade-gui.exe"} {
+		_ = exec.Command("taskkill", "/IM", exe, "/F").Run()
+	}
+	const old = "com.cascade.host"
+	for _, k := range []string{
+		`HKCU\Software\Google\Chrome\NativeMessagingHosts\` + old,
+		`HKCU\Software\Chromium\NativeMessagingHosts\` + old,
+		`HKCU\Software\Microsoft\Edge\NativeMessagingHosts\` + old,
+		`HKCU\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\` + old,
+		`HKCU\Software\Mozilla\NativeMessagingHosts\` + old,
+		`HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Cascade`,
+	} {
+		_ = exec.Command("reg", "delete", k, "/f").Run()
+	}
+	_ = exec.Command("reg", "delete", `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, "/v", "Cascade", "/f").Run()
+	if base := os.Getenv("LOCALAPPDATA"); base != "" {
+		dir := filepath.Join(base, "Cascade")
+		_ = os.RemoveAll(filepath.Join(dir, "bin"))
+		_ = os.RemoveAll(filepath.Join(dir, "extension"))
+		_ = os.Remove(filepath.Join(dir, "Uninstall.exe"))
+		_ = os.Remove(dir) // only if now empty
 	}
 }
 
