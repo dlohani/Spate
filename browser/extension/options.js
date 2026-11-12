@@ -27,7 +27,7 @@ async function findBase() {
   for (const p of PORTS) {
     try {
       const r = await fetch(`http://127.0.0.1:${p}/ping?client=extension`, { headers: CLIENT_HEADERS });
-      if (r.ok) return `http://127.0.0.1:${p}`;
+      if (r.ok && (await r.json()).app === "spate") return `http://127.0.0.1:${p}`;
     } catch (e) {}
   }
   return null;

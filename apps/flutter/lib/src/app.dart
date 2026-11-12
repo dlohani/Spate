@@ -254,7 +254,9 @@ class SpateController extends ChangeNotifier {
     if (Platform.isMacOS) {
       Process.start('open', [path]);
     } else if (Platform.isWindows) {
-      Process.start('cmd', ['/c', 'start', '', path]);
+      // Not through cmd.exe: it would treat & ^ % in a downloaded file's
+      // name as shell syntax. Explorer opens the file with its default app.
+      Process.start('explorer', [path]);
     } else {
       Process.start('xdg-open', [path]);
     }

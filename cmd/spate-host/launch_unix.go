@@ -29,3 +29,11 @@ func tryLock(path string) (unlock func(), ok bool) {
 		lf.Close()
 	}, true
 }
+
+// start runs the launch command and lets go of the child.
+func start(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
+}
