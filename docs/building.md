@@ -7,9 +7,9 @@ Developer reference moved out of the README: how the engine, app, extension and 
 One front door, always from the working tree (uncommitted changes included),
 version-stamped artifacts in `dist/`:
 
-    ./build mac [--install]     Spate-<v>.pkg, Spate-<v>-macos.zip
-    ./build windows             spate-setup.exe, Spate-Setup-<v>.exe (NSIS), zip
-    ./build linux [--cli-only]  spate_<v>_<arch>.deb (full on Linux; CLI-only elsewhere)
+    ./build mac [--install]     dist/macos/spate-macos-<v>.pkg
+    ./build windows             dist/windows/spate-windows-<v>-amd64-setup.exe (NSIS), .zip
+    ./build linux [--cli-only]  dist/linux/spate-linux-<v>-<arch>.deb (full on Linux; CLI-only elsewhere)
     ./build android             libspate .aar + Spate-<v>.apk (needs Android SDK)
     ./build ios                 Spate-<v>.xcframework + unsigned iOS app
     ./build extension           Chrome/Firefox zips, Safari source and app

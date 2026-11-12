@@ -30,13 +30,13 @@
 
 ## Installation
 
-Download the latest release for your platform from the [Releases page](https://github.com/dlohani/Spate/releases/latest):
+Download the latest release for your platform from the [Releases page](https://github.com/dlohani/Spate/releases/latest). Files are named `spate-<platform>-<version>` (release 1.0.0 used older names: `Spate-1.0.0.pkg`, `Spate-Setup-1.0.0.exe`):
 
 | Platform | Package | Notes |
 |:---|:---|:---|
-| **macOS** | [`Spate-1.0.0.pkg`](https://github.com/dlohani/Spate/releases/latest) | macOS 12 or later, per-user install (no admin password needed). Releases after 1.0.0 are universal (Apple Silicon and Intel); 1.0.0 itself runs on Apple Silicon only. |
-| **Linux** | [`spate_1.0.0_amd64.deb`](https://github.com/dlohani/Spate/releases/latest) | Debian / Ubuntu (`sudo apt install ./spate_*.deb`) |
-| **Windows** | [`Spate-Setup-1.0.0.exe`](https://github.com/dlohani/Spate/releases/latest) | NSIS installer (silent mode: `/S`) |
+| **macOS** | [`spate-macos-<version>.pkg`](https://github.com/dlohani/Spate/releases/latest) | macOS 12 or later, per-user install (no admin password needed). Releases after 1.0.0 are universal (Apple Silicon and Intel); 1.0.0 itself runs on Apple Silicon only. |
+| **Linux** | [`spate-linux-<version>-amd64.deb`](https://github.com/dlohani/Spate/releases/latest) | Debian / Ubuntu (`sudo apt install ./spate-linux-*.deb`) |
+| **Windows** | [`spate-windows-<version>-amd64-setup.exe`](https://github.com/dlohani/Spate/releases/latest) | NSIS installer (silent mode: `/S`) |
 | **CLI Only** | `git clone https://github.com/dlohani/Spate && cd Spate && go build ./cmd/spate` | Requires Go 1.22+ (standard library only) |
 
 The installers are not code-signed yet, so the operating system warns on first run:

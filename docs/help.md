@@ -7,8 +7,8 @@ once. This page is what the app's Help menu opens.
 
 ## Getting started
 
-1. **Install** the package for your platform (`Spate-<version>.pkg` on macOS,
-   `Spate-Setup-<version>.exe` on Windows, `spate_<version>_<arch>.deb` on
+1. **Install** the package for your platform (`spate-macos-<version>.pkg` on macOS,
+   `spate-windows-<version>-amd64-setup.exe` on Windows, `spate-linux-<version>-<arch>.deb` on
    Debian and Ubuntu). Spate starts hidden in the menu bar or tray at login
    and stays running; closing its window only hides it.
 2. **Load the browser extension.** Until it is published in the stores:
