@@ -80,7 +80,7 @@ Prerequisites: **Go 1.22+** and **Flutter 3.x** (optional, for desktop GUI).
 
 ```bash
 # Build desktop app and core for current OS
-./build mac       # macOS (.pkg and .zip in dist/macos)
+./build mac       # macOS (.pkg in dist/macos)
 ./build linux     # Linux (.deb in dist/linux)
 ./build windows   # Windows (.exe in dist/windows)
 

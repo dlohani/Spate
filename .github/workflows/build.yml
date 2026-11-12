@@ -259,7 +259,7 @@ jobs:
           |---|---|---|
           | **macOS** | `spate-macos-@V@.pkg` | Apple Silicon & Intel (per-user install) |
           | **Linux** | `spate-linux-@V@-amd64.deb` | Debian & Ubuntu (`sudo apt install ./spate-linux-*.deb`) |
-          | **Windows** | `spate-windows-@V@-amd64-setup.exe` | Installer (the `.zip` is the same files without an installer wizard) |
+          | **Windows** | `spate-windows-@V@-amd64-setup.exe` | Installer (silent mode: `/S`) |
           | **Chrome, Brave, Edge** | `spate-extension-chrome-@V@.zip` | Unzip, then Load unpacked |
           | **Firefox** | `spate-extension-firefox-@V@.zip` | Unzip, then Load Temporary Add-on |
 

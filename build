@@ -347,12 +347,13 @@ do_windows() {
     echo "==> Windows build failed (see above)" >&2
     exit 1
   fi
-  for z in spate-windows-amd64.zip spate-windows-amd64-cli-only.zip; do
-    if [ -f "$DIST/$z" ]; then
-      local kind="${z#spate-windows-}"   # amd64.zip or amd64-cli-only.zip
-      label "$DIST/$z" windows "spate-windows-$VERSION-$kind"
-    fi
-  done
+  # The full zip (same files as the installer plus the older console setup)
+  # stays in dist/ for local use and is not published: one Windows download,
+  # the setup .exe below. A build without the UI has only the CLI zip to offer.
+  [ -f "$DIST/spate-windows-amd64.zip" ] && note "dist/spate-windows-amd64.zip (local only, not published)"
+  if [ -f "$DIST/spate-windows-amd64-cli-only.zip" ]; then
+    label "$DIST/spate-windows-amd64-cli-only.zip" windows "spate-windows-$VERSION-amd64-cli-only.zip"
+  fi
   if command -v makensis >/dev/null; then
     if ui_bundle_ok "$DIST/windows-amd64"; then
       local pstatus=0

@@ -8,7 +8,7 @@ One front door, always from the working tree (uncommitted changes included),
 version-stamped artifacts in `dist/`:
 
     ./build mac [--install]     dist/macos/spate-macos-<v>.pkg
-    ./build windows             dist/windows/spate-windows-<v>-amd64-setup.exe (NSIS), .zip
+    ./build windows             dist/windows/spate-windows-<v>-amd64-setup.exe (NSIS)
     ./build linux [--cli-only]  dist/linux/spate-linux-<v>-<arch>.deb (full on Linux; CLI-only elsewhere)
     ./build android             libspate .aar + Spate-<v>.apk (needs Android SDK)
     ./build ios                 Spate-<v>.xcframework + unsigned iOS app
