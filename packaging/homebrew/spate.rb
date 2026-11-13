@@ -3,16 +3,16 @@
 # (e.g. github.com/<you>/homebrew-spate), then:  brew install --cask <you>/spate/spate
 cask "spate" do
   version "1.0.0"
-  sha256 "REPLACE_WITH_SHA256_OF_Spate-#{version}.pkg"
+  sha256 "REPLACE_WITH_SHA256_OF_spate-macos-#{version}.pkg"
 
-  url "https://github.com/dlohani/Spate/releases/download/v#{version}/Spate-#{version}.pkg"
+  url "https://github.com/dlohani/Spate/releases/download/v#{version}/spate-macos-#{version}.pkg"
   name "Spate"
   desc "Download manager with browser capture, parallel connections and resume"
   homepage "https://github.com/dlohani/Spate"
 
   depends_on macos: ">= :ventura"
 
-  pkg "Spate-#{version}.pkg"
+  pkg "spate-macos-#{version}.pkg"
 
   uninstall pkgutil: "com.amlabs.spate",
             launchctl: "com.amlabs.spate",

@@ -59,7 +59,7 @@ jobs:
       - name: install smoke test (package installs, is universal, uninstalls)
         run: |
           set -x
-          pkg="$(ls dist/macos/Spate-*.pkg | head -1)"
+          pkg="$(ls dist/macos/spate-macos-*.pkg | head -1)"
           installer -pkg "$pkg" -target CurrentUserHomeDirectory
           # Where the installer actually put the app (shown for diagnosis).
           pkgutil --volume "$HOME" --pkg-info com.amlabs.spate.app || true
@@ -117,7 +117,7 @@ jobs:
       - name: install smoke test (package installs with its declared dependencies, removes cleanly)
         run: |
           set -x
-          deb="$(ls dist/linux/spate_*_amd64.deb | head -1)"
+          deb="$(ls dist/linux/spate-linux-[0-9]*-amd64.deb | head -1)"
           sudo apt-get install -y "./$deb"
           test -x /usr/bin/spate
           test -x /usr/lib/spate/spate-host
@@ -188,7 +188,7 @@ jobs:
       - name: install smoke test (silent install puts the files and registry keys in place)
         shell: pwsh
         run: |
-          $setup = (Get-ChildItem dist\windows\Spate-Setup-*.exe | Select-Object -First 1).FullName
+          $setup = (Get-ChildItem dist\windows\spate-windows-*-setup.exe | Select-Object -First 1).FullName
           $p = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "installer exited with $($p.ExitCode)" }
           $root = Join-Path $env:LOCALAPPDATA 'Spate'
@@ -250,18 +250,19 @@ jobs:
           ### ✨ Key Features
           - **Multi-Connection Acceleration**: Up to 32 parallel connections with dynamic work-stealing.
           - **Resilient Resume**: Seamlessly recovers interrupted transfers after network drops or sleep.
-          - **Browser Integration**: Hand-off extensions for Chrome, Brave, Edge and Firefox (Safari is experimental and built from source).
+          - **Browser Integration**: Hand-off extensions for Chrome, Brave, Edge and Firefox (Safari is experimental and unsigned).
           - **Smart Organization**: Rule-based folder sorting, bandwidth throttling, and scheduled transfers.
           - **Pure & Lightweight**: Self-contained ~20 MB engine with native tray integration.
 
           ### 📦 Installation Packages
           | Platform | Package | Notes |
           |---|---|---|
-          | **macOS** | `Spate-@V@.pkg` | Apple Silicon & Intel (per-user install) |
-          | **Linux** | `spate_@V@_amd64.deb` | Debian & Ubuntu packages |
-          | **Windows** | `Spate-Setup-@V@.exe` | Windows NSIS installer |
-          | **Chrome, Brave, Edge** | `spate-extension-@V@.zip` | Unzip, then Load unpacked |
+          | **macOS** | `spate-macos-@V@.pkg` | Apple Silicon & Intel (per-user install) |
+          | **Linux** | `spate-linux-@V@-amd64.deb` | Debian & Ubuntu (`sudo apt install ./spate-linux-*.deb`) |
+          | **Windows** | `spate-windows-@V@-amd64-setup.exe` | Installer (silent mode: `/S`) |
+          | **Chrome, Brave, Edge** | `spate-extension-chrome-@V@.zip` | Unzip, then Load unpacked |
           | **Firefox** | `spate-extension-firefox-@V@.zip` | Unzip, then Load Temporary Add-on |
+          | **Safari (experimental)** | `spate-extension-safari-@V@-macos-unsigned.zip` | Unsigned app: see the README for the steps Safari requires |
 
           The installers are not code-signed yet, so macOS Gatekeeper and Windows SmartScreen warn on first run.
 

@@ -4,7 +4,7 @@
 # dist/{macos,windows,linux,extension,android,ios}/ with the version in the
 # name; everything else under dist/ is build intermediates.
 #
-#   ./build mac        [--install]   Flutter app + libspate -> Spate-<v>.pkg, Spate-<v>-macos.zip
+#   ./build mac        [--install]   Flutter app + libspate -> spate-macos-<v>.pkg
 #   ./build windows                  cross-compiled Go pieces + spate-setup.exe (+ NSIS installer)
 #   ./build linux      [--cli-only]  Debian package (full on Linux, CLI-only elsewhere)
 #   ./build android                  libspate .aar (gomobile) + APK when the Android SDK is present
@@ -257,13 +257,16 @@ ensure_go() {
   say "Go ready: $(go version)"
 }
 artifacts=()
-# label SRC PLATFORM: moves a finished artifact into dist/<platform>/ under its
-# labelled name (version -> label) and records it. Intermediates (dist/
-# windows-amd64, linux-*, libspate.*, *-extension/ sources) stay in place.
+# label SRC PLATFORM [NAME]: moves a finished artifact into dist/<platform>/
+# under its labelled name (version -> label) and records it. NAME is the
+# published file name (containing $VERSION): every release file starts with
+# "spate-<platform>-" so the files of one platform sit together in a release.
+# Intermediates (dist/windows-amd64, linux-*, libspate.*, *-extension/
+# sources) stay in place.
 label() {
   local src="$1" plat="$2" name dst
   [ -e "$src" ] || return 0
-  name="$(basename "$src")"
+  name="${3:-$(basename "$src")}"
   [ "$LABEL" != "$VERSION" ] && name="${name/$VERSION/$LABEL}"
   mkdir -p "$DIST/$plat"
   dst="$DIST/$plat/$name"
@@ -323,10 +326,10 @@ do_mac() {
     echo "==> macOS build failed (see above)" >&2
     exit 1
   fi
-  label "$DIST/Spate-$VERSION.pkg" macos
-  local app; app="$(ls -d apps/flutter/build/macos/Build/Products/Release/*.app | head -1)"
-  local zip="$DIST/Spate-$VERSION-macos.zip"; rm -f "$zip"
-  ditto -c -k --keepParent "$app" "$zip" && label "$zip" macos
+  # Only the installer is published. A zip of the bare app would lack the
+  # native host and the browser registration, so it could not take over
+  # downloads from a browser.
+  label "$DIST/Spate-$VERSION.pkg" macos "spate-macos-$VERSION.pkg"
   if [ "$INSTALL" = 1 ]; then scripts/install-macos.sh | grep -E "^==>" || true; fi
 }
 
@@ -344,11 +347,13 @@ do_windows() {
     echo "==> Windows build failed (see above)" >&2
     exit 1
   fi
-  for z in spate-windows-amd64.zip spate-windows-amd64-cli-only.zip; do
-    if [ -f "$DIST/$z" ]; then
-      mv -f "$DIST/$z" "$DIST/${z%.zip}-$VERSION.zip"; label "$DIST/${z%.zip}-$VERSION.zip" windows
-    fi
-  done
+  # The full zip (same files as the installer plus the older console setup)
+  # stays in dist/ for local use and is not published: one Windows download,
+  # the setup .exe below. A build without the UI has only the CLI zip to offer.
+  [ -f "$DIST/spate-windows-amd64.zip" ] && note "dist/spate-windows-amd64.zip (local only, not published)"
+  if [ -f "$DIST/spate-windows-amd64-cli-only.zip" ]; then
+    label "$DIST/spate-windows-amd64-cli-only.zip" windows "spate-windows-$VERSION-amd64-cli-only.zip"
+  fi
   if command -v makensis >/dev/null; then
     if ui_bundle_ok "$DIST/windows-amd64"; then
       local pstatus=0
@@ -357,7 +362,7 @@ do_windows() {
         echo "==> Windows installer packaging failed (see above)" >&2
         exit 1
       fi
-      label "$DIST/Spate-Setup-$VERSION.exe" windows
+      label "$DIST/Spate-Setup-$VERSION.exe" windows "spate-windows-$VERSION-amd64-setup.exe"
     else
       note "NSIS installer skipped: the Flutter Windows UI is built on Windows (scripts/flutter-windows.ps1); copy its Release folder to dist/windows-amd64/spate_app"
     fi
@@ -379,7 +384,15 @@ do_linux() {
     echo "==> Linux build failed (see above)" >&2
     exit 1
   fi
-  for f in "$DIST"/spate_"$VERSION"_*.deb "$DIST"/spate-cli_"$VERSION"_*.deb; do [ -e "$f" ] && label "$f" linux; done
+  local f arch
+  for f in "$DIST"/spate_"$VERSION"_*.deb; do
+    [ -e "$f" ] || continue
+    arch="${f##*_}"; label "$f" linux "spate-linux-$VERSION-$arch"          # ...-amd64.deb
+  done
+  for f in "$DIST"/spate-cli_"$VERSION"_*.deb; do
+    [ -e "$f" ] || continue
+    arch="${f##*_}"; label "$f" linux "spate-linux-cli-$VERSION-$arch"
+  done
   make -s host-linux && note "dist/linux-{amd64,arm64}/spate-host"
 }
 
@@ -437,8 +450,9 @@ do_extension() {
     fi
     artifacts+=("$HOME/Applications/Spate for Safari.app")
   fi
-  label "$DIST/spate-extension-$VERSION.zip" extension
+  label "$DIST/spate-extension-$VERSION.zip" extension "spate-extension-chrome-$VERSION.zip"
   label "$DIST/spate-extension-firefox-$VERSION.zip" extension
+  label "$DIST/spate-extension-safari-$VERSION-macos-unsigned.zip" extension
 }
 
 do_bump() {
