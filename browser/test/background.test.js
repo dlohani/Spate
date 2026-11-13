@@ -15,7 +15,7 @@ const SELF = "self-extension-id";
 // answers /ping with (null: nothing listens); `addStatus` is the app's reply
 // to POST /add; `rejectReferer` makes downloads.download refuse a Referer
 // header the way Chromium does.
-function load({ store = {}, ping = { app: "spate" }, addStatus = 200, rejectReferer = false } = {}) {
+function load({ store = {}, ping = { app: "spate" }, addStatus = 200, rejectReferer = false, firefox = false } = {}) {
   const calls = { fetch: [], cancel: [], erase: [], download: [] };
   const listeners = {};
   const event = (name) => ({ addListener: (f) => { listeners[name] = f; } });
@@ -78,8 +78,13 @@ function load({ store = {}, ping = { app: "spate" }, addStatus = 200, rejectRefe
     throw new Error("unexpected fetch " + url);
   };
 
+  // Firefox: `browser` is the promise API; its `chrome` namespace is callback
+  // only, so awaiting any call on it yields undefined.
+  const callbackOnly = new Proxy({}, { get: () => new Proxy(() => undefined, { get: () => () => undefined }) });
+  const namespaces = firefox ? { browser: chrome, chrome: callbackOnly } : { chrome };
+
   vm.runInNewContext(SOURCE, {
-    chrome,
+    ...namespaces,
     fetch,
     console: { log: () => {} },
     navigator: { userAgent: "test", language: "en-US" },
@@ -150,4 +155,11 @@ test("pairing is requested with POST so the browser always sends the extension's
   const pairs = calls.fetch.filter((c) => c.url.endsWith("/pair"));
   assert.strictEqual(pairs.length, 1);
   assert.strictEqual(pairs[0].init.method, "POST");
+});
+
+test("Firefox: the promise-based browser namespace is used, not callback-only chrome", async () => {
+  const { listeners, calls, local } = load({ firefox: true });
+  await listeners.created({ id: 5, url: "https://example.com/a.zip" });
+  assert.strictEqual(adds(calls).length, 1);
+  assert.strictEqual(local.lastEvent.result, "handed off to app");
 });

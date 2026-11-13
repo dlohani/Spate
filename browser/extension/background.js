@@ -17,15 +17,19 @@
 // capture comes from the right-click menu and from capture.js intercepting
 // clicks on file links; those hand-offs carry no download id.
 
+// Extension API handle. Firefox's `chrome` namespace is callback-only for
+// this manifest version (awaiting it yields undefined); promises come from
+// its `browser` namespace. Chrome has only `chrome`, which returns promises.
+const api = typeof browser !== "undefined" ? browser : chrome;
 const PORTS = [8760, 8761, 8762];
-const hasDownloads = typeof chrome !== "undefined" && !!chrome.downloads;
-const action = chrome.action || chrome.browserAction; // MV3 vs Firefox MV2
-const menus = chrome.contextMenus || chrome.menus;
+const hasDownloads = !!api.downloads;
+const action = api.action || api.browserAction; // MV3 vs Firefox MV2
+const menus = api.contextMenus || api.menus;
 const CLIENT_HEADERS = { "X-Spate-Client": "extension" };
 const log = (...a) => console.log("[spate]", ...a);
 
 async function getConfig() {
-  return chrome.storage.local.get({ token: "", enabled: true, mode: "ask", siteRules: {} });
+  return api.storage.local.get({ token: "", enabled: true, mode: "ask", siteRules: {} });
 }
 
 async function findBase() {
@@ -45,7 +49,7 @@ async function findBase() {
 async function note(result, url) {
   log(result, url || "");
   try {
-    await chrome.storage.local.set({
+    await api.storage.local.set({
       lastEvent: { time: new Date().toISOString(), url: url || "", result },
     });
   } catch (e) {}
@@ -65,11 +69,11 @@ async function pair() {
     // 403 is the user clicking Deny in the app: remember it so the heartbeat
     // and later downloads do not raise the prompt again. Only the Pair button
     // on the Options page (an explicit request) clears it.
-    if (r.status === 403) await chrome.storage.local.set({ pairDeclined: true });
+    if (r.status === 403) await api.storage.local.set({ pairDeclined: true });
     if (!r.ok) return { ok: false, reason: `HTTP ${r.status}` };
     const { token } = await r.json();
     if (!token) return { ok: false, reason: "empty token" };
-    await chrome.storage.local.set({ token, pairDeclined: false });
+    await api.storage.local.set({ token, pairDeclined: false });
     await note("paired with app");
     return { ok: true };
   } catch (e) {
@@ -88,16 +92,16 @@ async function ensureApp(forceRepair) {
     // The app rejected our token (it was reinstalled or re-paired): forget
     // it and take the current one from the native host, or prompt to pair.
     token = "";
-    await chrome.storage.local.remove("token");
+    await api.storage.local.remove("token");
   }
   if (base && token) return { base, token };
   try {
-    const r = await chrome.runtime.sendNativeMessage("com.amlabs.spate.host", { type: "ensure" });
+    const r = await api.runtime.sendNativeMessage("com.amlabs.spate.host", { type: "ensure" });
     if (r && r.ok) {
       base = "http://" + r.addr;
       if (r.token) {
         token = r.token;
-        await chrome.storage.local.set({ token });
+        await api.storage.local.set({ token });
       }
       if (r.launched) await note("launched Spate app via native host");
     } else {
@@ -108,7 +112,7 @@ async function ensureApp(forceRepair) {
   }
   if (!base) base = await findBase();
   if (base && !token) {
-    const { pairDeclined } = await chrome.storage.local.get({ pairDeclined: false });
+    const { pairDeclined } = await api.storage.local.get({ pairDeclined: false });
     if (!pairDeclined) {
       const p = await pair();
       if (p.ok) token = (await getConfig()).token;
@@ -126,15 +130,15 @@ async function heartbeat() {
   if (base && !token) await ensureApp();
 }
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create("spate-heartbeat", { periodInMinutes: 0.5 });
+api.runtime.onInstalled.addListener(() => {
+  api.alarms.create("spate-heartbeat", { periodInMinutes: 0.5 });
   heartbeat();
 });
-chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create("spate-heartbeat", { periodInMinutes: 0.5 });
+api.runtime.onStartup.addListener(() => {
+  api.alarms.create("spate-heartbeat", { periodInMinutes: 0.5 });
   heartbeat();
 });
-chrome.alarms.onAlarm.addListener((a) => {
+api.alarms.onAlarm.addListener((a) => {
   if (a.name === "spate-heartbeat") heartbeat();
 });
 
@@ -147,13 +151,13 @@ async function cookieHeader(url, incognito) {
   try {
     let storeId;
     if (incognito) {
-      const stores = await chrome.cookies.getAllCookieStores();
+      const stores = await api.cookies.getAllCookieStores();
       // Firefox flags the private store; Chrome's regular store is "0".
       const inc = stores.find((s) => s.incognito === true) || stores.find((s) => s.id !== "0");
       if (!inc) return "";
       storeId = inc.id;
     }
-    const cookies = await chrome.cookies.getAll(storeId ? { url, storeId } : { url });
+    const cookies = await api.cookies.getAll(storeId ? { url, storeId } : { url });
     return cookies.map((c) => `${c.name}=${c.value}`).join("; ");
   } catch (e) {
     return "";
@@ -195,7 +199,7 @@ async function handOff(item) {
   const isDownload = hasDownloads && item.id != null;
   if (isDownload) {
     try {
-      const [cur] = await chrome.downloads.search({ id: item.id });
+      const [cur] = await api.downloads.search({ id: item.id });
       if (cur && cur.state === "complete") {
         await note("already finished in browser; not handed off", item.url);
         return;
@@ -224,7 +228,7 @@ async function handOff(item) {
   let cancelled = false;
   if (isDownload) {
     try {
-      await chrome.downloads.cancel(item.id);
+      await api.downloads.cancel(item.id);
       cancelled = true;
       await new Promise((r) => setTimeout(r, 1500)); // let the host release the slot
     } catch (e) {}
@@ -274,14 +278,14 @@ async function handOff(item) {
   if (handedOff) {
     if (isDownload) {
       try {
-        await chrome.downloads.erase({ id: item.id });
+        await api.downloads.erase({ id: item.id });
       } catch (e) {}
     }
     flashBadge("↓");
   } else if (cancelled) {
     // Give the download back to the browser (same URL, same referer).
     try {
-      await chrome.downloads.erase({ id: item.id });
+      await api.downloads.erase({ id: item.id });
       const opts = { url: item.url, conflictAction: "uniquify" };
       if (filename) opts.filename = filename;
       restarted.add(item.url); // onCreated must leave this one to the browser
@@ -289,9 +293,9 @@ async function handOff(item) {
         // Firefox accepts a Referer here; Chromium rejects it as an unsafe
         // header, so the restart is retried without it rather than lost.
         if (!item.referrer) throw new Error("no referrer");
-        await chrome.downloads.download({ ...opts, headers: [{ name: "Referer", value: item.referrer }] });
+        await api.downloads.download({ ...opts, headers: [{ name: "Referer", value: item.referrer }] });
       } catch (e) {
-        await chrome.downloads.download(opts);
+        await api.downloads.download(opts);
       }
       await note("app refused; restarted in browser", item.url);
     } catch (e) {
@@ -305,9 +309,9 @@ async function handOff(item) {
 const restarted = new Set();
 
 async function askUser(item) {
-  await chrome.storage.session.set({ ["pending:" + item.id]: item });
-  await chrome.windows.create({
-    url: chrome.runtime.getURL("choose.html?d=" + item.id),
+  await api.storage.session.set({ ["pending:" + item.id]: item });
+  await api.windows.create({
+    url: api.runtime.getURL("choose.html?d=" + item.id),
     type: "popup",
     width: 440,
     height: 230,
@@ -316,10 +320,10 @@ async function askUser(item) {
   await note("asked user", item.url);
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+api.runtime.onMessage.addListener((msg, _sender, reply) => {
   if (msg && msg.type === "pair") {
     // The Pair button: an explicit request overrides an earlier Deny.
-    chrome.storage.local.set({ pairDeclined: false }).then(pair).then(reply);
+    api.storage.local.set({ pairDeclined: false }).then(pair).then(reply);
     return true;
   }
   if (msg && msg.type === "link") {
@@ -333,7 +337,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       }
       const item = { url: msg.url, referrer: msg.referrer || "", host: hostOf(msg.url), incognito: !!(_sender.tab && _sender.tab.incognito) };
       await handOff(item);
-      const { lastEvent } = await chrome.storage.local.get("lastEvent");
+      const { lastEvent } = await api.storage.local.get("lastEvent");
       reply({ ok: !!(lastEvent && lastEvent.result === "handed off to app") });
     })();
     return true;
@@ -344,13 +348,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
       // One-time ask by default: "all" turns the answer into the standing mode
       // (always Spate / never), "site" remembers it for this host only.
       if (msg.scope === "all" || msg.remember === true && !msg.scope) {
-        await chrome.storage.local.set({ mode: msg.choice === "spate" ? "always" : "never" });
+        await api.storage.local.set({ mode: msg.choice === "spate" ? "always" : "never" });
         await note(msg.choice === "spate" ? "default set: always use Spate" : "default set: leave downloads to the browser");
       } else if (msg.scope === "site" && msg.item && msg.item.host) {
         siteRules[msg.item.host] = msg.choice;
-        await chrome.storage.local.set({ siteRules });
+        await api.storage.local.set({ siteRules });
       }
-      await chrome.storage.session.remove("pending:" + msg.id);
+      await api.storage.session.remove("pending:" + msg.id);
       if (msg.choice === "spate") await handOff(msg.item);
       else await note("user chose browser", msg.item && msg.item.url);
       reply({ ok: true });
@@ -364,11 +368,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 if (menus) {
   const install = () => {
     try {
-      menus.create({ id: "spate-link", title: "Download with Spate", contexts: ["link"] }, () => void chrome.runtime.lastError);
+      menus.create({ id: "spate-link", title: "Download with Spate", contexts: ["link"] }, () => void api.runtime.lastError);
     } catch (e) {}
   };
-  chrome.runtime.onInstalled.addListener(install);
-  if (chrome.runtime.onStartup) chrome.runtime.onStartup.addListener(install);
+  api.runtime.onInstalled.addListener(install);
+  if (api.runtime.onStartup) api.runtime.onStartup.addListener(install);
   menus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId !== "spate-link" || !info.linkUrl) return;
     const { enabled } = await getConfig();
@@ -377,7 +381,7 @@ if (menus) {
   });
 }
 
-if (hasDownloads) chrome.downloads.onCreated.addListener(async (raw) => {
+if (hasDownloads) api.downloads.onCreated.addListener(async (raw) => {
   const { enabled, mode, siteRules } = await getConfig();
   // Prefer the final URL (after redirects): that is the one a plain GET can
   // actually fetch. raw.url may be the page that initiated the download.
@@ -393,7 +397,7 @@ if (hasDownloads) chrome.downloads.onCreated.addListener(async (raw) => {
   log("download detected:", item.url, "mode:", mode);
   // A download this extension started is the hand-back of one the app
   // refused: capturing it again would cancel and restart it forever.
-  if (raw.byExtensionId === chrome.runtime.id || restarted.delete(raw.url) || restarted.delete(url)) {
+  if (raw.byExtensionId === api.runtime.id || restarted.delete(raw.url) || restarted.delete(url)) {
     await note("skipped: restarted by Spate after the app refused it", item.url);
     return;
   }
