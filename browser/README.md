@@ -88,14 +88,21 @@ first thing to check is that the app is running (the extension's Options page
    extension IDs listed in the host manifest invoke it), so there is no token
    to copy and no prompt to click.
 
-If the extension was loaded from a path other than this checkout, its ID
-differs from the default; pass it: `scripts/install-macos.sh <EXTENSION_ID>`
-(shown on `chrome://extensions`).
+The extension's ID is fixed by the `key` in `manifest.json`, so it is the
+same wherever it is loaded from. The app also re-registers the native host
+with every installed browser each time it starts, which covers a browser
+installed after Spate.
 
-Without the native host (e.g. a browser it wasn't registered with), capture
-still works as long as the app is running: the extension asks the app to
-connect and you click **Allow** once in the Spate window (or Options →
-**Pair with Spate app**).
+Without the native host, capture still works as long as the app is running:
+
+- **Chrome, Edge, Brave, Vivaldi, Chromium:** the app recognises the Spate
+  extension by its origin (`chrome-extension://<fixed ID>`) and pairs without
+  a prompt. A browser sets that origin itself, so a web page or another
+  extension cannot claim it; a program outside the browser can, which is the
+  trade-off for pairing with no clicks.
+- **Firefox and Safari:** each install has a random origin, so the app cannot
+  recognise it. You click **Allow** once in the Spate window (or Options →
+  **Pair with Spate app**).
 
 Note for custom profiles: a browser started with `--user-data-dir=<dir>` looks
 for host manifests in `<dir>/NativeMessagingHosts/`, not the default location.

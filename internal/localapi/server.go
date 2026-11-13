@@ -33,6 +33,10 @@ import (
 // DefaultPort is the loopback port the extension targets first.
 const DefaultPort = 8760
 
+// SpateExtensionID is the Chromium ID of the Spate extension, fixed by the
+// "key" in browser/extension/manifest.json (the same on every machine).
+const SpateExtensionID = "gdnheihpfamplnmgkippinmhnajehdko"
+
 // Server accepts download requests over loopback and enqueues them.
 type Server struct {
 	mgr        *job.Manager
@@ -45,6 +49,17 @@ type Server struct {
 	// browser extension may connect. It should block until the user decides (or
 	// a timeout) and return true to release the token. nil disables pairing.
 	PairFunc func() bool
+
+	// TrustedExtensionIDs are Chromium extension IDs that are paired without
+	// asking the user: a /pair request whose Origin is exactly
+	// chrome-extension://<id> gets the token straight away. A browser sets
+	// Origin itself, so neither a web page nor another extension can claim
+	// it. A program outside the browser can: this trades the prompt's
+	// protection against other local programs for pairing with no clicks.
+	// Firefox and Safari give each install a random origin, so they cannot
+	// be recognised this way and still pair through the native host or the
+	// prompt. Add the store IDs here once the extension is published.
+	TrustedExtensionIDs []string
 
 	// ResolveDir, when set, picks the destination folder for a hand-off that
 	// doesn't specify one (category / per-site rules); else defaultDir.
@@ -68,7 +83,7 @@ func (s *Server) ShowPending() bool {
 // New builds a Server. token guards /add; defaultDir is where files land when a
 // request doesn't specify a directory.
 func New(mgr *job.Manager, token, defaultDir string) *Server {
-	return &Server{mgr: mgr, token: token, defaultDir: defaultDir}
+	return &Server{mgr: mgr, token: token, defaultDir: defaultDir, TrustedExtensionIDs: []string{SpateExtensionID}}
 }
 
 // Addr returns the listening address (valid after Start).
@@ -131,6 +146,16 @@ func originOK(r *http.Request) bool {
 		strings.HasPrefix(o, "safari-web-extension://")
 }
 
+// trustedOrigin reports whether origin is exactly that of a trusted extension.
+func (s *Server) trustedOrigin(origin string) bool {
+	for _, id := range s.TrustedExtensionIDs {
+		if id != "" && origin == "chrome-extension://"+id {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
 	cors(w)
 	if r.Method == http.MethodOptions {
@@ -166,6 +191,11 @@ func (s *Server) handlePair(w http.ResponseWriter, r *http.Request) {
 	}
 	if !originOK(r) {
 		http.Error(w, "forbidden origin", http.StatusForbidden)
+		return
+	}
+	if s.trustedOrigin(r.Header.Get("Origin")) {
+		slog.Info("pair request", "origin", r.Header.Get("Origin"), "allowed", true, "auto", true)
+		writeJSON(w, http.StatusOK, map[string]any{"token": s.token})
 		return
 	}
 	if s.PairFunc == nil {
