@@ -55,7 +55,7 @@ nothing changes in the installers.
 ## Firefox
 
 Same code, `manifest.firefox.json` (MV2 event page, fixed add-on ID
-`spate@amlabs.dev`). `scripts/package-extension.sh` produces
+`extension@spate.opensources.io`). `scripts/package-extension.sh` produces
 `dist/spate-extension-firefox-<version>.zip` and the unpacked
 `dist/firefox-extension/` (about:debugging -> This Firefox -> Load Temporary
 Add-on -> manifest.json; lasts until Firefox restarts).

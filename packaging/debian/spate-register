@@ -43,7 +43,7 @@ for dir in \
 done
 if [ -d "$HOME/.mozilla" ]; then
   mkdir -p "$HOME/.mozilla/native-messaging-hosts"
-  printf '{\n  "name": "%s",\n  "description": "Spate download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["spate@amlabs.dev"]\n}\n' "$NAME" "$HOST" > "$HOME/.mozilla/native-messaging-hosts/$NAME.json"
+  printf '{\n  "name": "%s",\n  "description": "Spate download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["extension@spate.opensources.io"]\n}\n' "$NAME" "$HOST" > "$HOME/.mozilla/native-messaging-hosts/$NAME.json"
   echo "registered: $HOME/.mozilla/native-messaging-hosts/$NAME.json (Firefox)"
   n=$((n + 1))
 fi

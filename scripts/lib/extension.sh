@@ -10,7 +10,7 @@ EDGE_UPDATE_URL="https://edge.microsoft.com/extensionwebstorebase/v1/crx"
 DEV_EXT_ID="gdnheihpfamplnmgkippinmhnajehdko"
 # Firefox uses a fixed add-on ID (browser_specific_settings.gecko.id), so its
 # native host manifest needs no derived or store IDs.
-FIREFOX_EXT_ID="spate@amlabs.dev"
+FIREFOX_EXT_ID="extension@spate.opensources.io"
 
 # firefox_host_manifest HOST_PATH: Firefox's variant of the native host
 # manifest (allowed_extensions instead of allowed_origins).
