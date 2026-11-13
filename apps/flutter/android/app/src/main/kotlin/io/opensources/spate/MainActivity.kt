@@ -1,4 +1,4 @@
-package com.amlabs.spate_app
+package io.opensources.spate
 
 import io.flutter.embedding.android.FlutterActivity
 

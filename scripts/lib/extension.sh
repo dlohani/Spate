@@ -15,7 +15,7 @@ FIREFOX_EXT_ID="extension@spate.opensources.io"
 # firefox_host_manifest HOST_PATH: Firefox's variant of the native host
 # manifest (allowed_extensions instead of allowed_origins).
 firefox_host_manifest() {
-  printf '{\n  "name": "com.amlabs.spate.host",\n  "description": "Spate download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["%s"]\n}\n' "$1" "$FIREFOX_EXT_ID"
+  printf '{\n  "name": "io.opensources.spate.host",\n  "description": "Spate download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["%s"]\n}\n' "$1" "$FIREFOX_EXT_ID"
 }
 
 # register_firefox_host_macos HOST_PATH: per-user registration when Firefox
@@ -24,16 +24,16 @@ register_firefox_host_macos() {
   local AS="$HOME/Library/Application Support"
   { [ -d "$AS/Firefox" ] || [ -d "/Applications/Firefox.app" ] || [ -d "$HOME/Applications/Firefox.app" ]; } || return 0
   mkdir -p "$AS/Mozilla/NativeMessagingHosts"
-  firefox_host_manifest "$1" > "$AS/Mozilla/NativeMessagingHosts/com.amlabs.spate.host.json"
-  echo "    $AS/Mozilla/NativeMessagingHosts/com.amlabs.spate.host.json (Firefox)"
+  firefox_host_manifest "$1" > "$AS/Mozilla/NativeMessagingHosts/io.opensources.spate.host.json"
+  echo "    $AS/Mozilla/NativeMessagingHosts/io.opensources.spate.host.json (Firefox)"
 }
 
 # register_firefox_host_linux HOST_PATH: per-user registration.
 register_firefox_host_linux() {
   { [ -d "$HOME/.mozilla" ] || command -v firefox >/dev/null 2>&1; } || return 0
   mkdir -p "$HOME/.mozilla/native-messaging-hosts"
-  firefox_host_manifest "$1" > "$HOME/.mozilla/native-messaging-hosts/com.amlabs.spate.host.json"
-  echo "    $HOME/.mozilla/native-messaging-hosts/com.amlabs.spate.host.json (Firefox)"
+  firefox_host_manifest "$1" > "$HOME/.mozilla/native-messaging-hosts/io.opensources.spate.host.json"
+  echo "    $HOME/.mozilla/native-messaging-hosts/io.opensources.spate.host.json (Firefox)"
 }
 
 # load_store_ids ROOT: sets CHROME_WEBSTORE_ID / EDGE_ADDONS_ID (may be empty).

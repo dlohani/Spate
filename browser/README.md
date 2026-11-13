@@ -77,7 +77,7 @@ first thing to check is that the app is running (the extension's Options page
        scripts/install-macos.sh
 
    This builds to `~/Library/Application Support/spate/bin/` and writes
-   `com.amlabs.spate.host.json` into each browser's `NativeMessagingHosts` folder.
+   `io.opensources.spate.host.json` into each browser's `NativeMessagingHosts` folder.
 2. Load the extension in the browser you actually download with:
    `chrome://extensions` → **Developer mode** → **Load unpacked** →
    `browser/extension`.

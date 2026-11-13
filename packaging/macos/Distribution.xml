@@ -48,11 +48,11 @@
   </choices-outline>
   <choice id="default"/>
   <choice id="app" visible="false">
-    <pkg-ref id="com.amlabs.spate.app"/>
+    <pkg-ref id="io.opensources.spate.app"/>
   </choice>
   <choice id="support" visible="false">
-    <pkg-ref id="com.amlabs.spate"/>
+    <pkg-ref id="io.opensources.spate"/>
   </choice>
-  <pkg-ref id="com.amlabs.spate.app" version="@VERSION@" onConclusion="none">spate-app.pkg</pkg-ref>
-  <pkg-ref id="com.amlabs.spate" version="@VERSION@" onConclusion="none">spate-support.pkg</pkg-ref>
+  <pkg-ref id="io.opensources.spate.app" version="@VERSION@" onConclusion="none">spate-app.pkg</pkg-ref>
+  <pkg-ref id="io.opensources.spate" version="@VERSION@" onConclusion="none">spate-support.pkg</pkg-ref>
 </installer-gui-script>

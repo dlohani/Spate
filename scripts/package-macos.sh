@@ -91,12 +91,12 @@ pkgbuild --analyze --root "$APPROOT" "$STAGE/app-component.plist" >/dev/null
   || /usr/libexec/PlistBuddy -c "Add :0:BundleIsRelocatable bool false" "$STAGE/app-component.plist"
 pkgbuild --root "$APPROOT" \
   --component-plist "$STAGE/app-component.plist" \
-  --identifier com.amlabs.spate.app --version "$VERSION" \
+  --identifier io.opensources.spate.app --version "$VERSION" \
   --install-location "Applications" \
   --scripts "$STAGE/scripts-app" \
   "$PKGS/spate-app.pkg" >/dev/null
 pkgbuild --root "$PAYLOAD" \
-  --identifier com.amlabs.spate --version "$VERSION" \
+  --identifier io.opensources.spate --version "$VERSION" \
   --install-location "Library/Application Support/spate" \
   --scripts "$STAGE/scripts-support" \
   "$PKGS/spate-support.pkg" >/dev/null

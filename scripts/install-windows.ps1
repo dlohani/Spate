@@ -27,9 +27,9 @@ if (Test-Path $bundle) {
 }
 
 # Native messaging host manifest + registry keys (per user).
-$manifestPath = Join-Path $Bin "com.amlabs.spate.host.json"
+$manifestPath = Join-Path $Bin "io.opensources.spate.host.json"
 $manifest = [ordered]@{
-  name            = "com.amlabs.spate.host"
+  name            = "io.opensources.spate.host"
   description     = "Spate download manager native host"
   path            = (Join-Path $Bin "spate-host.exe")
   type            = "stdio"
@@ -39,11 +39,15 @@ Set-Content -Path $manifestPath -Value $manifest -Encoding UTF8
 Write-Host "    $manifestPath"
 
 $keys = @(
-  "HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.amlabs.spate.host",
-  "HKCU:\Software\Chromium\NativeMessagingHosts\com.amlabs.spate.host",
-  "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\com.amlabs.spate.host",
-  "HKCU:\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.amlabs.spate.host"
+  "HKCU:\Software\Google\Chrome\NativeMessagingHosts\io.opensources.spate.host",
+  "HKCU:\Software\Chromium\NativeMessagingHosts\io.opensources.spate.host",
+  "HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\io.opensources.spate.host",
+  "HKCU:\Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\io.opensources.spate.host"
 )
+# The host's name before the package became io.opensources.spate.
+foreach ($b in "Google\Chrome", "Chromium", "Microsoft\Edge", "BraveSoftware\Brave-Browser", "Mozilla") {
+  Remove-Item -Path "HKCU:\Software\$b\NativeMessagingHosts\com.amlabs.spate.host" -Force -ErrorAction SilentlyContinue
+}
 foreach ($k in $keys) {
   New-Item -Path $k -Force | Out-Null
   Set-ItemProperty -Path $k -Name "(Default)" -Value $manifestPath

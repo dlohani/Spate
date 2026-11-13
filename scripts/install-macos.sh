@@ -20,7 +20,7 @@ VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 SUPPORT="$HOME/Library/Application Support/spate"
 BIN="$SUPPORT/bin"
 APP="$HOME/Applications/Spate.app"
-HOST_NAME="com.amlabs.spate.host"
+HOST_NAME="io.opensources.spate.host"
 DEFAULT_EXT_ID="gdnheihpfamplnmgkippinmhnajehdko"
 EXT_IDS=("${@:-$DEFAULT_EXT_ID}")
 LDFLAGS="-X spate/internal/version.Version=$VERSION"
@@ -46,7 +46,7 @@ echo "    $BIN/spate-host"
 # Stop whatever is running before files are replaced, so nothing (including
 # the browser's native host) keeps an old copy alive across the swap.
 echo "==> stopping running instance"
-launchctl bootout "gui/$(id -u)/com.amlabs.spate" >/dev/null 2>&1 || true
+launchctl bootout "gui/$(id -u)/io.opensources.spate" >/dev/null 2>&1 || true
 pkill -x spate_app >/dev/null 2>&1 || true   # by process name; a -f pattern could match a shell
 pkill -x spate-mac >/dev/null 2>&1 || true
 
@@ -61,6 +61,22 @@ for b in Chromium Google/Chrome BraveSoftware/Brave-Browser "Microsoft Edge" Viv
   rm -f "$HOME/Library/Application Support/$b/NativeMessagingHosts/com.cascade.host.json"
 done
 rm -f "$HOME/Library/Application Support/Mozilla/NativeMessagingHosts/com.cascade.host.json"
+
+# Identifiers were com.amlabs.* before the package became io.opensources.spate:
+# drop the old login item, browser host manifests and installer records, and
+# an app bundle that still carries the old identifier (the new one installs
+# to the same path). Settings, the pairing token and the queue are untouched.
+launchctl bootout "gui/$(id -u)/com.amlabs.spate" >/dev/null 2>&1 || true
+rm -f "$HOME/Library/LaunchAgents/com.amlabs.spate.plist"
+for b in Chromium Google/Chrome BraveSoftware/Brave-Browser "Microsoft Edge" Vivaldi Mozilla; do
+  rm -f "$HOME/Library/Application Support/$b/NativeMessagingHosts/com.amlabs.spate.host.json"
+done
+oldid="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$HOME/Applications/Spate.app/Contents/Info.plist" 2>/dev/null || true)"
+case "$oldid" in com.amlabs.*) rm -rf "$HOME/Applications/Spate.app" ;; esac
+pkgutil --volume "$HOME" --forget com.amlabs.spate >/dev/null 2>&1 || true
+pkgutil --volume "$HOME" --forget com.amlabs.spate.app >/dev/null 2>&1 || true
+pkgutil --forget com.amlabs.spate >/dev/null 2>&1 || true
+pkgutil --forget com.amlabs.spate.app >/dev/null 2>&1 || true
 sleep 1
 
 echo "==> installing app"
@@ -99,16 +115,16 @@ echo "==> browser extension"
 register_store_extension_macos
 
 # Start at login (hidden, menu bar only) via a per-user LaunchAgent. Skip with
-# SPATE_NO_LOGIN=1. Remove with: launchctl bootout gui/$UID/com.amlabs.spate
+# SPATE_NO_LOGIN=1. Remove with: launchctl bootout gui/$UID/io.opensources.spate
 if [ "${SPATE_NO_LOGIN:-0}" != "1" ]; then
   echo "==> registering login item (LaunchAgent)"
   LA="$HOME/Library/LaunchAgents"; mkdir -p "$LA"
-  PLIST="$LA/com.amlabs.spate.plist"
+  PLIST="$LA/io.opensources.spate.plist"
   cat > "$PLIST" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.amlabs.spate</string>
+  <key>Label</key><string>io.opensources.spate</string>
   <key>ProgramArguments</key>
   <array><string>${APP}/Contents/MacOS/spate_app</string><string>--background</string></array>
   <key>EnvironmentVariables</key>

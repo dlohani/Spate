@@ -10,7 +10,7 @@
 set -u
 HOST=/usr/lib/spate/spate-host
 EXT=/usr/share/spate/extension
-NAME=com.amlabs.spate.host
+NAME=io.opensources.spate.host
 CHROME_WEBSTORE_ID="@CHROME_WEBSTORE_ID@"
 EDGE_ADDONS_ID="@EDGE_ADDONS_ID@"
 ID="$(printf '%s' "$EXT" | sha256sum | cut -c1-32 | tr '0123456789abcdef' 'abcdefghijklmnop')"
@@ -37,12 +37,14 @@ for dir in \
   "$HOME/snap/chromium/common/chromium/NativeMessagingHosts"; do
   [ -d "$(dirname "$dir")" ] || continue
   mkdir -p "$dir"
+  rm -f "$dir/com.amlabs.spate.host.json"   # the host's previous name
   printf '%s\n' "$manifest" > "$dir/$NAME.json"
   echo "registered: $dir/$NAME.json"
   n=$((n + 1))
 done
 if [ -d "$HOME/.mozilla" ]; then
   mkdir -p "$HOME/.mozilla/native-messaging-hosts"
+  rm -f "$HOME/.mozilla/native-messaging-hosts/com.amlabs.spate.host.json"
   printf '{\n  "name": "%s",\n  "description": "Spate download manager native host",\n  "path": "%s",\n  "type": "stdio",\n  "allowed_extensions": ["extension@spate.opensources.io"]\n}\n' "$NAME" "$HOST" > "$HOME/.mozilla/native-messaging-hosts/$NAME.json"
   echo "registered: $HOME/.mozilla/native-messaging-hosts/$NAME.json (Firefox)"
   n=$((n + 1))

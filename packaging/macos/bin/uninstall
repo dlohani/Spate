@@ -3,16 +3,22 @@
 # the app and helper files. Settings, the pairing token and downloads are kept.
 set -u
 ROOT="$HOME/Library/Application Support/spate"
-launchctl bootout "gui/$(id -u)/com.amlabs.spate" >/dev/null 2>&1 || true
-rm -f "$HOME/Library/LaunchAgents/com.amlabs.spate.plist"
+launchctl bootout "gui/$(id -u)/io.opensources.spate" >/dev/null 2>&1 || true
+rm -f "$HOME/Library/LaunchAgents/io.opensources.spate.plist"
 pkill -x spate_app >/dev/null 2>&1 || true
 pkill -x spate-mac >/dev/null 2>&1 || true
 AS="$HOME/Library/Application Support"
 for b in Chromium Google/Chrome BraveSoftware/Brave-Browser "Microsoft Edge" Vivaldi; do
+  rm -f "$AS/$b/NativeMessagingHosts/io.opensources.spate.host.json"
+done
+rm -f "$AS/Mozilla/NativeMessagingHosts/io.opensources.spate.host.json"
+# Names used before the package became io.opensources.spate.
+launchctl bootout "gui/$(id -u)/com.amlabs.spate" >/dev/null 2>&1 || true
+rm -f "$HOME/Library/LaunchAgents/com.amlabs.spate.plist"
+for b in Chromium Google/Chrome BraveSoftware/Brave-Browser "Microsoft Edge" Vivaldi Mozilla; do
   rm -f "$AS/$b/NativeMessagingHosts/com.amlabs.spate.host.json"
 done
-rm -f "$AS/Mozilla/NativeMessagingHosts/com.amlabs.spate.host.json"
 rm -rf "$HOME/Applications/Spate.app" "$ROOT/bin" "$ROOT/extension"
-pkgutil --forget com.amlabs.spate >/dev/null 2>&1 || true
-pkgutil --forget com.amlabs.spate.app >/dev/null 2>&1 || true
+pkgutil --forget io.opensources.spate >/dev/null 2>&1 || true
+pkgutil --forget io.opensources.spate.app >/dev/null 2>&1 || true
 echo "Spate removed. (Kept: $ROOT/settings.json, $ROOT/token and your downloads.)"

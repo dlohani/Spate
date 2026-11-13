@@ -17,7 +17,7 @@ load_store_ids "$ROOT"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}/spate"
 BIN="$DATA/bin"
-HOST_NAME="com.amlabs.spate.host"
+HOST_NAME="io.opensources.spate.host"
 DEFAULT_EXT_ID="gdnheihpfamplnmgkippinmhnajehdko"
 EXT_IDS=("${@:-$DEFAULT_EXT_ID}")
 LDFLAGS="-X spate/internal/version.Version=$VERSION"
@@ -42,6 +42,8 @@ pkill -x cascade_app >/dev/null 2>&1 || true
 rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/cascade/bin"
 rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/applications/cascade.desktop" "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/cascade.desktop"
 find "${XDG_CONFIG_HOME:-$HOME/.config}" "$HOME/snap/chromium/common/chromium" "$HOME/.mozilla" -path "*NativeMessagingHosts/com.cascade.host.json" -delete 2>/dev/null || true
+# The host's name before the package became io.opensources.spate.
+find "${XDG_CONFIG_HOME:-$HOME/.config}" "$HOME/snap/chromium/common/chromium" "$HOME/.mozilla" \( -path "*NativeMessagingHosts/com.amlabs.spate.host.json" -o -path "*native-messaging-hosts/com.amlabs.spate.host.json" \) -delete 2>/dev/null || true
 sleep 1
 mv -f "$BIN/spate-host.new" "$BIN/spate-host"
 mv -f "$BIN/libspate.so.new" "$BIN/libspate.so"
