@@ -103,7 +103,7 @@ FunctionEnd
 Function WriteFirefoxManifest
   ${StrRep} $0 "$INSTDIR\bin\spate-host.exe" "\" "\\"
   FileOpen $1 "$INSTDIR\bin\${HOSTNAME}.firefox.json" w
-  FileWrite $1 '{$\r$\n  "name": "${HOSTNAME}",$\r$\n  "description": "Spate download manager native host",$\r$\n  "path": "$0",$\r$\n  "type": "stdio",$\r$\n  "allowed_extensions": ["spate@amlabs.dev"]$\r$\n}$\r$\n'
+  FileWrite $1 '{$\r$\n  "name": "${HOSTNAME}",$\r$\n  "description": "Spate download manager native host",$\r$\n  "path": "$0",$\r$\n  "type": "stdio",$\r$\n  "allowed_extensions": ["extension@spate.opensources.io"]$\r$\n}$\r$\n'
   FileClose $1
 FunctionEnd
 

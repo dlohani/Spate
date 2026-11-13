@@ -34,7 +34,7 @@ rem Firefox: fixed add-on ID, manifest keyed by allowed_extensions.
   echo   "description": "Spate download manager native host",
   echo   "path": "%HOSTEXE_JSON%",
   echo   "type": "stdio",
-  echo   "allowed_extensions": ["spate@amlabs.dev"]
+  echo   "allowed_extensions": ["extension@spate.opensources.io"]
   echo }
 ) > "%BIN%\com.amlabs.spate.host.firefox.json"
 reg add "HKCU\Software\Mozilla\NativeMessagingHosts\com.amlabs.spate.host" /ve /t REG_SZ /d "%BIN%\com.amlabs.spate.host.firefox.json" /f >nul

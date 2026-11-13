@@ -127,7 +127,7 @@ rather than starting a duplicate.
 
 `manifest.firefox.json` is the same code as an MV2 event page
 (`background.scripts`, `browser_action`, a fixed add-on ID
-`spate@amlabs.dev` so the native host manifest can allow it). The installers
+`extension@spate.opensources.io` so the native host manifest can allow it). The installers
 register the host for Firefox too. `scripts/package-extension.sh` builds
 `spate-extension-firefox-<ver>.zip`; permanent installs need the AMO-signed
 `.xpi` (see `STORE.md`), temporary ones load from `about:debugging`.
