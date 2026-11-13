@@ -13,31 +13,36 @@ set "ORIGINS="chrome-extension://gdnheihpfamplnmgkippinmhnajehdko/""
 if not "%CHROME_WEBSTORE_ID%"=="" set "ORIGINS=!ORIGINS!, "chrome-extension://%CHROME_WEBSTORE_ID%/""
 if not "%EDGE_ADDONS_ID%"=="" set "ORIGINS=!ORIGINS!, "chrome-extension://%EDGE_ADDONS_ID%/""
 if not "%~1"=="" set "ORIGINS=!ORIGINS!, "chrome-extension://%~1/""
+rem The host's name before the package became io.opensources.spate.
+for %%K in ("Google\Chrome" "Chromium" "Microsoft\Edge" "BraveSoftware\Brave-Browser" "Mozilla") do (
+  reg delete "HKCU\Software\%%~K\NativeMessagingHosts\com.amlabs.spate.host" /f >nul 2>&1
+)
+del /q "%BIN%\com.amlabs.spate.host.json" "%BIN%\com.amlabs.spate.host.firefox.json" >nul 2>&1
 set "HOSTEXE=%BIN%\spate-host.exe"
 set "HOSTEXE_JSON=%HOSTEXE:\=\\%"
 (
   echo {
-  echo   "name": "com.amlabs.spate.host",
+  echo   "name": "io.opensources.spate.host",
   echo   "description": "Spate download manager native host",
   echo   "path": "%HOSTEXE_JSON%",
   echo   "type": "stdio",
   echo   "allowed_origins": [!ORIGINS!]
   echo }
-) > "%BIN%\com.amlabs.spate.host.json"
+) > "%BIN%\io.opensources.spate.host.json"
 for %%K in ("Google\Chrome" "Chromium" "Microsoft\Edge" "BraveSoftware\Brave-Browser") do (
-  reg add "HKCU\Software\%%~K\NativeMessagingHosts\com.amlabs.spate.host" /ve /t REG_SZ /d "%BIN%\com.amlabs.spate.host.json" /f >nul
+  reg add "HKCU\Software\%%~K\NativeMessagingHosts\io.opensources.spate.host" /ve /t REG_SZ /d "%BIN%\io.opensources.spate.host.json" /f >nul
 )
 rem Firefox: fixed add-on ID, manifest keyed by allowed_extensions.
 (
   echo {
-  echo   "name": "com.amlabs.spate.host",
+  echo   "name": "io.opensources.spate.host",
   echo   "description": "Spate download manager native host",
   echo   "path": "%HOSTEXE_JSON%",
   echo   "type": "stdio",
   echo   "allowed_extensions": ["extension@spate.opensources.io"]
   echo }
-) > "%BIN%\com.amlabs.spate.host.firefox.json"
-reg add "HKCU\Software\Mozilla\NativeMessagingHosts\com.amlabs.spate.host" /ve /t REG_SZ /d "%BIN%\com.amlabs.spate.host.firefox.json" /f >nul
+) > "%BIN%\io.opensources.spate.host.firefox.json"
+reg add "HKCU\Software\Mozilla\NativeMessagingHosts\io.opensources.spate.host" /ve /t REG_SZ /d "%BIN%\io.opensources.spate.host.firefox.json" /f >nul
 if not "%CHROME_WEBSTORE_ID%"=="" (
   for %%K in ("Google\Chrome" "Chromium" "BraveSoftware\Brave-Browser") do (
     reg add "HKCU\Software\%%~K\Extensions\%CHROME_WEBSTORE_ID%" /v update_url /t REG_SZ /d "https://clients2.google.com/service/update2/crx" /f >nul
@@ -48,5 +53,5 @@ if not "%EDGE_ADDONS_ID%"=="" (
   reg add "HKCU\Software\Microsoft\Edge\Extensions\%EDGE_ADDONS_ID%" /v update_url /t REG_SZ /d "https://edge.microsoft.com/extensionwebstorebase/v1/crx" /f >nul
   echo extension registered: Edge installs it from the store on next start
 )
-echo host manifest written: %BIN%\com.amlabs.spate.host.json
+echo host manifest written: %BIN%\io.opensources.spate.host.json
 endlocal

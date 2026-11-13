@@ -111,7 +111,7 @@ native-messaging host into `~/Library/Application Support/spate/bin/`,
 registers the host with the Chromium-family browsers on the machine, and adds
 a per-user LaunchAgent so Spate starts **hidden at login** (menu-bar icon
 only; `SPATE_NO_LOGIN=1` skips it, `launchctl bootout
-gui/$UID/com.amlabs.spate` removes it). Re-running it upgrades or
+gui/$UID/io.opensources.spate` removes it). Re-running it upgrades or
 reinstalls; a downgrade is refused unless `SPATE_FORCE=1`. Then load
 `browser/extension` in the browser (`chrome://extensions` → Load unpacked). From
 then on a download started in the browser launches Spate if it isn't running

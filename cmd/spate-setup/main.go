@@ -39,7 +39,7 @@ import (
 var payload embed.FS
 
 const (
-	hostName     = "com.amlabs.spate.host"
+	hostName     = "io.opensources.spate.host"
 	defaultExtID = "gdnheihpfamplnmgkippinmhnajehdko" // fixed by "key" in browser/extension/manifest.json: the same on every machine
 	// Add/Remove Programs entry; shared with the NSIS installer so each
 	// detects what the other installed.
@@ -273,6 +273,11 @@ func registerStoreExtension(chromeID, edgeID string) {
 func removeCascade() {
 	for _, exe := range []string{"cascade_app.exe", "cascade-gui.exe"} {
 		_ = exec.Command("taskkill", "/IM", exe, "/F").Run()
+	}
+	// Then the host's own previous name, from before the package became
+	// io.opensources.spate.
+	for _, b := range []string{`Google\Chrome`, `Chromium`, `Microsoft\Edge`, `BraveSoftware\Brave-Browser`, `Mozilla`} {
+		_ = exec.Command("reg", "delete", `HKCU\Software\`+b+`\NativeMessagingHosts\com.amlabs.spate.host`, "/f").Run()
 	}
 	const old = "com.cascade.host"
 	for _, k := range []string{

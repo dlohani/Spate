@@ -96,7 +96,7 @@ async function ensureApp(forceRepair) {
   }
   if (base && token) return { base, token };
   try {
-    const r = await api.runtime.sendNativeMessage("com.amlabs.spate.host", { type: "ensure" });
+    const r = await api.runtime.sendNativeMessage("io.opensources.spate.host", { type: "ensure" });
     if (r && r.ok) {
       base = "http://" + r.addr;
       if (r.token) {

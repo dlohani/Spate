@@ -18,7 +18,7 @@ if [ -f "$plist" ]; then
     fi
   fi
 fi
-launchctl bootout "gui/$(id -u)/com.amlabs.spate" >/dev/null 2>&1 || true
+launchctl bootout "gui/$(id -u)/io.opensources.spate" >/dev/null 2>&1 || true
 # Match the process name exactly (-x): a -f pattern would also kill any shell
 # whose command line mentions the path.
 pkill -x spate_app >/dev/null 2>&1 || true
@@ -35,5 +35,21 @@ for b in Chromium Google/Chrome BraveSoftware/Brave-Browser "Microsoft Edge" Viv
   rm -f "$HOME/Library/Application Support/$b/NativeMessagingHosts/com.cascade.host.json"
 done
 rm -f "$HOME/Library/Application Support/Mozilla/NativeMessagingHosts/com.cascade.host.json"
+
+# Identifiers were com.amlabs.* before the package became io.opensources.spate:
+# drop the old login item, browser host manifests and installer records, and
+# an app bundle that still carries the old identifier (the new one installs
+# to the same path). Settings, the pairing token and the queue are untouched.
+launchctl bootout "gui/$(id -u)/com.amlabs.spate" >/dev/null 2>&1 || true
+rm -f "$HOME/Library/LaunchAgents/com.amlabs.spate.plist"
+for b in Chromium Google/Chrome BraveSoftware/Brave-Browser "Microsoft Edge" Vivaldi Mozilla; do
+  rm -f "$HOME/Library/Application Support/$b/NativeMessagingHosts/com.amlabs.spate.host.json"
+done
+oldid="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$HOME/Applications/Spate.app/Contents/Info.plist" 2>/dev/null || true)"
+case "$oldid" in com.amlabs.*) rm -rf "$HOME/Applications/Spate.app" ;; esac
+pkgutil --volume "$HOME" --forget com.amlabs.spate >/dev/null 2>&1 || true
+pkgutil --volume "$HOME" --forget com.amlabs.spate.app >/dev/null 2>&1 || true
+pkgutil --forget com.amlabs.spate >/dev/null 2>&1 || true
+pkgutil --forget com.amlabs.spate.app >/dev/null 2>&1 || true
 sleep 1
 exit 0

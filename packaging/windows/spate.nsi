@@ -14,7 +14,7 @@ ${StrRep}
   !define VERSION "0.0.0"
 !endif
 !define APPNAME "Spate"
-!define HOSTNAME "com.amlabs.spate.host"
+!define HOSTNAME "io.opensources.spate.host"
 !define DEVEXTID "gdnheihpfamplnmgkippinmhnajehdko"
 ; Store IDs (from browser/extension/store-ids.env via package-windows.sh).
 ; When set, browsers install the extension from the store by themselves.
@@ -129,8 +129,21 @@ Function RemoveCascade
   RMDir "$LOCALAPPDATA\Cascade"
 FunctionEnd
 
+; The browser host was registered as com.amlabs.spate.host before the package
+; became io.opensources.spate: drop those registrations and their manifests.
+Function RemoveOldHostName
+  DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\com.amlabs.spate.host"
+  DeleteRegKey HKCU "Software\Chromium\NativeMessagingHosts\com.amlabs.spate.host"
+  DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.amlabs.spate.host"
+  DeleteRegKey HKCU "Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\com.amlabs.spate.host"
+  DeleteRegKey HKCU "Software\Mozilla\NativeMessagingHosts\com.amlabs.spate.host"
+  Delete "$INSTDIR\bin\com.amlabs.spate.host.json"
+  Delete "$INSTDIR\bin\com.amlabs.spate.host.firefox.json"
+FunctionEnd
+
 Section "Spate" SecMain
   Call RemoveCascade
+  Call RemoveOldHostName
   ; Windows will not overwrite a running executable: stop the app first.
   ExecWait 'taskkill /IM spate_app.exe /F'
   ExecWait 'taskkill /IM spate-gui.exe /F'   ; UI of installs before 0.4.0

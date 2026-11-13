@@ -10,7 +10,7 @@
 set -u
 BIN="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$BIN")"
-HOST_NAME="com.amlabs.spate.host"
+HOST_NAME="io.opensources.spate.host"
 EXT_DIR="$ROOT/extension"
 CHROME_UPDATE_URL="https://clients2.google.com/service/update2/crx"
 EDGE_UPDATE_URL="https://edge.microsoft.com/extensionwebstorebase/v1/crx"

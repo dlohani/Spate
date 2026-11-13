@@ -62,7 +62,7 @@ jobs:
           pkg="$(ls dist/macos/spate-macos-*.pkg | head -1)"
           installer -pkg "$pkg" -target CurrentUserHomeDirectory
           # Where the installer actually put the app (shown for diagnosis).
-          pkgutil --volume "$HOME" --pkg-info com.amlabs.spate.app || true
+          pkgutil --volume "$HOME" --pkg-info io.opensources.spate.app || true
           ls -la "$HOME/Applications" || true
           app="$HOME/Applications/Spate.app"
           support="$HOME/Library/Application Support/spate"
@@ -123,13 +123,13 @@ jobs:
           test -x /usr/lib/spate/spate-host
           test -x /usr/lib/spate/spate_app/spate_app
           test -f /usr/share/spate/extension/manifest.json
-          test -f /etc/opt/chrome/native-messaging-hosts/com.amlabs.spate.host.json
-          test -f /usr/lib/mozilla/native-messaging-hosts/com.amlabs.spate.host.json
+          test -f /etc/opt/chrome/native-messaging-hosts/io.opensources.spate.host.json
+          test -f /usr/lib/mozilla/native-messaging-hosts/io.opensources.spate.host.json
           # Every shared library the app links must come from a declared dependency.
           if ldd /usr/lib/spate/spate_app/spate_app /usr/lib/spate/spate_app/lib/*.so | grep "not found"; then exit 1; fi
           sudo apt-get remove -y spate
           test ! -e /usr/lib/spate/spate-host
-          test ! -e /etc/opt/chrome/native-messaging-hosts/com.amlabs.spate.host.json
+          test ! -e /etc/opt/chrome/native-messaging-hosts/io.opensources.spate.host.json
       - uses: actions/upload-artifact@v7
         with: { name: linux, path: "dist/linux/*", retention-days: 7 }
       - uses: actions/upload-artifact@v7
@@ -195,7 +195,7 @@ jobs:
           foreach ($f in 'bin\spate-host.exe', 'bin\spate.dll', 'bin\spate_app\spate_app.exe', 'extension\manifest.json', 'Uninstall.exe') {
             if (-not (Test-Path (Join-Path $root $f))) { throw "missing after install: $f" }
           }
-          foreach ($k in 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.amlabs.spate.host', 'HKCU:\Software\Mozilla\NativeMessagingHosts\com.amlabs.spate.host') {
+          foreach ($k in 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\io.opensources.spate.host', 'HKCU:\Software\Mozilla\NativeMessagingHosts\io.opensources.spate.host') {
             if (-not (Test-Path $k)) { throw "missing registry key: $k" }
           }
       - uses: actions/upload-artifact@v7

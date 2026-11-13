@@ -14,8 +14,8 @@ cask "spate" do
 
   pkg "spate-macos-#{version}.pkg"
 
-  uninstall pkgutil: "com.amlabs.spate",
-            launchctl: "com.amlabs.spate",
+  uninstall pkgutil: "io.opensources.spate",
+            launchctl: "io.opensources.spate",
             script: {
               executable: "#{Dir.home}/Library/Application Support/spate/bin/uninstall",
               sudo:       false,
@@ -23,7 +23,7 @@ cask "spate" do
 
   zap trash: [
     "~/Library/Application Support/spate",
-    "~/Library/LaunchAgents/com.amlabs.spate.plist",
+    "~/Library/LaunchAgents/io.opensources.spate.plist",
   ]
 
   caveats <<~EOS

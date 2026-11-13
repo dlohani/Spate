@@ -1,7 +1,7 @@
 // Command spate-host is the browser native-messaging host for Spate.
 //
 // The browser launches this process itself when the extension calls
-// chrome.runtime.sendNativeMessage("com.amlabs.spate.host", ...). It makes sure the
+// chrome.runtime.sendNativeMessage("io.opensources.spate.host", ...). It makes sure the
 // resident Spate app is running (launching it, detached, if not), waits for
 // its loopback endpoint, and replies with the endpoint address and the capture
 // token. Native messaging is a browser-enforced trusted channel (only the
