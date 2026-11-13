@@ -403,6 +403,9 @@ func TestSetMaxConcurrentAppliesLive(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = m.Serve(ctx) }()
+	// Stop the downloads before the temp folder is removed: Windows cannot
+	// delete a .part file that a running job still has open.
+	defer m.Shutdown()
 
 	running := func() int {
 		n := 0
@@ -431,6 +434,9 @@ func TestDiscardDeletesPartialAndClearFinishedDropsCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = m.Serve(ctx) }()
+	// Stop the downloads before the temp folder is removed: Windows cannot
+	// delete a .part file that a running job still has open.
+	defer m.Shutdown()
 
 	progressing := func(id string) bool { st, _ := m.Status(id); return st.State == Running && st.Bytes > 0 }
 	waitFor(t, 5*time.Second, func() bool { return progressing(a) && progressing(b) })
@@ -633,6 +639,9 @@ func TestSeveralScheduledJobsAndReschedule(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = m.Serve(ctx) }()
+	// Stop the downloads before the temp folder is removed: Windows cannot
+	// delete a .part file that a running job still has open.
+	defer m.Shutdown()
 	later := time.Now().Add(time.Hour)
 	ids := make([]string, 0, 3)
 	for i := 0; i < 3; i++ {
@@ -687,6 +696,9 @@ func TestHistoryRestoredAsDone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = m.Serve(ctx) }()
+	// Stop the downloads before the temp folder is removed: Windows cannot
+	// delete a .part file that a running job still has open.
+	defer m.Shutdown()
 	time.Sleep(150 * time.Millisecond)
 	if st, _ := m.Status(id); st.State != Done {
 		t.Fatalf("history job ran: %s", st.State)
