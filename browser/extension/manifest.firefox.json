@@ -5,7 +5,7 @@
   "description": "Automatically send downloads started in the browser to the Spate app, with cookies and referrer.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "spate@amlabs.dev",
+      "id": "extension@spate.opensources.io",
       "strict_min_version": "115.0"
     }
   },

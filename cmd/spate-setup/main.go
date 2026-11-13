@@ -46,7 +46,7 @@ const (
 	uninstallKey = `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Spate`
 )
 
-const firefoxExtID = "spate@amlabs.dev"
+const firefoxExtID = "extension@spate.opensources.io"
 const firefoxHostKey = `HKCU\Software\Mozilla\NativeMessagingHosts\` + hostName
 
 var browserKeys = []string{
