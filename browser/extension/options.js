@@ -1,3 +1,7 @@
+// Extension API handle. Firefox's `chrome` namespace is callback-only for
+// this manifest version (awaiting it yields undefined); promises come from
+// its `browser` namespace. Chrome has only `chrome`, which returns promises.
+const api = typeof browser !== "undefined" ? browser : chrome;
 const PORTS = [8760, 8761, 8762];
 const CLIENT_HEADERS = { "X-Spate-Client": "extension" };
 const tokenEl = document.getElementById("token");
@@ -10,7 +14,7 @@ const modeEl = document.getElementById("mode");
 const rulesEl = document.getElementById("rules");
 
 async function load() {
-  const cfg = await chrome.storage.local.get({ token: "", enabled: true, mode: "ask", siteRules: {}, lastEvent: null });
+  const cfg = await api.storage.local.get({ token: "", enabled: true, mode: "ask", siteRules: {}, lastEvent: null });
   tokenEl.value = cfg.token;
   enabledEl.checked = cfg.enabled;
   modeEl.value = cfg.mode;
@@ -36,20 +40,20 @@ async function findBase() {
 // One-click pairing: the app shows an Allow? prompt; no token to copy.
 document.getElementById("pair").addEventListener("click", async () => {
   setStatus("Asking the Spate app... click Allow in the app window.", true);
-  const res = await chrome.runtime.sendMessage({ type: "pair" });
+  const res = await api.runtime.sendMessage({ type: "pair" });
   if (res && res.ok) setStatus("Paired.", true);
   else setStatus("Pairing failed: " + (res && res.reason), false);
   load();
 });
 
 document.getElementById("save").addEventListener("click", async () => {
-  await chrome.storage.local.set({ token: tokenEl.value.trim(), enabled: enabledEl.checked, mode: modeEl.value });
+  await api.storage.local.set({ token: tokenEl.value.trim(), enabled: enabledEl.checked, mode: modeEl.value });
   setStatus("Saved.", true);
   load();
 });
 
 document.getElementById("clearRules").addEventListener("click", async () => {
-  await chrome.storage.local.set({ siteRules: {} });
+  await api.storage.local.set({ siteRules: {} });
   setStatus("Site rules cleared.", true);
   load();
 });
@@ -81,9 +85,9 @@ document.getElementById("testadd").addEventListener("click", async () => {
 
 // The unpacked extension's ID depends on its folder path, so it differs per
 // machine; the native-host manifest must list it. Show it and let it be copied.
-document.getElementById("extId").textContent = chrome.runtime.id;
+document.getElementById("extId").textContent = api.runtime.id;
 document.getElementById("copyId").addEventListener("click", async () => {
-  await navigator.clipboard.writeText(chrome.runtime.id);
+  await navigator.clipboard.writeText(api.runtime.id);
   setStatus("Extension ID copied.", true);
 });
 
