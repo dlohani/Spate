@@ -58,7 +58,9 @@ async function pair() {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 95000);
-    const r = await fetch(`${base}/pair`, { headers: CLIENT_HEADERS, signal: ctrl.signal });
+    // POST, so the browser always attaches this extension's Origin: the app
+    // recognises the Spate extension by it and pairs without a prompt.
+    const r = await fetch(`${base}/pair`, { method: "POST", headers: CLIENT_HEADERS, signal: ctrl.signal });
     clearTimeout(t);
     // 403 is the user clicking Deny in the app: remember it so the heartbeat
     // and later downloads do not raise the prompt again. Only the Pair button

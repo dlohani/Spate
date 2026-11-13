@@ -182,6 +182,19 @@ func TestPairAllowDeclineAndHeartbeat(t *testing.T) {
 	if c != http.StatusOK || !strings.Contains(body, "the-token") {
 		t.Errorf("allowed: got %d %q, want 200 with token", c, body)
 	}
+	// The Spate extension itself is recognised by its exact origin and paired
+	// without asking; anything that merely resembles it still goes through
+	// the prompt (declined here).
+	s.PairFunc = func() bool { return false }
+	self := "chrome-extension://" + SpateExtensionID
+	if c, body := get("/pair", self); c != http.StatusOK || !strings.Contains(body, "the-token") {
+		t.Errorf("trusted extension: got %d %q, want 200 with token and no prompt", c, body)
+	}
+	for _, o := range []string{self + "x", self + "/", "chrome-extension://x" + SpateExtensionID, "moz-extension://" + SpateExtensionID, ""} {
+		if c, _ := get("/pair", o); c != http.StatusForbidden {
+			t.Errorf("origin %q: got %d, want 403 (prompt, declined)", o, c)
+		}
+	}
 	// Heartbeat recorded from the extension's ping.
 }
 

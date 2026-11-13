@@ -142,3 +142,12 @@ test("a declined pairing prompt is not raised again by the heartbeat", async () 
   assert.strictEqual(calls.fetch.filter((c) => c.url.endsWith("/pair")).length, 0);
   assert.strictEqual(local.pairDeclined, true);
 });
+
+test("pairing is requested with POST so the browser always sends the extension's Origin", async () => {
+  const { listeners, calls } = load({ store: { token: "" } });
+  await listeners.alarm({ name: "spate-heartbeat" });
+  await new Promise((r) => setTimeout(r, 20));
+  const pairs = calls.fetch.filter((c) => c.url.endsWith("/pair"));
+  assert.strictEqual(pairs.length, 1);
+  assert.strictEqual(pairs[0].init.method, "POST");
+});

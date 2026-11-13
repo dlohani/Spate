@@ -16,6 +16,36 @@ import 'src/model/job.dart';
 import 'src/model/ui_prefs.dart';
 import 'src/notify.dart';
 
+/// Re-registers the browser integration on every start by running the script
+/// the installer placed next to the native host. The installer only registers
+/// the browsers present at install time; this picks up a browser installed
+/// later, so its extension can fetch the pairing token without a prompt.
+/// Best effort: a source checkout or a portable copy has no script, and a
+/// failure only means that browser falls back to the Allow prompt.
+void _registerBrowsers() {
+  try {
+    String exe;
+    var args = <String>[];
+    if (Platform.isMacOS) {
+      final home = Platform.environment['HOME'];
+      if (home == null) return;
+      exe = '$home/Library/Application Support/spate/bin/register-extension';
+      if (!File(exe).existsSync()) return;
+    } else if (Platform.isWindows) {
+      // <install>\bin\spate_app\spate_app.exe -> <install>\bin\register-extension.cmd
+      final script = '${File(Platform.resolvedExecutable).parent.parent.path}\\register-extension.cmd';
+      if (!File(script).existsSync()) return;
+      exe = 'cmd';
+      args = ['/c', script];
+    } else {
+      exe = '/usr/bin/spate-register';
+      if (!File(exe).existsSync()) return;
+    }
+    // Detached: no console window on Windows, and nothing to wait for.
+    Process.start(exe, args, mode: ProcessStartMode.detached).then((_) {}, onError: (_) {});
+  } catch (_) {}
+}
+
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -55,6 +85,7 @@ Future<void> main(List<String> args) async {
   final background = args.contains('--background') || Platform.environment['SPATE_BACKGROUND'] == '1';
 
   final desktop = Platform.isMacOS || Platform.isWindows || Platform.isLinux;
+  if (desktop) _registerBrowsers();
   if (desktop) {
     await windowManager.ensureInitialized();
     // Open compact (the minimum size unless the user resized it last time);
